@@ -1,0 +1,3 @@
+# This exact version is isolated from Slicer's Python environment. Release
+# automation advances it after the newest Pictologics release passes review.
+pictologics==0.5.0

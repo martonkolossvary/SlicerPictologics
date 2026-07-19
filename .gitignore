@@ -1,0 +1,45 @@
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local environments and private dependency targets
+.venv/
+venv/
+.pictologics-python/
+
+# CMake, CTest, and CPack output
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+cmake_install.cmake
+install_manifest.txt
+Makefile
+Testing/Temporary/
+_build/
+build/
+*-build/
+
+# Local Slicer state and generated output
+AdditionalLauncherSettings.ini
+local-output/
+
+# Parallel coverage data files
+.coverage.*
+
+# Local developer documentation and scratch (planning notes, etc.)
+dev/

@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Keep the GitHub Actions used by CI and the release-adoption workflows current.
+  # The Python dependency (pictologics) is intentionally NOT managed here — it is
+  # adopted through the reviewed, compatibility-qualified bump workflow instead.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"

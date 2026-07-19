@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<executable>
+  <category>Informatics</category>
+  <title>Pictologics CLI Worker</title>
+  <description>Internal background worker for Pictologics radiomic feature extraction.</description>
+  <version>0.1.0</version>
+  <documentation-url>https://github.com/martonkolossvary/SlicerPictologics</documentation-url>
+  <license>Apache-2.0</license>
+  <contributor>Márton Kolossváry</contributor>
+  <acknowledgements>This module uses the Pictologics radiomics package.</acknowledgements>
+  <parameters>
+    <label>Job</label>
+    <description>Files used to execute one complete Pictologics job.</description>
+    <file>
+      <name>jobManifest</name>
+      <label>Job manifest</label>
+      <description>Versioned JSON job manifest.</description>
+      <channel>input</channel>
+      <index>0</index>
+      <fileExtensions>.json</fileExtensions>
+    </file>
+    <directory>
+      <name>dependencyPath</name>
+      <label>Private dependency directory</label>
+      <description>Private pip target containing Pictologics and its dependencies.</description>
+      <channel>input</channel>
+      <index>1</index>
+    </directory>
+    <file>
+      <name>outputResults</name>
+      <label>Output results</label>
+      <description>Atomic JSON result payload.</description>
+      <channel>output</channel>
+      <index>2</index>
+      <fileExtensions>.json</fileExtensions>
+    </file>
+  </parameters>
+</executable>

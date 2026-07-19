@@ -1,0 +1,99 @@
+name: CI
+
+# Ordinary continuous integration for pushes and pull requests. The separate
+# adopt-pictologics-release.yml workflow only handles version-bump adoption; this
+# runs the same normal-Python checks plus the real worker checks on every change.
+# Slicer 5.12 Stable/Preview load, geometry, and staging-round-trip parity still
+# require a real Slicer executable and remain a manual release gate.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, unit tests, and real worker checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out extension
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test tooling
+        run: python -m pip install --upgrade pytest pytest-cov coverage packaging ruff mypy
+
+      - name: Check Python syntax
+        run: python -m compileall -q PictologicsSlicer PictologicsCLI scripts
+
+      - name: Ruff lint
+        run: python -m ruff check PictologicsSlicer PictologicsCLI/PictologicsCLI.py scripts conftest.py tests
+
+      - name: Mypy type check (Slicer-neutral library + CLI worker)
+        run: python -m mypy
+
+      - name: Run tests with 100% coverage gate
+        # Covers the Slicer-neutral library and the CLI worker; the 100% fail-under is
+        # configured in pyproject.toml. Needs no real Pictologics (tests use fakes).
+        run: python -m pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          # Optional CODECOV_TOKEN repo secret; public-repo uploads fall back to the
+          # tokenless path when it is unset. A Codecov hiccup must not fail CI.
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Validate catalog metadata
+        run: python -m json.tool SlicerPictologics.json >/dev/null
+
+      - name: Resolve adopted Pictologics requirement
+        id: requirement
+        shell: bash
+        run: |
+          requirement="$(grep -E '^pictologics==' PictologicsSlicer/requirements-pictologics.txt)"
+          if [[ -z "$requirement" ]]; then
+            echo "No exact 'pictologics==' requirement found" >&2
+            exit 1
+          fi
+          printf 'requirement=%s\n' "$requirement" >> "$GITHUB_OUTPUT"
+
+      - name: Install adopted Pictologics into a private target
+        run: >-
+          python -m pip install --only-binary=:all:
+          --target "$RUNNER_TEMP/pictologics-target"
+          "${{ steps.requirement.outputs.requirement }}"
+
+      - name: Wrapper API and inline-builder round-trip check
+        env:
+          PYTHONPATH: ${{ runner.temp }}/pictologics-target
+          PICTOLOGICS_DISABLE_WARMUP: "1"
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+        run: python scripts/check_pictologics_api.py
+
+      - name: Real anisotropic worker smoke
+        env:
+          PYTHONPATH: ${{ runner.temp }}/pictologics-target
+          PICTOLOGICS_DISABLE_WARMUP: "1"
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+        run: python scripts/smoke_pictologics_worker.py
+
+      - name: Worker vs. direct Pictologics geometry parity
+        env:
+          PYTHONPATH: ${{ runner.temp }}/pictologics-target
+          PICTOLOGICS_DISABLE_WARMUP: "1"
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+        run: python scripts/geometry_parity_check.py

@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PictologicsSlicer</class>
+ <widget class="qMRMLWidget" name="PictologicsSlicer">
+  <property name="windowTitle">
+   <string>Pictologics</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="ctkCollapsibleButton" name="inputsCollapsibleButton">
+     <property name="text">
+      <string>Inputs and regions</string>
+     </property>
+     <layout class="QFormLayout" name="inputsFormLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="inputVolumeLabel">
+        <property name="text"><string>Input volume:</string></property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="qMRMLNodeComboBox" name="inputVolumeSelector">
+        <property name="nodeTypes"><stringlist><string>vtkMRMLScalarVolumeNode</string></stringlist></property>
+        <property name="noneEnabled"><bool>false</bool></property>
+        <property name="addEnabled"><bool>false</bool></property>
+        <property name="removeEnabled"><bool>false</bool></property>
+        <property name="showHidden"><bool>false</bool></property>
+        <property name="showChildNodeTypes"><bool>false</bool></property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="segmentationLabel">
+        <property name="text"><string>Segmentation:</string></property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="qMRMLNodeComboBox" name="segmentationSelector">
+        <property name="nodeTypes"><stringlist><string>vtkMRMLSegmentationNode</string></stringlist></property>
+        <property name="noneEnabled"><bool>true</bool></property>
+        <property name="addEnabled"><bool>false</bool></property>
+        <property name="removeEnabled"><bool>false</bool></property>
+        <property name="showHidden"><bool>false</bool></property>
+        <property name="showChildNodeTypes"><bool>false</bool></property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QCheckBox" name="wholeVolumeCheckBox">
+        <property name="text"><string>Also analyze the whole volume</string></property>
+        <property name="checked"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="segmentsLabel">
+        <property name="text"><string>Segments:</string></property>
+        <property name="alignment"><set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set></property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QListWidget" name="segmentListWidget">
+        <property name="minimumSize"><size><width>0</width><height>90</height></size></property>
+        <property name="toolTip"><string>Each checked segment is analyzed independently.</string></property>
+        <property name="alternatingRowColors"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="subjectIdLabel">
+        <property name="text"><string>Subject ID:</string></property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QLineEdit" name="subjectIdLineEdit">
+        <property name="placeholderText"><string>Optional subject or case identifier</string></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="ctkCollapsibleButton" name="configurationCollapsibleButton">
+     <property name="text"><string>Feature configurations</string></property>
+     <layout class="QFormLayout" name="configurationFormLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="standardConfigurationsLabel">
+        <property name="text"><string>Standard presets:</string></property>
+        <property name="alignment"><set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set></property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QListWidget" name="standardConfigListWidget">
+        <property name="minimumSize"><size><width>0</width><height>115</height></size></property>
+        <property name="alternatingRowColors"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="additionalConfigLabel">
+        <property name="text"><string>Additional config:</string></property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="additionalConfigCombo">
+        <property name="toolTip"><string>Optionally add one configuration built in this panel, or load one from a file, alongside the checked presets.</string></property>
+        <item><property name="text"><string>None</string></property></item>
+        <item><property name="text"><string>Build one in app</string></property></item>
+        <item><property name="text"><string>Load from file</string></property></item>
+       </widget>
+      </item>
+      <item row="2" column="0" colspan="2">
+       <widget class="QGroupBox" name="inlineConfigGroup">
+        <property name="title"><string>In-app configuration</string></property>
+        <layout class="QFormLayout" name="inlineConfigLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="familiesLabel">
+           <property name="text"><string>Feature families:</string></property>
+           <property name="alignment"><set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set></property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QWidget" name="familiesWidget" native="true">
+           <layout class="QGridLayout" name="familiesLayout">
+            <property name="leftMargin"><number>0</number></property>
+            <property name="topMargin"><number>0</number></property>
+            <property name="rightMargin"><number>0</number></property>
+            <property name="bottomMargin"><number>0</number></property>
+            <item row="0" column="0"><widget class="QCheckBox" name="familyIntensityCheckBox"><property name="text"><string>Intensity</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item row="0" column="1"><widget class="QCheckBox" name="familyMorphologyCheckBox"><property name="text"><string>Morphology</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item row="0" column="2"><widget class="QCheckBox" name="familyTextureCheckBox"><property name="text"><string>Texture</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item row="1" column="0"><widget class="QCheckBox" name="familyHistogramCheckBox"><property name="text"><string>Histogram</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item row="1" column="1"><widget class="QCheckBox" name="familyIvhCheckBox"><property name="text"><string>IVH</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item row="2" column="0"><widget class="QCheckBox" name="familySpatialIntensityCheckBox"><property name="text"><string>Spatial intensity</string></property></widget></item>
+            <item row="2" column="1"><widget class="QCheckBox" name="familyLocalIntensityCheckBox"><property name="text"><string>Local intensity</string></property></widget></item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="resampleLabel">
+           <property name="text"><string>Resample:</string></property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QWidget" name="resampleWidget" native="true">
+           <layout class="QHBoxLayout" name="resampleRowLayout">
+            <property name="leftMargin"><number>0</number></property>
+            <property name="topMargin"><number>0</number></property>
+            <property name="rightMargin"><number>0</number></property>
+            <property name="bottomMargin"><number>0</number></property>
+            <item><widget class="QCheckBox" name="resampleCheckBox"><property name="text"><string>Enable</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item><widget class="QDoubleSpinBox" name="resampleXSpinBox"><property name="decimals"><number>3</number></property><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100.0</double></property><property name="value"><double>0.5</double></property></widget></item>
+            <item><widget class="QDoubleSpinBox" name="resampleYSpinBox"><property name="decimals"><number>3</number></property><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100.0</double></property><property name="value"><double>0.5</double></property></widget></item>
+            <item><widget class="QDoubleSpinBox" name="resampleZSpinBox"><property name="decimals"><number>3</number></property><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100.0</double></property><property name="value"><double>0.5</double></property></widget></item>
+            <item><widget class="QComboBox" name="interpolationCombo"><item><property name="text"><string>linear</string></property></item><item><property name="text"><string>nearest</string></property></item></widget></item>
+           </layout>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="discretiseLabel">
+           <property name="text"><string>Discretise:</string></property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QWidget" name="discretiseWidget" native="true">
+           <layout class="QHBoxLayout" name="discretiseRowLayout">
+            <property name="leftMargin"><number>0</number></property>
+            <property name="topMargin"><number>0</number></property>
+            <property name="rightMargin"><number>0</number></property>
+            <property name="bottomMargin"><number>0</number></property>
+            <item><widget class="QCheckBox" name="discretiseCheckBox"><property name="text"><string>Enable</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item><widget class="QComboBox" name="discretiseMethodCombo"><item><property name="text"><string>FBN</string></property></item><item><property name="text"><string>FBS</string></property></item></widget></item>
+            <item><widget class="QDoubleSpinBox" name="discretiseValueSpinBox"><property name="toolTip"><string>Bin count for FBN, bin width for FBS.</string></property><property name="decimals"><number>3</number></property><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100000.0</double></property><property name="value"><double>32.0</double></property></widget></item>
+           </layout>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="sourceModeLabel">
+           <property name="text"><string>Voxel validity:</string></property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QWidget" name="sourceModeWidget" native="true">
+           <layout class="QHBoxLayout" name="sourceModeRowLayout">
+            <property name="leftMargin"><number>0</number></property>
+            <property name="topMargin"><number>0</number></property>
+            <property name="rightMargin"><number>0</number></property>
+            <property name="bottomMargin"><number>0</number></property>
+            <item><widget class="QComboBox" name="sourceModeCombo"><property name="toolTip"><string>full_image treats all voxels as valid; roi_only/auto exclude sentinel/padding voxels from resampling and filtering.</string></property><item><property name="text"><string>full_image</string></property></item><item><property name="text"><string>roi_only</string></property></item><item><property name="text"><string>auto</string></property></item></widget></item>
+            <item><widget class="QLineEdit" name="sentinelValueLineEdit"><property name="placeholderText"><string>Sentinel value (optional)</string></property></widget></item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QWidget" name="customFileWidget" native="true">
+        <layout class="QVBoxLayout" name="customFileLayout">
+         <property name="leftMargin"><number>0</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>0</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <item>
+          <layout class="QHBoxLayout" name="customConfigurationLayout">
+           <item>
+            <widget class="QLineEdit" name="customConfigPathLineEdit">
+             <property name="placeholderText"><string>Pictologics YAML or JSON configuration file</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="browseConfigButton">
+             <property name="text"><string>Browse…</string></property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="customFileAidsLayout">
+           <item>
+            <widget class="QPushButton" name="newFromPresetButton">
+             <property name="text"><string>New from preset…</string></property>
+             <property name="toolTip"><string>Write an editable starter configuration file from a standard preset.</string></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="validateConfigButton">
+             <property name="text"><string>Validate</string></property>
+             <property name="toolTip"><string>Structural pre-check of the selected file. The worker performs the authoritative validation at run time.</string></property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="ctkCollapsibleButton" name="outputCollapsibleButton">
+     <property name="text"><string>Output</string></property>
+     <layout class="QFormLayout" name="outputFormLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="outputTableLabel">
+        <property name="text"><string>Results table:</string></property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="qMRMLNodeComboBox" name="outputTableSelector">
+        <property name="nodeTypes"><stringlist><string>vtkMRMLTableNode</string></stringlist></property>
+        <property name="noneEnabled"><bool>true</bool></property>
+        <property name="addEnabled"><bool>true</bool></property>
+        <property name="removeEnabled"><bool>true</bool></property>
+        <property name="showHidden"><bool>false</bool></property>
+        <property name="showChildNodeTypes"><bool>false</bool></property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QCheckBox" name="appendResultsCheckBox">
+        <property name="text"><string>Append to compatible existing rows</string></property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QCheckBox" name="exportWideCheckBox">
+        <property name="text"><string>Export wide layout (one row per ROI)</string></property>
+        <property name="toolTip"><string>Pivot to one row per ROI with configuration__feature columns instead of the default long layout.</string></property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QPushButton" name="exportButton">
+        <property name="text"><string>Export table as CSV or JSON…</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="ctkCollapsibleButton" name="packageCollapsibleButton">
+     <property name="text"><string>Pictologics package</string></property>
+     <property name="collapsed"><bool>true</bool></property>
+     <layout class="QHBoxLayout" name="packageLayout">
+      <item>
+       <widget class="QLabel" name="packageVersionLabel">
+        <property name="text"><string>Checking isolated package…</string></property>
+        <property name="wordWrap"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="updatePackageButton">
+        <property name="text"><string>Install / update adopted release…</string></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="executionButtonLayout">
+     <item>
+      <widget class="QPushButton" name="runButton">
+       <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
+       <property name="text"><string>Run radiomics</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="cancelButton">
+       <property name="text"><string>Cancel</string></property>
+       <property name="enabled"><bool>false</bool></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="progressBar">
+     <property name="value"><number>0</number></property>
+     <property name="textVisible"><bool>true</bool></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="statusLabel">
+     <property name="text"><string>Select a scalar volume to begin.</string></property>
+     <property name="wordWrap"><bool>true</bool></property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>qMRMLWidget</class>
+   <extends>QWidget</extends>
+   <header>qMRMLWidget.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>qMRMLNodeComboBox</class>
+   <extends>QComboBox</extends>
+   <header>qMRMLNodeComboBox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ctkCollapsibleButton</class>
+   <extends>QPushButton</extends>
+   <header>ctkCollapsibleButton.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

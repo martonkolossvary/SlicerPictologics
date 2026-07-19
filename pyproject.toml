@@ -1,0 +1,63 @@
+# SlicerPictologics developer tooling configuration.
+#
+# This repository is a 3D Slicer extension, not a pip-installable package, so this
+# file carries only local test and coverage configuration (mirroring the Pictologics
+# package's setup). The 3D Slicer extension factory does not consume it.
+#
+# Coverage scope is the Slicer-neutral support library and the standalone CLI worker.
+# The GUI module (PictologicsSlicer/PictologicsSlicer.py) imports the Slicer runtime
+# (qt/slicer/vtk) and cannot be imported outside a Slicer process, so it is not on the
+# coverage source path and is exercised only by the in-Slicer ScriptedLoadableModuleTest.
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "PictologicsCLI/Testing"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+# relative_files keeps report paths repo-relative (e.g. PictologicsSlicer/PictologicsLib/
+# jobs.py) instead of basenames, so the Codecov XML maps onto the repo tree correctly.
+relative_files = true
+source = [
+    "PictologicsSlicer/PictologicsLib",
+    "PictologicsCLI",
+]
+omit = [
+    "*/Testing/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 100
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+warn_unused_ignores = false
+# Scope to the Slicer-neutral code. The GUI (PictologicsSlicer.py) imports the Slicer
+# runtime and is dynamically typed against untyped Slicer/Qt/VTK objects; it is checked
+# only inside Slicer, not by this strict gate.
+files = ["PictologicsSlicer/PictologicsLib", "PictologicsCLI/PictologicsCLI.py"]
+exclude = "^(tests|dev|scripts)/|/Testing/"
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true

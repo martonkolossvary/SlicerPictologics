@@ -1,0 +1,121 @@
+name: Propose Pictologics release adoption
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable Pictologics release (X.Y.Z)
+        required: true
+        type: string
+  repository_dispatch:
+    types:
+      - pictologics-release
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: adopt-pictologics-${{ github.event.inputs.version || github.event.client_payload.version || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  propose-adoption:
+    name: Validate and open adoption PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out wrapper repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        env:
+          MANUAL_VERSION: ${{ github.event.inputs.version }}
+          DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          version="${MANUAL_VERSION:-${DISPATCH_VERSION:-}}"
+          if [[ -z "$version" ]]; then
+            echo "A version is required in workflow input or client_payload.version" >&2
+            exit 2
+          fi
+          if [[ ! "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be a stable v?X.Y.Z release" >&2
+            exit 2
+          fi
+          version="${version#v}"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Advance adopted compatibility version
+        env:
+          PICTOLOGICS_RELEASE: ${{ steps.release.outputs.version }}
+        run: python scripts/bump_pictologics_requirement.py "$PICTOLOGICS_RELEASE"
+
+      - name: Require a published binary wheel
+        env:
+          PICTOLOGICS_RELEASE: ${{ steps.release.outputs.version }}
+        run: >-
+          python -m pip download --only-binary=:all: --no-deps
+          --dest "$RUNNER_TEMP/pictologics-wheel"
+          "pictologics==$PICTOLOGICS_RELEASE"
+
+      - name: Install released wheel in a private target and probe it
+        env:
+          PICTOLOGICS_RELEASE: ${{ steps.release.outputs.version }}
+        run: |
+          python -m pip install --only-binary=:all: \
+            --target "$RUNNER_TEMP/pictologics-target" \
+            "pictologics==$PICTOLOGICS_RELEASE"
+          PYTHONPATH="$RUNNER_TEMP/pictologics-target" \
+            PICTOLOGICS_DISABLE_WARMUP=1 NUMBA_CACHE_DIR="$RUNNER_TEMP/numba-cache" \
+            python scripts/check_pictologics_api.py
+          PICTOLOGICS_DISABLE_WARMUP=1 NUMBA_CACHE_DIR="$RUNNER_TEMP/numba-cache" \
+            python PictologicsSlicer/PictologicsLib/dependency_probe.py \
+            "$RUNNER_TEMP/pictologics-target" "$PICTOLOGICS_RELEASE"
+
+      - name: Run real anisotropic worker smoke
+        env:
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+          PICTOLOGICS_DISABLE_WARMUP: "1"
+          PYTHONPATH: ${{ runner.temp }}/pictologics-target
+        run: python scripts/smoke_pictologics_worker.py
+
+      - name: Check worker vs. direct Pictologics geometry parity
+        env:
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+          PICTOLOGICS_DISABLE_WARMUP: "1"
+          PYTHONPATH: ${{ runner.temp }}/pictologics-target
+        run: python scripts/geometry_parity_check.py
+
+      - name: Check Python syntax
+        run: python -m compileall -q PictologicsSlicer PictologicsCLI scripts
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Run standalone worker tests
+        run: python -m unittest discover -s PictologicsCLI/Testing -p "test_*.py"
+
+      - name: Validate catalog metadata
+        run: python -m json.tool SlicerPictologics.json >/dev/null
+
+      - name: Open review-only adoption pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "ENH: Adopt Pictologics ${{ steps.release.outputs.version }}"
+          title: "Adopt Pictologics ${{ steps.release.outputs.version }}"
+          body: |
+            Advances the extension's adopted Pictologics compatibility version to
+            `${{ steps.release.outputs.version }}`.
+
+            The normal-Python unit and syntax checks passed. A maintainer must still
+            review the change and record the Slicer Stable/Preview compatibility run.
+            This workflow never enables or performs automatic merge.
+          branch: automation/adopt-pictologics-${{ steps.release.outputs.version }}
+          delete-branch: true
+          add-paths: PictologicsSlicer/requirements-pictologics.txt
