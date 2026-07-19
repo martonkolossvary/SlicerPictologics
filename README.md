@@ -175,13 +175,12 @@ new job; a malformed marker is retained conservatively for at most seven days.
   own `format_results` / `save_results` layout (which uses a `config` column and no
   provenance). This is intentional so tables carry full provenance; it may be
   reconciled if Pictologics adopts a canonical result schema.
-- The extension has not been exercised inside a Slicer executable in this development
-  environment. `scripts/geometry_parity_check.py` now confirms the worker reproduces
-  direct Pictologics values on an oblique, anisotropic NIfTI grid (the
-  wrapper-vs-library half of numerical parity), but normal-Python unit and syntax
-  checks are still not a substitute for the required Slicer 5.12 Stable/Preview
-  geometry, package-install, and staging-round-trip (`saveNode`/labelmap export)
-  parity tests.
+- The source checkout has passed headless module/CLI discovery and the private PyPI
+  install, API, full-JIT, and restart-reuse gates in Slicer 5.12.2 (CPython 3.12,
+  x86_64 under Rosetta on macOS). `scripts/geometry_parity_check.py` also confirms the
+  worker reproduces direct Pictologics values on an oblique, anisotropic NIfTI grid.
+  Full MRML staging-round-trip (`saveNode`/labelmap export) parity, interactive workflow,
+  Slicer Preview, and Windows/Linux qualification remain release gates.
 
 Planning notes (the implementation decision, build plan, and original implementation
 plan) are kept in the local, git-ignored `dev/` folder rather than tracked in the
@@ -213,8 +212,8 @@ ruff / mypy / coverage gate on every push and pull request, uploads the coverage
 to [Codecov](https://codecov.io/gh/martonkolossvary/SlicerPictologics) (`codecov.yml`;
 optional `CODECOV_TOKEN` repo secret, with a tokenless fallback for public repositories),
 then runs the real API / worker-smoke / geometry-parity checks against the adopted
-Pictologics wheel. As noted above, Slicer Stable/Preview load, geometry, and
-staging-round-trip parity remain a manual release gate.
+Pictologics wheel. As noted above, the remaining Slicer Preview, cross-platform,
+interactive-workflow, and MRML staging-round-trip checks are manual release gates.
 
 ## License
 

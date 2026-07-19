@@ -11,13 +11,12 @@
   <parameters>
     <label>Job</label>
     <description>Files used to execute one complete Pictologics job.</description>
-    <file>
+    <file fileExtensions=".json">
       <name>jobManifest</name>
       <label>Job manifest</label>
       <description>Versioned JSON job manifest.</description>
       <channel>input</channel>
       <index>0</index>
-      <fileExtensions>.json</fileExtensions>
     </file>
     <directory>
       <name>dependencyPath</name>
@@ -26,13 +25,12 @@
       <channel>input</channel>
       <index>1</index>
     </directory>
-    <file>
+    <file fileExtensions=".json">
       <name>outputResults</name>
       <label>Output results</label>
       <description>Atomic JSON result payload.</description>
       <channel>output</channel>
       <index>2</index>
-      <fileExtensions>.json</fileExtensions>
     </file>
   </parameters>
 </executable>

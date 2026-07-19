@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "PictologicsSlicer"))
 from PictologicsLib.jobs import build_job_manifest  # noqa: E402
 
 GUI_SOURCE = ROOT / "PictologicsSlicer/PictologicsSlicer.py"
+GUI_CMAKE = ROOT / "PictologicsSlicer/CMakeLists.txt"
 UI_PATH = ROOT / "PictologicsSlicer/Resources/UI/PictologicsSlicer.ui"
 WORKER_SOURCE = ROOT / "PictologicsCLI/PictologicsCLI.py"
 
@@ -82,6 +83,15 @@ class ExtensionScaffoldTests(unittest.TestCase):
         cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn("add_subdirectory(PictologicsSlicer)", cmake)
         self.assertIn("add_subdirectory(PictologicsCLI)", cmake)
+
+    def test_gui_build_packages_every_support_module(self) -> None:
+        cmake = GUI_CMAKE.read_text(encoding="utf-8")
+        scripts = cmake.split("set(MODULE_PYTHON_SCRIPTS", 1)[1].split(")", 1)[0]
+        support_root = ROOT / "PictologicsSlicer/PictologicsLib"
+        for module in support_root.glob("*.py"):
+            relative = module.relative_to(ROOT / "PictologicsSlicer").as_posix()
+            with self.subTest(module=relative):
+                self.assertIn(relative, scripts)
 
 
 class CrossProcessContractTests(unittest.TestCase):

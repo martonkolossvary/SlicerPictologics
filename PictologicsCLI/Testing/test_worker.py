@@ -407,6 +407,12 @@ class CLIScaffoldTests(unittest.TestCase):
         self.assertEqual(parameters["dependencyPath"].findtext("index"), "1")
         self.assertEqual(parameters["outputResults"].findtext("index"), "2")
         self.assertEqual(parameters["outputResults"].findtext("channel"), "output")
+        for name in ("jobManifest", "outputResults"):
+            with self.subTest(parameter=name):
+                parameter = parameters[name]
+                self.assertEqual(parameter.tag, "file")
+                self.assertEqual(parameter.get("fileExtensions"), ".json")
+                self.assertIsNone(parameter.find("fileExtensions"))
 
         cmake = (CLI_DIR / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn("SlicerMacroBuildScriptedCLI", cmake)

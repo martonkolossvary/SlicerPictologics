@@ -5,6 +5,7 @@ set(MODULE_PYTHON_SCRIPTS
   PictologicsLib/__init__.py
   PictologicsLib/dependency_probe.py
   PictologicsLib/dependencies.py
+  PictologicsLib/inline_config.py
   PictologicsLib/jobs.py
   PictologicsLib/results.py
   PictologicsLib/staging.py
