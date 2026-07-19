@@ -105,7 +105,7 @@ jobs:
         run: python -m json.tool SlicerPictologics.json >/dev/null
 
       - name: Open review-only adoption pull request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "ENH: Adopt Pictologics ${{ steps.release.outputs.version }}"
           title: "Adopt Pictologics ${{ steps.release.outputs.version }}"
