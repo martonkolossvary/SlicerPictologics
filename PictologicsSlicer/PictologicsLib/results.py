@@ -41,7 +41,11 @@ LONG_RESULT_COLUMNS: Final[tuple[str, ...]] = (
     "configuration",
     "feature_family",
     "feature_name",
+    "feature_key",
     "ibsi_code",
+    "pictologics_ibsi_code",
+    "pictologics_feature_name",
+    "preprocessing_sequence",
     "value",
     "status",
     "pictologics_version",
@@ -123,6 +127,12 @@ def normalise_result_row(
         raise ResultPayloadError(f"{location}.configuration must not be empty")
     if not normalised["feature_name"]:
         raise ResultPayloadError(f"{location}.feature_name must not be empty")
+    if not normalised["feature_key"]:
+        raise ResultPayloadError(f"{location}.feature_key must not be empty")
+    if not normalised["pictologics_feature_name"]:
+        raise ResultPayloadError(
+            f"{location}.pictologics_feature_name must not be empty"
+        )
     if not normalised["status"]:
         raise ResultPayloadError(f"{location}.status must not be empty")
     if expected_run_id is not None and normalised["run_id"] != expected_run_id:
@@ -258,7 +268,7 @@ def rows_to_wide(rows: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:
         if row["status"] not in statuses[key]:
             statuses[key].append(row["status"])
 
-        feature_column = f"{row['configuration']}__{row['feature_name']}"
+        feature_column = row["pictologics_feature_name"]
         if feature_column in grouped[key]:
             raise ResultPayloadError(
                 "Wide export collision for "

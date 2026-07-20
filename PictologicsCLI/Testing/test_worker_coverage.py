@@ -42,6 +42,7 @@ CATALOG_RECORD = {
     "feature_name": "joint_entropy",
     "ibsi_code": "TU9B",
     "family": "glcm",
+    "preprocessing_sequence": "1:resample > 2:discretise",
 }
 
 
@@ -843,6 +844,40 @@ class VerifyVersionTests(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_pictologics_identity_is_added_to_catalog(self):
+        feature_key = "volume_at_intensity_fraction_0.10_BC2M_10"
+        records = worker._catalog_to_records(
+            [
+                {
+                    "config": "standard_fbn_32",
+                    "feature_key": feature_key,
+                    "feature_name": "volume_at_intensity_fraction_0.10",
+                    "ibsi_code": "BC2M",
+                }
+            ]
+        )
+        self.assertEqual(records[0]["pictologics_ibsi_code"], "BC2M_10")
+        self.assertEqual(
+            records[0]["pictologics_feature_name"],
+            f"standard_fbn_32__{feature_key}",
+        )
+
+    def test_non_string_optional_identity_metadata_falls_back(self):
+        records = worker._catalog_to_records(
+            [
+                {
+                    "config": "c",
+                    "feature_key": "custom_feature",
+                    "feature_name": None,
+                    "ibsi_code": None,
+                }
+            ]
+        )
+        self.assertEqual(records[0]["pictologics_ibsi_code"], "")
+        self.assertEqual(
+            records[0]["pictologics_feature_name"], "c__custom_feature"
+        )
+
     def test_list_input(self):
         records = worker._catalog_to_records(
             [{"config": "c", "feature_key": "k", "extra": 1}]
@@ -1157,10 +1192,20 @@ class ExecuteJobTests(unittest.TestCase):
         self.assertEqual(tuple(first), worker.LONG_ROW_COLUMNS)
         self.assertEqual(first["status"], "ok")
         self.assertEqual(first["value"], 4.25)
+        self.assertEqual(first["feature_key"], "joint_entropy_TU9B")
+        self.assertEqual(first["pictologics_ibsi_code"], "TU9B")
+        self.assertEqual(
+            first["pictologics_feature_name"],
+            "standard_fbn_32__joint_entropy_TU9B",
+        )
+        self.assertEqual(
+            first["preprocessing_sequence"], "1:resample > 2:discretise"
+        )
         self.assertIsNone(second["value"])
         self.assertEqual(second["status"], "error")
         self.assertEqual(len(payload["errors"]), 1)
         self.assertIn("broken mask", payload["errors"][0]["error"])
+        self.assertIn("<filter-progress>0.500000</filter-progress>", stream.getvalue())
         self.assertIn("<filter-progress>1.000000</filter-progress>", stream.getvalue())
 
     def test_run_returns_non_mapping(self):
@@ -1256,9 +1301,15 @@ class BuildLongRowsTests(unittest.TestCase):
         self.assertEqual(by_name[("standard_fbn_32", "joint_entropy")]["status"], "ok")
         extra = by_name[("standard_fbn_32", "extra")]
         self.assertEqual(extra["ibsi_code"], "ZZ99")
+        self.assertEqual(extra["pictologics_ibsi_code"], "ZZ99")
+        self.assertEqual(
+            extra["pictologics_feature_name"], "standard_fbn_32__extra_ZZ99"
+        )
+        self.assertEqual(extra["preprocessing_sequence"], "")
         self.assertEqual(extra["feature_family"], "unknown")
         plain = by_name[("standard_fbn_32", "plainname")]
         self.assertEqual(plain["ibsi_code"], "")
+        self.assertEqual(plain["pictologics_ibsi_code"], "")
         absent = by_name[("standard_two", "other")]
         self.assertEqual(absent["status"], "error")
         self.assertIsNone(absent["value"])
@@ -1366,11 +1417,36 @@ class SmallFunctionTests(unittest.TestCase):
     def test_fallback_feature_identity(self):
         self.assertEqual(
             worker._fallback_feature_identity("joint_entropy_TU9B"),
-            ("joint_entropy", "TU9B"),
+            ("joint_entropy", "TU9B", "TU9B"),
         )
-        self.assertEqual(worker._fallback_feature_identity("x_ABC"), ("x", "ABC"))
-        self.assertEqual(worker._fallback_feature_identity("plain"), ("plain", ""))
-        self.assertEqual(worker._fallback_feature_identity("a_bc"), ("a_bc", ""))
+        self.assertEqual(
+            worker._fallback_feature_identity(
+                "volume_at_intensity_fraction_0.10_BC2M_10"
+            ),
+            ("volume_at_intensity_fraction_0.10", "BC2M", "BC2M_10"),
+        )
+        self.assertEqual(
+            worker._fallback_feature_identity("x_ABC"), ("x", "ABC", "ABC")
+        )
+        self.assertEqual(
+            worker._fallback_feature_identity("plain"), ("plain", "", "")
+        )
+        self.assertEqual(
+            worker._fallback_feature_identity("a_bc"), ("a_bc", "", "")
+        )
+
+    def test_pictologics_identity_helpers_fall_back_cleanly(self):
+        self.assertEqual(
+            worker._pictologics_ibsi_code("custom_feature", "custom_feature", ""),
+            "",
+        )
+        self.assertEqual(
+            worker._pictologics_ibsi_code("name_", "name", "AB12"), "AB12"
+        )
+        self.assertEqual(
+            worker._pictologics_feature_name("config", "mean_Q4LE"),
+            "config__mean_Q4LE",
+        )
 
     def test_row_status(self):
         self.assertEqual(worker._row_status("completed", present=True, value=1.0), "ok")

@@ -12,7 +12,9 @@ import json
 import logging
 import math
 import os
+import platform
 import shutil
+import sys
 import tempfile
 import time
 import uuid
@@ -229,6 +231,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._cliNode = None
         self._cliObserverTag = None
         self._finishingJob = False
+        self._dependencyOperationInProgress = False
+        self._cliProgressIndeterminate = False
         self._lastPayload: dict[str, Any] | None = None
 
     def setup(self):
@@ -708,7 +712,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
     def _updateRunState(self):
         if not hasattr(self, "ui"):
             return
-        busy = self._nodeIsBusy(self._cliNode)
+        cliBusy = self._nodeIsBusy(self._cliNode)
+        busy = cliBusy or self._dependencyOperationInProgress
         error = self._validationError()
         for control in (
             self.ui.inputVolumeSelector,
@@ -726,7 +731,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         ):
             control.setEnabled(not busy)
         self.ui.runButton.setEnabled(not busy and error is None)
-        self.ui.cancelButton.setEnabled(busy)
+        self.ui.cancelButton.setEnabled(cliBusy)
         self.ui.updatePackageButton.setEnabled(not busy)
         tableNode = self.ui.outputTableSelector.currentNode()
         self.ui.exportButton.setEnabled(
@@ -870,6 +875,16 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
 
     def onUpdatePackage(self):
+        if self._dependencyOperationInProgress:
+            self.ui.statusLabel.setText(
+                "A Pictologics dependency operation is already in progress."
+            )
+            return
+        if self._nodeIsBusy(self._cliNode):
+            self.ui.statusLabel.setText("Pictologics is already running.")
+            return
+        self._dependencyOperationInProgress = True
+        self._updateRunState()
         try:
             self.ui.statusLabel.setText(
                 "Updating the isolated Pictologics environment…"
@@ -889,13 +904,28 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
             self.ui.statusLabel.setText("Package update failed.")
         finally:
+            self._dependencyOperationInProgress = False
             self._updateRunState()
 
     def onRun(self):
+        if self._dependencyOperationInProgress:
+            self.ui.statusLabel.setText(
+                "A Pictologics dependency operation is already in progress."
+            )
+            return
+        if self._nodeIsBusy(self._cliNode):
+            self.ui.statusLabel.setText("Pictologics is already running.")
+            return
         error = self._validationError()
         if error:
             slicer.util.errorDisplay(error, windowTitle="Pictologics")
             return
+        # pip_install and the dependency probes process Qt events while they run.
+        # Mark the entire launch path busy before the first processEvents() call so a
+        # queued Run/Update click cannot start a second 500+ MB installation.
+        self._dependencyOperationInProgress = True
+        self._restoreCliProgress(0)
+        self._updateRunState()
         try:
             self.updateParameterNodeFromGUI()
             self.ui.statusLabel.setText(
@@ -944,7 +974,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self._cliObserverTag = self._cliNode.AddObserver(
                 vtk.vtkCommand.ModifiedEvent, self.onCliModified
             )
-            self.ui.progressBar.setValue(0)
+            self._beginCliProgress(len(self._activeJob["manifest"]["rois"]))
             self.ui.statusLabel.setText("Pictologics is running in the background…")
             self._updateRunState()
             # Handle a setup failure that completed between cli.run() and observer
@@ -965,6 +995,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
             self.ui.statusLabel.setText("The run did not start.")
         finally:
+            self._dependencyOperationInProgress = False
             self._updateRunState()
 
     def onCancel(self):
@@ -973,16 +1004,36 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.statusLabel.setText("Cancelling Pictologics…")
             self.ui.cancelButton.setEnabled(False)
 
+    def _beginCliProgress(self, roiCount: int):
+        # Pictologics 0.5.0 reports only completed ROI boundaries. A single ROI has
+        # no truthful intermediate percentage, so show Qt's animated busy indicator.
+        self._cliProgressIndeterminate = roiCount <= 1
+        if self._cliProgressIndeterminate:
+            self.ui.progressBar.setTextVisible(False)
+            self.ui.progressBar.setRange(0, 0)
+        else:
+            self._restoreCliProgress(0)
+
+    def _restoreCliProgress(self, value: int):
+        self.ui.progressBar.setRange(0, 100)
+        self.ui.progressBar.setTextVisible(True)
+        self.ui.progressBar.setValue(max(0, min(100, int(value))))
+        self._cliProgressIndeterminate = False
+
+    @staticmethod
+    def _cliProgressPercent(cliNode) -> int:
+        # Slicer parses the worker's fractional <filter-progress> tag and exposes
+        # GetProgress() as an integer percentage in [0, 100].
+        return max(0, min(100, int(round(float(cliNode.GetProgress())))))
+
     def onCliModified(self, cliNode, event=None):
         if cliNode is not self._cliNode or self._finishingJob:
             return
-        try:
-            # cliNode.GetProgress() returns the worker's <filter-progress> value as a
-            # fraction in [0, 1]; the QProgressBar range is 0-100.
-            progress = int(round(float(cliNode.GetProgress()) * 100.0))
-            self.ui.progressBar.setValue(max(0, min(100, progress)))
-        except (TypeError, ValueError):
-            pass
+        if not self._cliProgressIndeterminate:
+            try:
+                self.ui.progressBar.setValue(self._cliProgressPercent(cliNode))
+            except (TypeError, ValueError, OverflowError):
+                pass
 
         if cliNode.IsBusy():
             return
@@ -998,6 +1049,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             return
 
         self._finishingJob = True
+        # Stop a single-ROI busy animation on every terminal path. Success sets 100
+        # only after the atomic result has been validated and committed.
+        self._restoreCliProgress(0)
         try:
             if self._activeJob and self._activeJob.get("discard_results"):
                 self.ui.statusLabel.setText(
@@ -1083,7 +1137,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._lastPayload = payload
         self.ui.outputTableSelector.setCurrentNode(tableNode)
         self.updateParameterNodeFromGUI()
-        self.ui.progressBar.setValue(100)
+        self._restoreCliProgress(100)
         errorCount = len(payload.get("errors", []))
         nonOkCount = len(payload["rows"]) - okCount
         if errorCount or nonOkCount:
@@ -1157,6 +1211,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 except RuntimeError:
                     pass
         finally:
+            if hasattr(self, "ui"):
+                self._restoreCliProgress(0)
             self._finishingJob = False
 
     def onExport(self):
@@ -1235,18 +1291,53 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         return parse_pictologics_requirement(self.requirementsPath())
 
     @staticmethod
-    def cacheRoot() -> Path:
-        return Path(str(slicer.app.cachePath)) / "SlicerPictologics"
+    def dependencyRoot() -> Path:
+        """Return durable, runtime-scoped storage for private Python packages.
+
+        ``slicer.app.cachePath`` is managed by Slicer's size-limited I/O cache and may
+        be pruned at any time.  QStandardPaths' local application-data location is
+        persistent and non-roaming, which is appropriate for the large private wheel
+        environment.  The compatibility suffix prevents reuse across incompatible
+        Slicer Python or CPU runtimes.
+        """
+
+        applicationData = str(
+            qt.QStandardPaths.writableLocation(
+                qt.QStandardPaths.AppLocalDataLocation
+            )
+        ).strip()
+        if not applicationData:
+            settingsPath = str(slicer.app.slicerUserSettingsFilePath).strip()
+            if not settingsPath:
+                raise RuntimeError(
+                    "Slicer did not provide a persistent per-user data location."
+                )
+            applicationData = str(Path(settingsPath).parent / "application-data")
+
+        components = (
+            f"slicer-{int(slicer.app.majorVersion)}.{int(slicer.app.minorVersion)}",
+            sys.implementation.cache_tag
+            or f"python-{sys.version_info.major}.{sys.version_info.minor}",
+            platform.machine() or "unknown-architecture",
+        )
+        runtimeTag = "-".join(
+            "".join(
+                character if character.isalnum() or character in "._-" else "_"
+                for character in component
+            )
+            for component in components
+        )
+        return Path(applicationData) / "SlicerPictologics" / runtimeTag
 
     @classmethod
     def jobsRoot(cls) -> Path:
         # Job cleanup must remain available even if the independent dependency
         # environment pointer is damaged.
-        return cls.cacheRoot() / "jobs"
+        return cls.dependencyRoot() / "jobs"
 
     @classmethod
     def privatePaths(cls) -> dict[str, Path]:
-        return dependency_paths(cls.cacheRoot())
+        return dependency_paths(cls.dependencyRoot())
 
     def inspectDependencies(self):
         paths = self.privatePaths()
@@ -1268,9 +1359,9 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             sourceDescription = f"Development source: {developmentSource}"
         else:
             sourceDescription = "Source: Python package index (network access required)"
-        action = "update" if forceUpgrade or before.installed else "install"
+        action = "updated" if forceUpgrade or before.installed else "installed"
         message = (
-            f"Pictologics must be {action}d in an extension-private Python folder:\n\n"
+            f"Pictologics must be {action} in an extension-private Python folder:\n\n"
             f"{paths['environments_root']}\n\nRequirement: {requirement}\n"
             f"{sourceDescription}\n\n"
             "This does not modify Slicer's shared Python packages. Continue?"
@@ -1636,7 +1727,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
 
     @classmethod
     def cleanupJob(cls, job: dict[str, Any]):
-        """Remove only a job directory owned by this extension cache."""
+        """Remove only a job directory owned by this extension's private data."""
 
         workDir = Path(job.get("work_dir", "")).resolve(strict=False)
         jobsRoot = cls.jobsRoot().resolve(strict=False)
@@ -1917,8 +2008,11 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         "feature_key",
         "feature_name",
         "ibsi_code",
+        "pictologics_ibsi_code",
+        "pictologics_feature_name",
         "family",
         "family_group",
+        "preprocessing_sequence",
     )
 
     @classmethod

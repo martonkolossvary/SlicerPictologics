@@ -78,7 +78,11 @@ LONG_ROW_COLUMNS = (
     "configuration",
     "feature_family",
     "feature_name",
+    "feature_key",
     "ibsi_code",
+    "pictologics_ibsi_code",
+    "pictologics_feature_name",
+    "preprocessing_sequence",
     "value",
     "status",
     "pictologics_version",
@@ -93,6 +97,28 @@ _EXACT_PICTOLOGICS_REQUIREMENT = re.compile(
     r"^pictologics==(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$",
     re.IGNORECASE,
 )
+_PICTOLOGICS_FEATURE_CODE = re.compile(
+    r"_(?P<ibsi_code>[A-Z0-9]{3,4})(?P<variant>_\d+)?$"
+)
+
+
+def _pictologics_ibsi_code(
+    feature_key: str, feature_name: str, ibsi_code: str
+) -> str:
+    """Return Pictologics' full, potentially disambiguated feature identifier."""
+
+    prefix = f"{feature_name}_"
+    if feature_name and feature_key.startswith(prefix):
+        candidate = feature_key[len(prefix) :]
+        if candidate:
+            return candidate
+    return ibsi_code
+
+
+def _pictologics_feature_name(configuration: str, feature_key: str) -> str:
+    """Return the exact column name produced by Pictologics' wide formatter."""
+
+    return f"{configuration}__{feature_key}"
 
 
 class PictologicsCLIError(RuntimeError):
@@ -840,6 +866,20 @@ def _catalog_to_records(catalog: Any) -> list[dict[str, Any]]:
             raise WorkerSetupError(
                 f"feature catalog row {index} lacks string 'config' or 'feature_key'"
             )
+        configuration = copied["config"]
+        feature_key = copied["feature_key"]
+        feature_name_value = copied.get("feature_name", feature_key)
+        feature_name = (
+            feature_name_value if isinstance(feature_name_value, str) else feature_key
+        )
+        ibsi_code_value = copied.get("ibsi_code", "")
+        ibsi_code = ibsi_code_value if isinstance(ibsi_code_value, str) else ""
+        copied["pictologics_ibsi_code"] = _pictologics_ibsi_code(
+            feature_key, feature_name, ibsi_code
+        )
+        copied["pictologics_feature_name"] = _pictologics_feature_name(
+            configuration, feature_key
+        )
         records.append(copied)
     return records
 
@@ -1047,13 +1087,18 @@ def _feature_value(value: Any) -> float | None:
     return numeric if math.isfinite(numeric) else None
 
 
-def _fallback_feature_identity(feature_key: str) -> tuple[str, str]:
+def _fallback_feature_identity(feature_key: str) -> tuple[str, str, str]:
     """Conservative fallback used only if a result is absent from the catalog."""
 
-    parts = feature_key.rsplit("_", 1)
-    if len(parts) == 2 and 3 <= len(parts[1]) <= 4 and parts[1].isalnum():
-        return parts[0], parts[1]
-    return feature_key, ""
+    match = _PICTOLOGICS_FEATURE_CODE.search(feature_key)
+    if match is None:
+        return feature_key, "", ""
+    ibsi_code = match.group("ibsi_code")
+    return (
+        feature_key[: match.start()],
+        ibsi_code,
+        ibsi_code + (match.group("variant") or ""),
+    )
 
 
 def _row_status(config_status: str, *, present: bool, value: float | None) -> str:
@@ -1086,6 +1131,8 @@ def build_long_rows(
 
         for metadata in bundle.catalog_by_config[config_name]:
             feature_key = metadata["feature_key"]
+            feature_name = str(metadata.get("feature_name", feature_key))
+            ibsi_code = str(metadata.get("ibsi_code", ""))
             known_keys.add(feature_key)
             present = feature_key in values
             value = _feature_value(values.get(feature_key)) if present else None
@@ -1099,8 +1146,26 @@ def build_long_rows(
                 "roi_name": roi.roi_name,
                 "configuration": config_name,
                 "feature_family": str(metadata.get("family", "unknown")),
-                "feature_name": str(metadata.get("feature_name", feature_key)),
-                "ibsi_code": str(metadata.get("ibsi_code", "")),
+                "feature_name": feature_name,
+                "feature_key": feature_key,
+                "ibsi_code": ibsi_code,
+                "pictologics_ibsi_code": str(
+                    metadata.get(
+                        "pictologics_ibsi_code",
+                        _pictologics_ibsi_code(
+                            feature_key, feature_name, ibsi_code
+                        ),
+                    )
+                ),
+                "pictologics_feature_name": str(
+                    metadata.get(
+                        "pictologics_feature_name",
+                        _pictologics_feature_name(config_name, feature_key),
+                    )
+                ),
+                "preprocessing_sequence": str(
+                    metadata.get("preprocessing_sequence") or ""
+                ),
                 "value": value,
                 "status": _row_status(config_status, present=present, value=value),
                 "pictologics_version": pictologics_version,
@@ -1113,7 +1178,10 @@ def build_long_rows(
         for feature_key, raw_value in values.items():
             if feature_key in known_keys:
                 continue
-            feature_name, ibsi_code = _fallback_feature_identity(str(feature_key))
+            feature_key = str(feature_key)
+            feature_name, ibsi_code, pictologics_ibsi_code = (
+                _fallback_feature_identity(feature_key)
+            )
             value = _feature_value(raw_value)
             rows.append(
                 {
@@ -1127,7 +1195,13 @@ def build_long_rows(
                     "configuration": config_name,
                     "feature_family": "unknown",
                     "feature_name": feature_name,
+                    "feature_key": feature_key,
                     "ibsi_code": ibsi_code,
+                    "pictologics_ibsi_code": pictologics_ibsi_code,
+                    "pictologics_feature_name": _pictologics_feature_name(
+                        config_name, feature_key
+                    ),
+                    "preprocessing_sequence": "",
                     "value": value,
                     "status": _row_status(config_status, present=True, value=value),
                     "pictologics_version": pictologics_version,

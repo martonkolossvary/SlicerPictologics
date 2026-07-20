@@ -34,13 +34,25 @@ def result_row(**changes: object) -> dict[str, object]:
         "configuration": "standard_fbn_32",
         "feature_family": "intensity",
         "feature_name": "mean",
+        "feature_key": "mean_Q4LE",
         "ibsi_code": "Q4LE",
+        "pictologics_ibsi_code": "Q4LE",
+        "pictologics_feature_name": "standard_fbn_32__mean_Q4LE",
+        "preprocessing_sequence": "1:resample > 2:discretise",
         "value": 42.5,
         "status": "ok",
         "pictologics_version": "0.5.0",
         "extension_version": "0.1.0",
     }
     row.update(changes)
+    if "feature_key" not in changes and "feature_name" in changes:
+        row["feature_key"] = (
+            f"{row['feature_name']}_{row['pictologics_ibsi_code']}"
+        )
+    if "pictologics_feature_name" not in changes:
+        row["pictologics_feature_name"] = (
+            f"{row['configuration']}__{row['feature_key']}"
+        )
     return row
 
 
@@ -59,7 +71,11 @@ class ResultValidationTests(unittest.TestCase):
                 "configuration",
                 "feature_family",
                 "feature_name",
+                "feature_key",
                 "ibsi_code",
+                "pictologics_ibsi_code",
+                "pictologics_feature_name",
+                "preprocessing_sequence",
                 "value",
                 "status",
                 "pictologics_version",
@@ -173,8 +189,8 @@ class ResultExportTests(unittest.TestCase):
         wide = rows_to_wide(rows)
 
         self.assertEqual(len(wide), 1)
-        self.assertEqual(wide[0]["standard_a__mean"], 1.0)
-        self.assertEqual(wide[0]["standard_b__mean"], 2.0)
+        self.assertEqual(wide[0]["standard_a__mean_Q4LE"], 1.0)
+        self.assertEqual(wide[0]["standard_b__mean_Q4LE"], 2.0)
         self.assertEqual(wide[0]["status"], "ok")
 
     def test_payload_write_and_load_round_trip(self) -> None:

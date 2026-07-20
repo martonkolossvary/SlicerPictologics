@@ -71,7 +71,7 @@ def oblique_anisotropic_affine() -> np.ndarray:
     return affine
 
 
-def worker_values(worker, pictologics_module, root: Path) -> dict[tuple[str, str], float]:
+def worker_values(worker, pictologics_module, root: Path) -> dict[str, float]:
     image_path = root / "image.nii.gz"
     mask_path = root / "mask.nii.gz"
     version = str(pictologics_module.__version__)
@@ -111,39 +111,27 @@ def worker_values(worker, pictologics_module, root: Path) -> dict[tuple[str, str
     if payload["errors"]:
         raise RuntimeError(f"Worker reported ROI errors: {payload['errors']}")
 
-    values: dict[tuple[str, str], float] = {}
+    values: dict[str, float] = {}
     for row in payload["rows"]:
         if row["configuration"] != CONFIG or row["status"] != "ok":
             continue
-        identity = (row["feature_name"], row["ibsi_code"])
+        identity = row["feature_key"]
         if identity in values:
             raise RuntimeError(f"Ambiguous worker feature identity: {identity}")
         values[identity] = float(row["value"])
     return values
 
 
-def direct_values(pictologics_module, root: Path) -> dict[tuple[str, str], float]:
+def direct_values(pictologics_module, root: Path) -> dict[str, float]:
     image_path = root / "image.nii.gz"
     mask_path = root / "mask.nii.gz"
     pipeline = pictologics_module.RadiomicsPipeline()
     results = pipeline.run(str(image_path), str(mask_path), config_names=[CONFIG])
-    catalog = pipeline.describe_features()
-    key_to_identity: dict[str, tuple[str, str]] = {}
-    for record in catalog.to_dict(orient="records"):
-        if record["config"] == CONFIG:
-            key_to_identity[str(record["feature_key"])] = (
-                str(record["feature_name"]),
-                str(record["ibsi_code"]),
-            )
-
-    values: dict[tuple[str, str], float] = {}
+    values: dict[str, float] = {}
     for feature_key, value in results[CONFIG].items():
-        identity = key_to_identity.get(str(feature_key))
-        if identity is None:
-            continue
         numeric = float(value)
         if math.isfinite(numeric):
-            values[identity] = numeric
+            values[str(feature_key)] = numeric
     return values
 
 
@@ -196,8 +184,8 @@ def main() -> int:
 
     if mismatches:
         preview = "\n".join(
-            f"  {name} ({code}): worker={w!r} direct={d!r}"
-            for (name, code), w, d in mismatches[:10]
+            f"  {feature_key}: worker={w!r} direct={d!r}"
+            for feature_key, w, d in mismatches[:10]
         )
         raise RuntimeError(
             f"{len(mismatches)} feature value(s) diverged between the worker and "

@@ -40,13 +40,25 @@ def result_row(**changes: object) -> dict[str, object]:
         "configuration": "standard_fbn_32",
         "feature_family": "intensity",
         "feature_name": "mean",
+        "feature_key": "mean_Q4LE",
         "ibsi_code": "Q4LE",
+        "pictologics_ibsi_code": "Q4LE",
+        "pictologics_feature_name": "standard_fbn_32__mean_Q4LE",
+        "preprocessing_sequence": "1:resample > 2:discretise",
         "value": 42.5,
         "status": "ok",
         "pictologics_version": "0.5.0",
         "extension_version": "0.1.0",
     }
     row.update(changes)
+    if "feature_key" not in changes and "feature_name" in changes:
+        row["feature_key"] = (
+            f"{row['feature_name']}_{row['pictologics_ibsi_code']}"
+        )
+    if "pictologics_feature_name" not in changes:
+        row["pictologics_feature_name"] = (
+            f"{row['configuration']}__{row['feature_key']}"
+        )
     return row
 
 
@@ -106,6 +118,8 @@ class NormaliseResultRowTests(unittest.TestCase):
             "roi_id": "roi_id must not be empty",
             "configuration": "configuration must not be empty",
             "feature_name": "feature_name must not be empty",
+            "feature_key": "feature_key must not be empty",
+            "pictologics_feature_name": "pictologics_feature_name must not be empty",
             "status": "status must not be empty",
         }
         for field, message in cases.items():
@@ -305,8 +319,8 @@ class RowsToWideTests(unittest.TestCase):
         ]
         wide = rows_to_wide(rows)
         self.assertEqual(len(wide), 1)
-        self.assertEqual(wide[0]["std_a__mean"], 1.0)
-        self.assertEqual(wide[0]["std_b__mean"], 2.0)
+        self.assertEqual(wide[0]["std_a__mean_Q4LE"], 1.0)
+        self.assertEqual(wide[0]["std_b__mean_Q4LE"], 2.0)
         self.assertEqual(wide[0]["status"], "ok")
 
     def test_multiple_statuses_are_joined(self) -> None:
@@ -362,8 +376,8 @@ class ExportCsvTests(unittest.TestCase):
             with destination.open("r", encoding="utf-8", newline="") as stream:
                 exported = list(csv.DictReader(stream))
         self.assertEqual(len(exported), 1)
-        self.assertEqual(exported[0]["std_a__mean"], "1.0")
-        self.assertEqual(exported[0]["std_b__glcm"], "2.0")
+        self.assertEqual(exported[0]["std_a__mean_Q4LE"], "1.0")
+        self.assertEqual(exported[0]["std_b__glcm_Q4LE"], "2.0")
 
     def test_unlink_oserror_in_finally_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -390,7 +404,7 @@ class ExportJsonTests(unittest.TestCase):
             destination = export_rows_json(rows, Path(directory, "wide.json"), wide=True)
             exported = json.loads(destination.read_text(encoding="utf-8"))
         self.assertEqual(len(exported), 1)
-        self.assertEqual(exported[0]["std_a__mean"], 1.0)
+        self.assertEqual(exported[0]["std_a__mean_Q4LE"], 1.0)
 
     def test_unlink_oserror_in_finally_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -43,6 +43,7 @@ class FakePipeline:
         "feature_name": "joint_entropy",
         "ibsi_code": "TU9B",
         "family": "glcm",
+        "preprocessing_sequence": "1:resample > 2:discretise",
     }
 
     def __init__(self) -> None:
@@ -352,7 +353,16 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(tuple(first), worker.LONG_ROW_COLUMNS)
         self.assertEqual(first["feature_family"], "glcm")
         self.assertEqual(first["feature_name"], "joint_entropy")
+        self.assertEqual(first["feature_key"], "joint_entropy_TU9B")
         self.assertEqual(first["ibsi_code"], "TU9B")
+        self.assertEqual(first["pictologics_ibsi_code"], "TU9B")
+        self.assertEqual(
+            first["pictologics_feature_name"],
+            "standard_fbn_32__joint_entropy_TU9B",
+        )
+        self.assertEqual(
+            first["preprocessing_sequence"], "1:resample > 2:discretise"
+        )
         self.assertEqual(first["value"], 4.25)
         self.assertEqual(first["status"], "ok")
         self.assertIsNone(second["value"])

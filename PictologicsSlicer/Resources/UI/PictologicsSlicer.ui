@@ -258,7 +258,7 @@
       <item row="2" column="1">
        <widget class="QCheckBox" name="exportWideCheckBox">
         <property name="text"><string>Export wide layout (one row per ROI)</string></property>
-        <property name="toolTip"><string>Pivot to one row per ROI with configuration__feature columns instead of the default long layout.</string></property>
+        <property name="toolTip"><string>Pivot to one row per ROI using Pictologics' exact configuration__feature_key column names instead of the default long layout.</string></property>
        </widget>
       </item>
       <item row="3" column="1">

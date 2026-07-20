@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import platform
 import shutil
 import sys
 import tempfile
@@ -30,7 +31,11 @@ from PictologicsLib.results import (
     validate_result_payload,
 )
 
-from PictologicsSlicer import EXTENSION_VERSION, PictologicsSlicerLogic
+from PictologicsSlicer import (
+    EXTENSION_VERSION,
+    PictologicsSlicerLogic,
+    PictologicsSlicerWidget,
+)
 
 ARRAY_SHAPE_KJI = (14, 16, 18)
 SEGMENT_NAME = "Central cuboid"
@@ -42,15 +47,15 @@ CLI_CANCELLATION_GRACE_SECONDS = 60
 
 
 class IsolatedPictologicsSlicerLogic(PictologicsSlicerLogic):
-    """Redirect mutable extension cache state into a test-owned directory."""
+    """Redirect persistent and cache state into a test-owned directory."""
 
     isolated_cache_root: Path | None = None
 
     @classmethod
-    def cacheRoot(cls) -> Path:
+    def dependencyRoot(cls) -> Path:
         if cls.isolated_cache_root is None:
             raise RuntimeError("The integration-test cache root has not been configured.")
-        return cls.isolated_cache_root
+        return cls.isolated_cache_root / "persistent-data"
 
 
 @dataclass(frozen=True)
@@ -405,6 +410,57 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             return
         slicer.mrmlScene.Clear()
         shutil.rmtree(self.temporary_directory, ignore_errors=True)
+
+    def test_dependency_root_is_persistent_and_runtime_scoped(self) -> None:
+        dependency_root = PictologicsSlicerLogic.dependencyRoot().resolve()
+        application_data = Path(
+            str(
+                qt.QStandardPaths.writableLocation(
+                    qt.QStandardPaths.AppLocalDataLocation
+                )
+            )
+        ).resolve()
+        managed_cache = Path(str(slicer.app.cachePath)).resolve()
+
+        self.assertTrue(dependency_root.is_relative_to(application_data))
+        self.assertFalse(dependency_root.is_relative_to(managed_cache))
+        self.assertIn("SlicerPictologics", dependency_root.parts)
+        self.assertIn(sys.implementation.cache_tag, dependency_root.name)
+        self.assertIn(platform.machine(), dependency_root.name)
+
+    def test_cli_progress_is_already_a_percentage(self) -> None:
+        class HalfCompleteNode:
+            @staticmethod
+            def GetProgress() -> int:
+                return 50
+
+        self.assertEqual(
+            PictologicsSlicerWidget._cliProgressPercent(HalfCompleteNode()), 50
+        )
+
+        class ProgressUI:
+            def __init__(self) -> None:
+                self.progressBar = qt.QProgressBar()
+
+        class ProgressHarness:
+            _beginCliProgress = PictologicsSlicerWidget._beginCliProgress
+            _restoreCliProgress = PictologicsSlicerWidget._restoreCliProgress
+
+            def __init__(self) -> None:
+                self.ui = ProgressUI()
+                self._cliProgressIndeterminate = False
+
+        harness = ProgressHarness()
+        harness._beginCliProgress(1)
+        self.assertEqual(harness.ui.progressBar.minimum, 0)
+        self.assertEqual(harness.ui.progressBar.maximum, 0)
+        self.assertTrue(harness._cliProgressIndeterminate)
+
+        harness._restoreCliProgress(100)
+        self.assertEqual(harness.ui.progressBar.minimum, 0)
+        self.assertEqual(harness.ui.progressBar.maximum, 100)
+        self.assertEqual(harness.ui.progressBar.value, 100)
+        self.assertFalse(harness._cliProgressIndeterminate)
 
     def test_oblique_volume_and_shared_linear_transform(self) -> None:
         fixture = self.fixture
@@ -886,13 +942,32 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                 {row["image_name"] for row in rows},
                 {str(fixture.volume_node.GetName())},
             )
+            self.assertEqual(
+                {
+                    row["pictologics_ibsi_code"]
+                    for row in rows
+                    if row["ibsi_code"] == "BC2M"
+                },
+                {"BC2M_10", "BC2M_90"},
+            )
+            self.assertTrue(
+                all(
+                    row["pictologics_feature_name"]
+                    == f"{row['configuration']}__{row['feature_key']}"
+                    for row in rows
+                )
+            )
 
             catalog_identities = {
                 (
                     record["config"],
                     str(record.get("family", "unknown")),
                     str(record.get("feature_name", record["feature_key"])),
+                    str(record["feature_key"]),
                     str(record.get("ibsi_code", "")),
+                    str(record.get("pictologics_ibsi_code", "")),
+                    str(record.get("pictologics_feature_name", "")),
+                    str(record.get("preprocessing_sequence") or ""),
                 )
                 for record in feature_catalog
             }
@@ -916,7 +991,11 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                             row["configuration"],
                             row["feature_family"],
                             row["feature_name"],
+                            row["feature_key"],
                             row["ibsi_code"],
+                            row["pictologics_ibsi_code"],
+                            row["pictologics_feature_name"],
+                            row["preprocessing_sequence"],
                         )
                         for row in roi_rows
                     }
