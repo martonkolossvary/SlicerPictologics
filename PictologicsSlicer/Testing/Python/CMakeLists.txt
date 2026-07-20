@@ -14,3 +14,10 @@ slicer_add_python_unittest(
     --additional-module-path
       ${CMAKE_BINARY_DIR}/${Slicer_QTSCRIPTEDMODULES_LIB_DIR}
   )
+
+# The opt-in real CLI path has a 10-minute internal deadline plus bounded
+# cancellation and worker-release cleanup. Keep CTest above that bound.
+set_tests_properties(
+  py_PictologicsSlicerIntegrationTest
+  PROPERTIES TIMEOUT 900
+  )

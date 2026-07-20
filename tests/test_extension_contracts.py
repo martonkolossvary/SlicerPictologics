@@ -16,14 +16,13 @@ from PictologicsLib.jobs import build_job_manifest  # noqa: E402
 GUI_SOURCE = ROOT / "PictologicsSlicer/PictologicsSlicer.py"
 GUI_CMAKE = ROOT / "PictologicsSlicer/CMakeLists.txt"
 GUI_TEST_CMAKE = ROOT / "PictologicsSlicer/Testing/Python/CMakeLists.txt"
+GUI_INTEGRATION_TEST = ROOT / "PictologicsSlicer/Testing/Python/PictologicsSlicerIntegrationTest.py"
 UI_PATH = ROOT / "PictologicsSlicer/Resources/UI/PictologicsSlicer.ui"
 WORKER_SOURCE = ROOT / "PictologicsCLI/PictologicsCLI.py"
 
 
 def load_worker_module():
-    spec = importlib.util.spec_from_file_location(
-        "pictologics_cli_contract_test", WORKER_SOURCE
-    )
+    spec = importlib.util.spec_from_file_location("pictologics_cli_contract_test", WORKER_SOURCE)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -33,9 +32,7 @@ def load_worker_module():
 
 def load_bump_module():
     path = ROOT / "scripts/bump_pictologics_requirement.py"
-    spec = importlib.util.spec_from_file_location(
-        "pictologics_requirement_bump_test", path
-    )
+    spec = importlib.util.spec_from_file_location("pictologics_requirement_bump_test", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -49,20 +46,14 @@ class ExtensionScaffoldTests(unittest.TestCase):
         imported_roots: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                imported_roots.update(
-                    alias.name.split(".", 1)[0] for alias in node.names
-                )
+                imported_roots.update(alias.name.split(".", 1)[0] for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported_roots.add(node.module.split(".", 1)[0])
         self.assertNotIn("pictologics", imported_roots)
 
     def test_ui_exposes_the_functional_mvp_controls(self) -> None:
         root = ET.parse(UI_PATH).getroot()
-        names = {
-            element.attrib["name"]
-            for element in root.iter()
-            if "name" in element.attrib
-        }
+        names = {element.attrib["name"] for element in root.iter() if "name" in element.attrib}
         expected = {
             "inputVolumeSelector",
             "segmentationSelector",
@@ -98,6 +89,20 @@ class ExtensionScaffoldTests(unittest.TestCase):
         cmake = GUI_TEST_CMAKE.read_text(encoding="utf-8")
         self.assertIn("PictologicsSlicerIntegrationTest.py", cmake)
         self.assertIn("--additional-module-path", cmake)
+        self.assertRegex(
+            cmake,
+            r"set_tests_properties\(\s*py_PictologicsSlicerIntegrationTest\s+"
+            r"PROPERTIES\s+TIMEOUT\s+900\s*\)",
+        )
+        self.assertNotIn("SLICERPICTOLOGICS_RUN_REAL_CLI_TEST", cmake)
+
+        integration_test = GUI_INTEGRATION_TEST.read_text(encoding="utf-8")
+        self.assertIn("SLICERPICTOLOGICS_RUN_REAL_CLI_TEST", integration_test)
+        self.assertIn("SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH", integration_test)
+        self.assertIn("@unittest.skipUnless", integration_test)
+        self.assertIn('os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1"', integration_test)
+        self.assertNotIn("ensureDependencies(", integration_test)
+        self.assertNotIn("pip_install(", integration_test)
 
 
 class CrossProcessContractTests(unittest.TestCase):

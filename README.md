@@ -179,8 +179,9 @@ new job; a malformed marker is retained conservatively for at most seven days.
   install, API, full-JIT, and restart-reuse gates in Slicer 5.12.2 (CPython 3.12,
   x86_64 under Rosetta on macOS). `scripts/geometry_parity_check.py` also confirms the
   worker reproduces direct Pictologics values on an oblique, anisotropic NIfTI grid.
-  Full MRML staging-round-trip (`saveNode`/labelmap export) parity, interactive workflow,
-  Slicer Preview, and Windows/Linux qualification remain release gates.
+  The same Slicer version has passed deterministic transformed-MRML staging and the
+  opt-in real asynchronous CLI/result-validation/table-commit gate. Interactive
+  workflow, Slicer Preview, and Windows/Linux qualification remain release gates.
 
 Planning notes (the implementation decision, build plan, and original implementation
 plan) are kept in the local, git-ignored `dev/` folder rather than tracked in the
@@ -206,14 +207,32 @@ python dev/pre_push.py                # ruff, mypy, syntax, tests + coverage
 python -m pytest --cov --cov-report=term-missing   # just the tests
 ```
 
+The in-Slicer integration test always runs its deterministic fixture and MRML-staging
+methods under CTest. Its real CLI/JIT method is skipped by default, so Extension Factory
+testing needs neither network access nor a pre-populated Pictologics cache. The test
+never installs or downloads dependencies. Run that release gate against an existing
+qualified private target with:
+
+```sh
+SLICERPICTOLOGICS_RUN_REAL_CLI_TEST=1 \
+SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH=/absolute/path/to/private-target \
+ctest --test-dir ../SlicerPictologics-build -C Release \
+  -R '^py_PictologicsSlicerIntegrationTest$' --output-on-failure
+```
+
+Omit `SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH` to use the extension's active private
+target. Once the gate is enabled, a missing, ambiguous, or wrong-version target fails
+instead of skipping; only the exact adopted requirement is accepted. Job staging and
+Numba cache writes stay inside a disposable test cache.
+
 The git-ignored `dev/` and `.vscode/` workspace holds this pre-push gate and matching
 VS Code tasks (see `dev/README.md`). `.github/workflows/ci.yml` runs the same
 ruff / mypy / coverage gate on every push and pull request, uploads the coverage report
 to [Codecov](https://codecov.io/gh/martonkolossvary/SlicerPictologics) (`codecov.yml`;
 optional `CODECOV_TOKEN` repo secret, with a tokenless fallback for public repositories),
 then runs the real API / worker-smoke / geometry-parity checks against the adopted
-Pictologics wheel. As noted above, the remaining Slicer Preview, cross-platform,
-interactive-workflow, and MRML staging-round-trip checks are manual release gates.
+Pictologics wheel. The real in-Slicer CLI method is an explicit opt-in release gate;
+Slicer Preview, cross-platform, and interactive-workflow qualification remain manual.
 
 ## License
 
