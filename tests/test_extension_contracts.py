@@ -15,6 +15,7 @@ from PictologicsLib.jobs import build_job_manifest  # noqa: E402
 
 GUI_SOURCE = ROOT / "PictologicsSlicer/PictologicsSlicer.py"
 GUI_CMAKE = ROOT / "PictologicsSlicer/CMakeLists.txt"
+GUI_TEST_CMAKE = ROOT / "PictologicsSlicer/Testing/Python/CMakeLists.txt"
 UI_PATH = ROOT / "PictologicsSlicer/Resources/UI/PictologicsSlicer.ui"
 WORKER_SOURCE = ROOT / "PictologicsCLI/PictologicsCLI.py"
 
@@ -92,6 +93,11 @@ class ExtensionScaffoldTests(unittest.TestCase):
             relative = module.relative_to(ROOT / "PictologicsSlicer").as_posix()
             with self.subTest(module=relative):
                 self.assertIn(relative, scripts)
+
+    def test_slicer_only_integration_fixture_is_registered_with_ctest(self) -> None:
+        cmake = GUI_TEST_CMAKE.read_text(encoding="utf-8")
+        self.assertIn("PictologicsSlicerIntegrationTest.py", cmake)
+        self.assertIn("--additional-module-path", cmake)
 
 
 class CrossProcessContractTests(unittest.TestCase):
