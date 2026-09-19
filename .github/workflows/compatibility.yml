@@ -35,6 +35,11 @@ jobs:
         run: python scripts/bump_pictologics_requirement.py "$VERSION"
       - name: Install tooling
         run: python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml
+      - name: Validate GitHub Actions expressions and shell scripts
+        run: |
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
       - run: python -m compileall -q PictologicsSlicer PictologicsCLI scripts
       - run: python -m ruff check PictologicsSlicer PictologicsCLI/PictologicsCLI.py scripts conftest.py tests
       - run: python -m mypy
@@ -59,7 +64,6 @@ jobs:
         shell: bash
     env:
       PICTOLOGICS_DISABLE_WARMUP: "1"
-      NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
     steps:
       - uses: actions/checkout@v7
         with:
@@ -80,10 +84,12 @@ jobs:
       - name: Verify API, metadata, and configuration round trips
         env:
           PYTHONPATH: ${{ runner.temp }}/pictologics-target
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
         run: python scripts/check_pictologics_api.py
       - name: Full JIT, real extraction, and geometry parity
         env:
           PYTHONPATH: ${{ runner.temp }}/pictologics-target
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
         run: |
           python scripts/smoke_pictologics_worker.py
           python scripts/geometry_parity_check.py
@@ -94,7 +100,6 @@ jobs:
     timeout-minutes: 35
     env:
       SLICERPICTOLOGICS_RUN_REAL_CLI_TEST: "1"
-      SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH: ${{ runner.temp }}/slicer-pictologics-target
       PICTOLOGICS_DISABLE_WARMUP: "1"
     steps:
       - uses: actions/checkout@v7
@@ -120,10 +125,14 @@ jobs:
           mkdir "$RUNNER_TEMP/slicer"
           tar -xzf "$RUNNER_TEMP/slicer.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/slicer"
       - name: Install the adopted wheel using Slicer's Python
+        env:
+          SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH: ${{ runner.temp }}/slicer-pictologics-target
         run: |
           "$RUNNER_TEMP/slicer/bin/PythonSlicer" -m pip install --only-binary=:all: \
             --target "$SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH" -r PictologicsSlicer/requirements-pictologics.txt
       - name: Require real module discovery, transformed MRML, async CLI, and table commit
+        env:
+          SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH: ${{ runner.temp }}/slicer-pictologics-target
         run: |
           xvfb-run -a "$RUNNER_TEMP/slicer/Slicer" --no-splash --no-main-window \
             --disable-settings --ignore-slicerrc \

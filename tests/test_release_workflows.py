@@ -33,6 +33,7 @@ def test_all_candidate_gates_use_the_validated_revision_and_pin():
     qualification = load_workflow("compatibility.yml")
     assert set(qualification["jobs"]) == {"quality", "wheel", "slicer"}
     for job in qualification["jobs"].values():
+        assert all("runner." not in value for value in job.get("env", {}).values())
         checkout = job["steps"][0]
         assert checkout["with"]["ref"] == "${{ inputs.revision }}"
         assert checkout["with"]["persist-credentials"] == "false"
