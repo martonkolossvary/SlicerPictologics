@@ -23,6 +23,8 @@ Review date: 2026-09-19. Extension/result contract remains **0.1.0**.
   passed all five jobs: quality/coverage, released-wheel checks on Windows, macOS
   and Linux, and all six real Slicer integration tests on Linux. The download is
   pinned to Slicer 5.12.4 and verified against its official SHA512 checksum.
+- Repository-only YAML/workflow tests stay in normal-Python CI, not CTest:
+  a clean Slicer does not include PyYAML, and no extra GUI dependency is installed.
 
 ## Release adoption
 

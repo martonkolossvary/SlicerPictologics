@@ -13,6 +13,10 @@ def load_workflow(name):
 
 
 def test_ci_and_adoption_share_qualification():
+    slicer_test_registration = (
+        WORKFLOWS.parents[1] / "PictologicsSlicer/Testing/Python/CMakeLists.txt"
+    ).read_text()
+    assert 'EXCLUDE REGEX "/test_release_workflows[.]py$"' in slicer_test_registration
     ci = load_workflow("ci.yml")
     adoption = load_workflow("adopt-pictologics-release.yml")
     shared = "./.github/workflows/compatibility.yml"
