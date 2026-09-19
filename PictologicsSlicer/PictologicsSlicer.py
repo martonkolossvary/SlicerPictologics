@@ -1005,7 +1005,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.cancelButton.setEnabled(False)
 
     def _beginCliProgress(self, roiCount: int):
-        # Pictologics 0.5.0 reports only completed ROI boundaries. A single ROI has
+        # The current worker reports completed ROI boundaries. A single ROI has
         # no truthful intermediate percentage, so show Qt's animated busy indicator.
         self._cliProgressIndeterminate = roiCount <= 1
         if self._cliProgressIndeterminate:

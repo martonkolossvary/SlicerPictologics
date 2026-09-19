@@ -71,6 +71,9 @@ the separate catalog submission described below.
 
 ### Why dependencies are private
 
+See the [release-readiness review](docs/release-readiness.md) for validation evidence
+and the remaining catalog-distribution and application-acceptance work.
+
 Pictologics is installed under extension-owned, per-user application data and made
 visible only to the background job. It is deliberately kept outside Slicer's managed
 I/O cache, which is size-limited and may be pruned. Each accepted environment has an
