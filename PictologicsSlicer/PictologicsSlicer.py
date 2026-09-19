@@ -1022,8 +1022,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
 
     @staticmethod
     def _cliProgressPercent(cliNode) -> int:
-        # Slicer parses the worker's fractional <filter-progress> tag and exposes
-        # GetProgress() as an integer percentage in [0, 100].
+        # The worker emits fractions, but vtkMRMLCommandLineModuleNode.GetProgress
+        # already returns an integer percentage. qSlicerCLIProgressBar reads the
+        # underlying ProcessInformation fraction directly, so its scaling differs.
         return max(0, min(100, int(round(float(cliNode.GetProgress())))))
 
     def onCliModified(self, cliNode, event=None):

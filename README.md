@@ -28,34 +28,46 @@ clinical diagnosis or treatment decisions.
 
 ## Compatibility and package policy
 
-The baseline is **3D Slicer 5.12+**. The provisional adopted version is
-`pictologics==0.5.0`. [PyPI](https://pypi.org/project/pictologics/) publishes that
-exact, non-yanked release as a `py3-none-any` wheel and source distribution. The
-module's normal install/update action therefore installs the 0.5.0 wheel from PyPI.
-The Slicer compatibility gate must still pass before catalog release; the explicit
-sibling-source override is only for testing unpublished local Pictologics changes.
+The baseline is **3D Slicer 5.12+**. The adopted requirement is recorded in
+[`requirements-pictologics.txt`](PictologicsSlicer/requirements-pictologics.txt).
+**Pictologics 0.5.1** is the baseline for automatic adoption. Normal install/update
+retrieves the adopted binary wheel from [PyPI](https://pypi.org/project/pictologics/);
+the sibling-source override is only for unpublished development changes.
 
-The exact private requirement records the newest release accepted by the extension's
-compatibility process. On install/update, pip installs that adopted release and the
-actual imported version is recorded in result provenance. The extension never imports
-or upgrades Pictologics during Slicer startup. Release automation advances the adopted
-version in
-`PictologicsSlicer/requirements-pictologics.txt`, requires a binary wheel, installs it
-into a private target, runs the API/JIT probe and a real anisotropic NIfTI extraction,
-then opens a pull request; it never merges that pull request. Actual Slicer
-Stable/Preview compatibility results remain a required human gate.
+The exact pin records the newest release accepted by the compatibility process.
+The actual imported version is recorded in result provenance. The extension never
+imports or upgrades Pictologics during Slicer startup.
 
-Every push and pull request also runs ordinary CI (`.github/workflows/ci.yml`): syntax,
-unit and worker tests, catalog-metadata validation, and the real API/smoke/geometry-parity
-checks against the adopted wheel. New upstream releases can propose a bump automatically:
-the Pictologics repository dispatches a `pictologics-release` event to this repository
-(sender workflow `notify-slicer-extension.yml`), which requires a
-`SLICER_EXTENSION_DISPATCH_TOKEN` secret on the Pictologics repo and is otherwise inert.
+Every push, pull request, and candidate release uses the same reusable
+[`compatibility.yml`](.github/workflows/compatibility.yml) gates:
 
-Exact pinning is safe here because the entire dependency graph lives in a private
-target used only by the worker; it cannot constrain or downgrade packages shared by
-Slicer or other extensions. This makes “latest” mean the latest compatibility-qualified
-release adopted by a reviewed wrapper change, not an untested upgrade loop at startup.
+- syntax, Ruff, strict library/worker typing, and unit tests with 100% scoped coverage;
+- released-wheel API, full-JIT extraction, and oblique/anisotropic geometry parity on
+  Linux, Windows, and Intel macOS with Python 3.12;
+- real Slicer 5.12.4 on Linux: module discovery, transformed MRML/NIfTI staging,
+  asynchronous CLI execution, result validation, and table commit; and
+- catalog JSON syntax (not ExtensionsIndex acceptance).
+
+The [adoption workflow](.github/workflows/adopt-pictologics-release.yml) checks PyPI
+every six hours. It can also be run manually (empty version means latest) or receive
+an optional `pictologics-release` repository dispatch. Scheduled discovery needs no
+cross-repository secret or upstream sender. Prereleases, entirely yanked releases,
+sdist-only candidates, invalid version strings, and downgrades are never adopted.
+All gates run against one exact wrapper revision. A separate write-enabled job
+rechecks publication status and automatically publishes only the requirement change
+to the default branch. Failed checks leave the last qualified pin unchanged.
+It never force-pushes: a concurrent wrapper change requires fresh qualification.
+The bot commit does not trigger another CI run; it already passed the shared gates.
+Repository rules must permit the workflow's `GITHUB_TOKEN` to push that pin change.
+
+Exact pinning is safe because dependencies live in a private target used only by the
+worker; they cannot constrain or downgrade packages shared by Slicer or other
+extensions. “Latest” means **latest compatibility-qualified stable release**, not an
+untested upgrade loop at startup. An existing installation still needs an extension
+update (or `git pull` for a source checkout), followed by
+**Install / update adopted release…** when the pin changes. This automation does not
+replace Slicer's extension distribution service: Extensions Manager delivery requires
+the separate catalog submission described below.
 
 ### Why dependencies are private
 
@@ -168,7 +180,7 @@ new job; a malformed marker is retained conservatively for at most seven days.
   selection.
 - Nonlinear parent transforms are rejected. Resample with an explicit interpolation
   choice before running. Linear transforms are hardened into temporary geometry.
-- Cancellation is at the CLI-process/job boundary. The current Pictologics 0.5.0 API
+- Cancellation is at the CLI-process/job boundary. The current Pictologics 0.5.1 API
   has no cooperative progress/cancellation callback, so a running native kernel cannot
   report fine-grained progress. Multi-ROI jobs report completed-ROI percentages;
   single-ROI jobs display an indeterminate busy indicator until the package returns.
@@ -190,17 +202,12 @@ new job; a malformed marker is retained conservatively for at most seven days.
   omits provenance). Wide feature names do match Pictologics exactly. This is
   intentional so tables carry full provenance; it may be reconciled if Pictologics
   adopts a canonical result schema.
-- The source checkout has passed headless module/CLI discovery and the private PyPI
-  install, API, full-JIT, and restart-reuse gates in Slicer 5.12.2 (CPython 3.12,
-  x86_64 under Rosetta on macOS). `scripts/geometry_parity_check.py` also confirms the
-  worker reproduces direct Pictologics values on an oblique, anisotropic NIfTI grid.
-  The same Slicer version has passed deterministic transformed-MRML staging and the
-  opt-in real asynchronous CLI/result-validation/table-commit gate. Interactive
-  workflow, Slicer Preview, and Windows/Linux qualification remain release gates.
-
-Planning notes (the implementation decision, build plan, and original implementation
-plan) are kept in the local, git-ignored `dev/` folder rather than tracked in the
-repository.
+- Pictologics 0.5.1 has passed private PyPI installation, API and full-JIT probes,
+  and all six integration tests in the reinstalled Slicer 5.12.4 (CPython 3.12,
+  x86_64 under Rosetta on macOS). CI additionally requires real Slicer on Linux and
+  released-wheel checks on all three desktop platforms. Interactive acceptance,
+  Slicer Preview, real Windows Slicer, and Extension Factory packaging remain
+  catalog-release gates; normal-Python checks do not establish those results.
 
 ## Testing
 
@@ -246,8 +253,9 @@ ruff / mypy / coverage gate on every push and pull request, uploads the coverage
 to [Codecov](https://codecov.io/gh/martonkolossvary/SlicerPictologics) (`codecov.yml`;
 optional `CODECOV_TOKEN` repo secret, with a tokenless fallback for public repositories),
 then runs the real API / worker-smoke / geometry-parity checks against the adopted
-Pictologics wheel. The real in-Slicer CLI method is an explicit opt-in release gate;
-Slicer Preview, cross-platform, and interactive-workflow qualification remain manual.
+Pictologics wheel. The real in-Slicer CLI method stays opt-in under CTest and is explicitly enabled
+in the shared Linux CI/adoption gate. Slicer Preview, real Windows Slicer, and
+interactive-workflow qualification remain manual.
 
 ## License
 

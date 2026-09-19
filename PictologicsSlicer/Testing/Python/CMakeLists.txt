@@ -13,6 +13,11 @@ slicer_add_python_unittest(
     --no-main-window
     --additional-module-path
       ${CMAKE_BINARY_DIR}/${Slicer_QTSCRIPTEDMODULES_LIB_DIR}
+    # The opt-in real-CLI test path calls slicer.cli.run on the scripted PictologicsCLI,
+    # which builds into the CLI-modules directory; expose it so
+    # slicer.modules.pictologicscli is discoverable.
+    --additional-module-path
+      ${CMAKE_BINARY_DIR}/${Slicer_CLIMODULES_LIB_DIR}
   )
 
 # The opt-in real CLI path has a 10-minute internal deadline plus bounded

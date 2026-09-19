@@ -1,0 +1,132 @@
+name: Compatibility qualification
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Candidate stable version; empty checks the committed pin
+        type: string
+        default: ""
+      revision:
+        description: Exact wrapper revision to qualify
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, types, and unit coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Apply candidate locally
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python scripts/bump_pictologics_requirement.py "$VERSION"
+      - name: Install tooling
+        run: python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml
+      - run: python -m compileall -q PictologicsSlicer PictologicsCLI scripts
+      - run: python -m ruff check PictologicsSlicer PictologicsCLI/PictologicsCLI.py scripts conftest.py tests
+      - run: python -m mypy
+      - run: python -m pytest --cov --cov-report=term-missing --cov-report=xml
+      - name: Check metadata JSON syntax (not catalog acceptance)
+        run: python -m json.tool SlicerPictologics.json >/dev/null
+      - uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  wheel:
+    name: Released wheel (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      PICTOLOGICS_DISABLE_WARMUP: "1"
+      NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Apply candidate locally
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python scripts/bump_pictologics_requirement.py "$VERSION"
+      - name: Install wheel into an isolated target
+        run: >-
+          python -m pip install --only-binary=:all: --target "$RUNNER_TEMP/pictologics-target"
+          -r PictologicsSlicer/requirements-pictologics.txt
+      - name: Verify API, metadata, and configuration round trips
+        env:
+          PYTHONPATH: ${{ runner.temp }}/pictologics-target
+        run: python scripts/check_pictologics_api.py
+      - name: Full JIT, real extraction, and geometry parity
+        env:
+          PYTHONPATH: ${{ runner.temp }}/pictologics-target
+        run: |
+          python scripts/smoke_pictologics_worker.py
+          python scripts/geometry_parity_check.py
+
+  slicer:
+    name: Slicer 5.12.4 real CLI (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SLICERPICTOLOGICS_RUN_REAL_CLI_TEST: "1"
+      SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH: ${{ runner.temp }}/slicer-pictologics-target
+      PICTOLOGICS_DISABLE_WARMUP: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Apply candidate locally
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python scripts/bump_pictologics_requirement.py "$VERSION"
+      - name: Install headless Slicer system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libglu1-mesa libopengl0 libxcb-xinerama0 libxcb-cursor0 libxkbcommon-x11-0 libnss3 libasound2t64
+      - name: Download checksum-pinned official Slicer 5.12.4
+        run: |
+          curl --fail --location --retry 3 https://download.slicer.org/bitstream/6aa1beb7ce9de556d3010204 -o "$RUNNER_TEMP/slicer.tar.gz"
+          echo "ac76c5061a8fff20d4e59732855f74360930fd4891450085bcbc6a8eb1a1f4ade9a1ca4fc633142661b714dbe8c4604306079f9546e52053faa5e6f99410cf76  $RUNNER_TEMP/slicer.tar.gz" | sha512sum --check
+          mkdir "$RUNNER_TEMP/slicer"
+          tar -xzf "$RUNNER_TEMP/slicer.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/slicer"
+      - name: Install the adopted wheel using Slicer's Python
+        run: |
+          "$RUNNER_TEMP/slicer/bin/PythonSlicer" -m pip install --only-binary=:all: \
+            --target "$SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH" -r PictologicsSlicer/requirements-pictologics.txt
+      - name: Require real module discovery, transformed MRML, async CLI, and table commit
+        run: |
+          xvfb-run -a "$RUNNER_TEMP/slicer/Slicer" --no-splash --no-main-window \
+            --disable-settings --ignore-slicerrc \
+            --additional-module-path "$GITHUB_WORKSPACE/PictologicsSlicer" \
+            --additional-module-path "$GITHUB_WORKSPACE/PictologicsCLI" \
+            --python-script "$GITHUB_WORKSPACE/scripts/run_slicer_integration.py"

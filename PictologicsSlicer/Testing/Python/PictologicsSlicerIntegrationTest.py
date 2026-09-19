@@ -388,6 +388,9 @@ def create_oblique_segmentation_fixture() -> ObliqueSegmentationFixture:
 class PictologicsSlicerIntegrationTest(unittest.TestCase):
     """Validate the deterministic MRML fixture and NIfTI staging boundary."""
 
+    # Class-scoped on purpose: if the opt-in async CLI test cannot prove its worker was
+    # released, every later test in this shared Slicer process is skipped so it cannot
+    # interfere with a still-running worker that owns its staging directory.
     retained_async_failure: str | None = None
 
     def setUp(self) -> None:
@@ -428,15 +431,20 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertIn(sys.implementation.cache_tag, dependency_root.name)
         self.assertIn(platform.machine(), dependency_root.name)
 
-    def test_cli_progress_is_already_a_percentage(self) -> None:
-        class HalfCompleteNode:
-            @staticmethod
-            def GetProgress() -> int:
-                return 50
+    def test_cli_progress_preserves_slicer_percentages(self) -> None:
+        class ProgressNode:
+            def __init__(self, percentage: int):
+                self.percentage = percentage
 
-        self.assertEqual(
-            PictologicsSlicerWidget._cliProgressPercent(HalfCompleteNode()), 50
-        )
+            def GetProgress(self) -> int:
+                return self.percentage
+
+        for percentage in (0, 1, 25, 50, 75, 100):
+            with self.subTest(percentage=percentage):
+                self.assertEqual(
+                    PictologicsSlicerWidget._cliProgressPercent(ProgressNode(percentage)),
+                    percentage,
+                )
 
         class ProgressUI:
             def __init__(self) -> None:
@@ -565,6 +573,8 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         logic = self.logic
         dependency_path = self.cache_root / "dependency-target"
         dependency_path.mkdir(parents=True)
+        requirement = logic.pictologicsRequirement()
+        pinned_version = str(next(iter(requirement.specifier)).version)
 
         source_scene_ids = _scene_node_ids()
         source_volume_id = str(fixture.volume_node.GetID())
@@ -591,7 +601,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             standardConfigurations=["standard_fbn_32"],
             customConfigurationPath=None,
             subjectID=SUBJECT_ID,
-            installedVersion="0.5.0",
+            installedVersion=pinned_version,
             dependencyPath=dependency_path,
         )
         work_dir = Path(job["work_dir"])
@@ -641,12 +651,12 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                     "warmup": True,
                 },
             )
-            self.assertEqual(manifest["pictologics_requirement"], "pictologics==0.5.0")
+            self.assertEqual(manifest["pictologics_requirement"], str(requirement))
             self.assertEqual(
                 manifest["metadata"],
                 {
                     "numba_cache_path": str(logic.privatePaths()["numba_cache"]),
-                    "pictologics_version_at_submission": "0.5.0",
+                    "pictologics_version_at_submission": pinned_version,
                     "input_volume_node_id": source_volume_id,
                 },
             )
@@ -751,6 +761,9 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             )
             self.assertIsNotNone(staged_image)
             self.assertIsNotNone(staged_mask)
+            # loadVolume never attaches a parent transform, so these are only sanity
+            # checks; the actual transform hardening is verified by the IJKToRAS matrix
+            # equality against (transform_to_parent @ ijk_to_ras) below.
             self.assertIsNone(staged_image.GetParentTransformNode())
             self.assertIsNone(staged_mask.GetParentTransformNode())
 
@@ -783,7 +796,9 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                 staged_image_geometry,
                 expected_world_ijk_to_ras,
                 rtol=0.0,
-                atol=1e-5,
+                # NIfTI stores geometry as float32; ~12 mm translations lose ~1e-6
+                # absolute precision, so keep a float32-safe tolerance.
+                atol=1e-4,
             )
             np.testing.assert_allclose(
                 staged_mask_geometry,
@@ -863,6 +878,11 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             )
             self.assertFalse(terminal.cancelled)
             self.assertFalse(cli_node.IsBusy())
+            self.assertTrue(
+                observation.worker_pids,
+                "Never observed a live worker PID; cannot confirm the extraction ran "
+                "in a separate process from Slicer.",
+            )
             for worker_pid in observation.worker_pids:
                 self.assertGreater(worker_pid, 0)
                 self.assertNotEqual(worker_pid, os.getpid())
@@ -871,7 +891,9 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             provenance_path = Path(job["provenance_path"])
             self.assertTrue(result_path.is_file())
             self.assertTrue(provenance_path.is_file())
-            self.assertFalse((work_dir / ".worker-active").exists())
+            # The worker must have released the job (its PID is gone); its marker file
+            # is removed best-effort, so assert the semantic release, not the file.
+            self.assertFalse(logic.jobWorkerIsAlive(job))
             self.assertTrue((work_dir / ".owner-active").is_file())
             self.assertEqual(list(work_dir.glob(".results.json.*.tmp")), [])
             self.assertEqual(list(work_dir.glob(".provenance.json.*.tmp")), [])
@@ -1001,6 +1023,40 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                     }
                     self.assertTrue(catalog_identities.issubset(row_identities))
 
+            # The mask must actually constrain the ROI: the whole-volume region and the
+            # smaller cuboid segment cannot yield identical features, or the worker
+            # ignored the mask. (Numerical worker-vs-Pictologics parity is covered
+            # out-of-process by scripts/geometry_parity_check.py; Pictologics cannot be
+            # imported into Slicer's interpreter here without breaking NumPy isolation,
+            # as asserted above.)
+            def _finite_values(target_roi: str) -> dict[str, float]:
+                return {
+                    row["feature_key"]: float(row["value"])
+                    for row in rows
+                    if row["roi_id"] == target_roi
+                    and row["status"] == "ok"
+                    and row["value"] is not None
+                    and math.isfinite(float(row["value"]))
+                }
+
+            whole_volume_values = _finite_values("whole-volume")
+            segment_values = _finite_values(fixture.segment_id)
+            shared_feature_keys = set(whole_volume_values) & set(segment_values)
+            self.assertTrue(shared_feature_keys)
+            self.assertTrue(
+                any(
+                    not math.isclose(
+                        whole_volume_values[key],
+                        segment_values[key],
+                        rel_tol=1e-6,
+                        abs_tol=1e-9,
+                    )
+                    for key in shared_feature_keys
+                ),
+                "Whole-volume and segment ROIs produced identical feature values; the "
+                "segmentation mask was not applied.",
+            )
+
             table_node = logic.commitRows(
                 None,
                 rows,
@@ -1106,7 +1162,12 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             if cleanup_failures:
                 cleanup_message = "; ".join(cleanup_failures)
                 if active_exception is not None:
-                    active_exception.add_note(f"Step 4 cleanup: {cleanup_message}")
+                    note = f"Step 4 cleanup: {cleanup_message}"
+                    add_note = getattr(active_exception, "add_note", None)
+                    if callable(add_note):
+                        add_note(note)
+                    else:  # Python < 3.11 has no Exception.add_note
+                        print(note, file=sys.stderr)
                 else:
                     self.fail(cleanup_message)
 
