@@ -1,0 +1,6 @@
+# Generated artwork should not dominate code reviews or GitHub language statistics.
+assets/branding/** linguist-generated=true
+PictologicsSlicer/Resources/Icons/*.png linguist-generated=true
+
+# Preserve generated PostScript bytes and review the rendered artwork instead.
+assets/branding/pictologics/vector/*.eps binary

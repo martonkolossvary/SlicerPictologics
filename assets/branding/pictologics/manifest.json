@@ -1,0 +1,149 @@
+{
+  "source": "PictologicsSlicer/Resources/Icons/Pictologics-ct-v4-master.png",
+  "source_sha256": "320c5ed5b050262b9cd29a62a2e0f248da929995b06995bea19add0915712cf9",
+  "source_pixels": [
+    1254,
+    1254
+  ],
+  "vector_is_exact_raster_copy": false,
+  "vector_path_count": 863,
+  "vector_embedded_images": 0,
+  "pdf_embedded_images": 0,
+  "vector_trace_alpha_threshold": 128,
+  "vector_trace_options": {
+    "colormode": "color",
+    "hierarchical": "stacked",
+    "mode": "spline",
+    "filter_speckle": 6,
+    "color_precision": 6,
+    "layer_difference": 12,
+    "corner_threshold": 60,
+    "length_threshold": 3.5,
+    "max_iterations": 10,
+    "splice_threshold": 45,
+    "path_precision": 3
+  },
+  "tools": {
+    "Pillow": "12.3.0",
+    "vtracer": "0.6.15",
+    "CairoSVG": "2.8.2",
+    "pypdf": "6.10.0"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 4787,
+      "sha256": "1e548e25b4f3456f6e69e36b541f8277eae69dab1762b2e1c70b109a5ebcaf9a"
+    },
+    {
+      "path": "platform/pictologics.icns",
+      "bytes": 2029267,
+      "sha256": "7184111251717485f3294a004d06a1ad14e86e1f6e7309a541512da4733029cd"
+    },
+    {
+      "path": "platform/pictologics.ico",
+      "bytes": 147485,
+      "sha256": "f085c3cdc068329b6f70d2d2e8e0441396ced81a49cd772e9dfe25201684bba6"
+    },
+    {
+      "path": "raster/pictologics-1024.png",
+      "bytes": 1132609,
+      "sha256": "ebe7bcfd4e1945f72f95d04781303dfa9c9299534829b8191ab217d5ad6acd13"
+    },
+    {
+      "path": "raster/pictologics-128.png",
+      "bytes": 29730,
+      "sha256": "ef70d1baf0b0b422e6628ce6231440a0f6d1e0c2fe426c494e6427d0ae89b9bf"
+    },
+    {
+      "path": "raster/pictologics-16.png",
+      "bytes": 912,
+      "sha256": "b63f9dc05c8a1cabfc0b7c971def5400f833d01f55e5a80babf9a30d9166ba6d"
+    },
+    {
+      "path": "raster/pictologics-24.png",
+      "bytes": 1700,
+      "sha256": "6a79e8b6e7eaec0f29d4bf91bb34c04540efc4521b597ce7358be375b03d24da"
+    },
+    {
+      "path": "raster/pictologics-256.png",
+      "bytes": 96098,
+      "sha256": "dcad82b22b5cae10cb25e83fd6f1971f9ea0eac53eff9e821d3fe4e22de00b0e"
+    },
+    {
+      "path": "raster/pictologics-32.png",
+      "bytes": 2794,
+      "sha256": "ddb364e4b9746beae21fd00c8b881dbf93daf4b9a933193ababc7b482bf1b30c"
+    },
+    {
+      "path": "raster/pictologics-48.png",
+      "bytes": 5460,
+      "sha256": "bea0ed7e6385a62a21a9cc2820146a0b2cb40e802873be641adf74ec9a780948"
+    },
+    {
+      "path": "raster/pictologics-512.png",
+      "bytes": 324111,
+      "sha256": "e5bbbf57257db467724c42f0c3562ddfe678a7410925e875cc91ea0bed1a4fe2"
+    },
+    {
+      "path": "raster/pictologics-64.png",
+      "bytes": 9102,
+      "sha256": "149c8378f1c2628f9e0289ca8711c7040fc9b446bb01921bfe34c0d271c70d9b"
+    },
+    {
+      "path": "raster/pictologics-master-1254.png",
+      "bytes": 1675535,
+      "sha256": "320c5ed5b050262b9cd29a62a2e0f248da929995b06995bea19add0915712cf9"
+    },
+    {
+      "path": "raster/pictologics-master-1254.tiff",
+      "bytes": 2957918,
+      "sha256": "28e65c7c01d7f79195945664d4d45fe7d548e0cb5d36ac72bd7630a9fdcc78f3"
+    },
+    {
+      "path": "raster/pictologics-master-1254.webp",
+      "bytes": 1144018,
+      "sha256": "514a88c23b1f0848e1f8be549d6da363ab4d7edef24a9cd0602a100e542f0858"
+    },
+    {
+      "path": "raster/pictologics-vector-render-4096.png",
+      "bytes": 1223228,
+      "sha256": "11b2cf761f0758b0c525f33a7cdbf45daba2f48c642bd840ec948c1cdd3ff657"
+    },
+    {
+      "path": "raster/pictologics-white-1254.jpg",
+      "bytes": 597284,
+      "sha256": "d2b9ed2b6219b19199c986e007b0f19e2234a1ef557216d899b504047ef705b2"
+    },
+    {
+      "path": "slicer/Pictologics-128.png",
+      "bytes": 29730,
+      "sha256": "ef70d1baf0b0b422e6628ce6231440a0f6d1e0c2fe426c494e6427d0ae89b9bf"
+    },
+    {
+      "path": "slicer/Pictologics-256.png",
+      "bytes": 96098,
+      "sha256": "dcad82b22b5cae10cb25e83fd6f1971f9ea0eac53eff9e821d3fe4e22de00b0e"
+    },
+    {
+      "path": "slicer/PictologicsSlicer.png",
+      "bytes": 96098,
+      "sha256": "dcad82b22b5cae10cb25e83fd6f1971f9ea0eac53eff9e821d3fe4e22de00b0e"
+    },
+    {
+      "path": "vector/pictologics-traced.eps",
+      "bytes": 1108142,
+      "sha256": "9611f15ba2fb2b2ab66266c3bf5390aea4b242d23eb45b7540d4bba3b4a8d4a1"
+    },
+    {
+      "path": "vector/pictologics-traced.pdf",
+      "bytes": 425767,
+      "sha256": "8de7ed5866df6e7c70bfba7f9308698c6af0cfa545d9529b09f523110f5c9358"
+    },
+    {
+      "path": "vector/pictologics-traced.svg",
+      "bytes": 944368,
+      "sha256": "87e77347c5f33c077d58ceb26f3b552fc7cda31b3b85412760df6071fc3f78b4"
+    }
+  ]
+}
