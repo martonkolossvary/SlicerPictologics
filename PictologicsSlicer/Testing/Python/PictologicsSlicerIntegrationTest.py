@@ -414,6 +414,36 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         slicer.mrmlScene.Clear()
         shutil.rmtree(self.temporary_directory, ignore_errors=True)
 
+    def test_results_table_is_visible_after_creating_table_layout(self) -> None:
+        layout = slicer.app.layoutManager()
+        viewport = None
+        if layout is None:
+            # --no-main-window still needs real table-view creation, not a mock.
+            viewport = qt.QWidget()
+            layout = slicer.qSlicerLayoutManager(viewport)
+            layout.setMRMLScene(slicer.mrmlScene)
+            slicer.app.setLayoutManager(layout)
+            self.addCleanup(viewport.deleteLater)
+            self.addCleanup(slicer.app.setLayoutManager, None)
+        original_layout = layout.layout
+        self.addCleanup(layout.setLayout, original_layout)
+        layout.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpView)
+        first = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode", "First results")
+        second = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode", "Second results")
+        for table in (first, second):
+            column = vtk.vtkDoubleArray()
+            column.SetName("value")
+            column.InsertNextValue(42.0)
+            table.AddColumn(column)
+            self.logic.showTable(table)
+            slicer.app.processEvents()
+            self.assertEqual(layout.layout, slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpTableView)
+            view = layout.tableWidget(0).tableView()
+            self.assertEqual(view.mrmlTableNode(), table)
+            self.assertEqual(view.mrmlTableNode().GetNumberOfRows(), 1)
+            # qMRMLTableModel may also include an editable column-header row.
+            self.assertGreaterEqual(view.model().rowCount(), 1)
+
     def test_dependency_root_is_persistent_and_runtime_scoped(self) -> None:
         dependency_root = PictologicsSlicerLogic.dependencyRoot().resolve()
         application_data = Path(

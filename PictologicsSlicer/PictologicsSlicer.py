@@ -2172,12 +2172,14 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
     @staticmethod
     def showTable(tableNode):
         try:
-            selectionNode = slicer.app.applicationLogic().GetSelectionNode()
-            selectionNode.SetReferenceActiveTableID(tableNode.GetID())
-            slicer.app.applicationLogic().PropagateTableSelection()
+            # Create the table view before propagating its selection. A newly
+            # created view does not inherit an earlier propagation.
             slicer.app.layoutManager().setLayout(
                 slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpTableView
             )
+            selectionNode = slicer.app.applicationLogic().GetSelectionNode()
+            selectionNode.SetReferenceActiveTableID(tableNode.GetID())
+            slicer.app.applicationLogic().PropagateTableSelection()
         except Exception:
             LOGGER.debug("Could not switch to a table layout", exc_info=True)
 

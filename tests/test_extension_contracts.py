@@ -81,6 +81,25 @@ class ExtensionScaffoldTests(unittest.TestCase):
                 self.assertEqual(struct.unpack(">II", data[16:24]), (size, size))
                 self.assertEqual(data[24:26], bytes((8, 6)))  # 8-bit RGBA
 
+    def test_catalog_screenshots_reference_real_documentation_pngs(self) -> None:
+        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        match = re.search(r'set\(EXTENSION_SCREENSHOTURLS "([^"]+)"\)', cmake)
+        self.assertIsNotNone(match)
+        urls = match.group(1).split()
+        self.assertEqual(len(urls), 2)
+        prefix = "https://raw.githubusercontent.com/martonkolossvary/SlicerPictologics/main/"
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertTrue(url.startswith(prefix + "docs/screenshots/"))
+                path = ROOT / url.removeprefix(prefix)
+                data = path.read_bytes()
+                self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+                width, height = struct.unpack(">II", data[16:24])
+                self.assertGreaterEqual(width, 1280)
+                self.assertGreaterEqual(height, 720)
+                self.assertLessEqual(max(width, height), 4096)
+                self.assertLess(len(data), 10 * 1024 * 1024)
+
     def test_gui_packages_only_the_selected_runtime_icon(self) -> None:
         cmake = GUI_CMAKE.read_text(encoding="utf-8")
         resources = cmake.split("set(MODULE_PYTHON_RESOURCES", 1)[1].split(")", 1)[0]

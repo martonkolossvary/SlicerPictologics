@@ -33,6 +33,18 @@ The development MVP provides:
 This is research software. It is not a medical device and must not be used for
 clinical diagnosis or treatment decisions.
 
+## Screenshots
+
+![Pictologics workflow with a synthetic CT-like phantom and two selected regions](docs/screenshots/pictologics-workflow.png)
+
+![Pictologics results from real extraction on the synthetic regions](docs/screenshots/pictologics-results.png)
+
+These are genuine Slicer captures of a deterministic **synthetic phantom, not
+patient images**. Pictologics 0.5.1 computes 340 feature rows across two regions
+using `standard_fbn_32`. See [capture provenance and reproduction](docs/screenshots/README.md).
+The **Pictologics** GUI module handles inputs, configurations, tables, and exports;
+its hidden **PictologicsCLI** worker performs extraction in an isolated process.
+
 ## Compatibility and package policy
 
 The baseline is **3D Slicer 5.12+**. The adopted requirement is recorded in
