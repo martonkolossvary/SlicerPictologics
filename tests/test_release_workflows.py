@@ -46,6 +46,12 @@ def test_all_candidate_gates_use_the_validated_revision_and_pin():
     slicer = qualification["jobs"]["slicer"]
     assert slicer["env"]["SLICERPICTOLOGICS_RUN_REAL_CLI_TEST"] == "1"
     assert "run_slicer_integration.py" in slicer["steps"][-1]["run"]
+    slicer_launch = slicer["steps"][-1]["run"]
+    assert slicer_launch.count("--additional-module-paths") == 1
+    assert (
+        '--additional-module-paths "$GITHUB_WORKSPACE/PictologicsSlicer" '
+        '"$GITHUB_WORKSPACE/PictologicsCLI"'
+    ) in slicer_launch
     assert set(qualification["jobs"]["wheel"]["strategy"]["matrix"]["os"]) == {
         "ubuntu-24.04", "windows-latest", "macos-15-intel",
     }

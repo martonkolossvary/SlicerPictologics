@@ -14,12 +14,11 @@ slicer_add_python_unittest(
   SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/PictologicsSlicerIntegrationTest.py
   SLICER_ARGS
     --no-main-window
-    --additional-module-path
+    --additional-module-paths
       ${CMAKE_BINARY_DIR}/${Slicer_QTSCRIPTEDMODULES_LIB_DIR}
     # The opt-in real-CLI test path calls slicer.cli.run on the scripted PictologicsCLI,
     # which builds into the CLI-modules directory; expose it so
     # slicer.modules.pictologicscli is discoverable.
-    --additional-module-path
       ${CMAKE_BINARY_DIR}/${Slicer_CLIMODULES_LIB_DIR}
   )
 

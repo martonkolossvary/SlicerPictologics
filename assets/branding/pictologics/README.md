@@ -9,7 +9,7 @@ This is illustrative, synthetic anatomy, not patient data or a diagnostic image.
 | --- | --- | --- |
 | Slicer Extensions Catalog | `slicer/Pictologics-128.png` | Conservative 128-pixel PNG recommendation |
 | Higher-density Slicer display | `slicer/Pictologics-256.png` | Same approved raster artwork |
-| Slicer module resource | `slicer/PictologicsSlicer.png` | 256-pixel PNG; activation still requires packaging/module updates |
+| Slicer module resource | `slicer/PictologicsSlicer.png` | 256-pixel PNG, also copied into the module's packaged resources |
 | Exact archival source | `raster/pictologics-master-1254.png` | Byte-identical original RGBA PNG |
 | Lossless editing / web masters | `raster/pictologics-master-1254.tiff`, `.webp` | Original 1254-pixel resolution and alpha; decoded pixels verified |
 | Broad image compatibility / print | `raster/pictologics-white-1254.jpg` | Quality 98, no chroma subsampling; transparent exterior flattened onto white |
@@ -43,18 +43,18 @@ these are alternatives, not a requirement to submit all three. Use PNG to retain
 alpha. SVG, PDF, EPS, TIFF, WebP, ICO, and ICNS are extra reusable assets, not
 required catalog uploads. Do not supply the 4096-pixel derivative as the catalog icon.
 
-Committing and pushing this folder publishes the catalog-ready icon at:
+The published catalog-ready icon is referenced by `EXTENSION_ICONURL` at:
 
 ```text
 https://raw.githubusercontent.com/martonkolossvary/SlicerPictologics/main/assets/branding/pictologics/slicer/Pictologics-128.png
 ```
 
-The icon is not yet connected to `EXTENSION_ICONURL`; verify HTTP 200 and
-`Content-Type: image/png` after publishing. The existing module-named SVG
-takes precedence over PNG in Slicer 5.12, so adding a PNG alone will not activate
-the new design. Include only the selected runtime resource(s) in CMake packaging,
-not the full archive, print exports, or source master. Screenshots and the other
-ExtensionsIndex checklist items remain separate work.
+The public URL has been verified to return HTTP 200 and `Content-Type: image/png`
+with matching bytes. The module explicitly selects the approved PNG because
+Slicer 5.12 otherwise prefers the historical module-named SVG. Only the selected
+256-pixel PNG is included in CMake's icon resources, not the old SVG, full archive,
+print exports, or source master. Screenshots and the other ExtensionsIndex
+checklist items remain separate work.
 
 ## Reproduction and verification
 
@@ -69,6 +69,6 @@ trace settings, path count, and the absence of raster images in SVG/PDF. The
 vector PDF was rendered with Poppler for visual review. The ZIP alongside this
 folder contains the complete set and passed an archive integrity check.
 
-All earlier icon proposals are preserved. Publishing this asset bundle does not
-change application settings, extension behavior, or catalog configuration, and
-does not activate the new icon in Slicer.
+All earlier icon proposals are preserved in source control. The module and catalog
+now use the approved artwork; extracting this standalone bundle does not change
+application settings. Extraction behavior and dependency management are unchanged.

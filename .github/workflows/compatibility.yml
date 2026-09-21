@@ -45,7 +45,7 @@ jobs:
       - run: python -m mypy
       - run: python -m pytest --cov --cov-report=term-missing --cov-report=xml
       - name: Check metadata JSON syntax (not catalog acceptance)
-        run: python -m json.tool SlicerPictologics.json >/dev/null
+        run: python -m json.tool Pictologics.json >/dev/null
       - uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
@@ -136,6 +136,5 @@ jobs:
         run: |
           xvfb-run -a "$RUNNER_TEMP/slicer/Slicer" --no-splash --no-main-window \
             --disable-settings --ignore-slicerrc \
-            --additional-module-path "$GITHUB_WORKSPACE/PictologicsSlicer" \
-            --additional-module-path "$GITHUB_WORKSPACE/PictologicsCLI" \
+            --additional-module-paths "$GITHUB_WORKSPACE/PictologicsSlicer" "$GITHUB_WORKSPACE/PictologicsCLI" \
             --python-script "$GITHUB_WORKSPACE/scripts/run_slicer_integration.py"

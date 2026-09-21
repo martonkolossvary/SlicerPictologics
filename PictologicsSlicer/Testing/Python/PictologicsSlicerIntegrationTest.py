@@ -431,6 +431,27 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertIn(sys.implementation.cache_tag, dependency_root.name)
         self.assertIn(platform.machine(), dependency_root.name)
 
+    def test_module_identity_and_approved_icon(self) -> None:
+        module = slicer.modules.pictologicsslicer
+        self.assertIsNotNone(getattr(slicer.modules, "pictologicscli", None))
+        self.assertEqual(module.title, "Pictologics")
+        self.assertEqual(list(module.categories), ["Informatics"])
+        icon_path = Path(module.path).parent / "Resources/Icons/PictologicsSlicer.png"
+        expected = qt.QIcon(str(icon_path))
+        self.assertFalse(expected.isNull())
+        self.assertFalse(module.icon.isNull())
+        # Verify the actual discovered module, not just that the PNG can be decoded.
+        # This also catches accidental reversion to Slicer's SVG-first lookup.
+        for size in (16, 32, 128, 256):
+            with self.subTest(size=size):
+                actual_image = module.icon.pixmap(size, size).toImage()
+                expected_image = expected.pixmap(size, size).toImage()
+                self.assertEqual(actual_image.size(), expected_image.size())
+                for y in range(0, size, max(1, size // 32)):
+                    for x in range(0, size, max(1, size // 32)):
+                        self.assertEqual(actual_image.pixel(x, y), expected_image.pixel(x, y))
+                self.assertEqual((int(actual_image.pixel(0, 0)) >> 24) & 0xFF, 0)
+
     def test_cli_progress_preserves_slicer_percentages(self) -> None:
         class ProgressNode:
             def __init__(self, percentage: int):

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
+import re
+import struct
 import sys
 import tempfile
 import unittest
@@ -41,6 +44,53 @@ def load_bump_module():
 
 
 class ExtensionScaffoldTests(unittest.TestCase):
+    def test_catalog_identity_matches_cmake_and_workflow(self) -> None:
+        catalog_path = ROOT / "Pictologics.json"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        project = re.search(r"project\(([^)]+)\)", cmake)
+        self.assertIsNotNone(project)
+        self.assertEqual(project.group(1), catalog_path.stem)
+        self.assertFalse(catalog_path.stem.lower().startswith("slicer"))
+        self.assertFalse((ROOT / "SlicerPictologics.json").exists())
+        self.assertEqual(catalog["category"], "Informatics")
+        self.assertIn('set(EXTENSION_CATEGORY "Informatics")', cmake)
+        self.assertEqual(catalog["scm_url"], "https://github.com/martonkolossvary/SlicerPictologics")
+        self.assertEqual(catalog["scm_revision"], "main")
+        self.assertEqual(catalog["tier"], 1)
+        workflow = (ROOT / ".github/workflows/compatibility.yml").read_text(encoding="utf-8")
+        self.assertIn(f"python -m json.tool {catalog_path.name}", workflow)
+        self.assertNotIn("json.tool SlicerPictologics.json", workflow)
+
+    def test_catalog_and_module_use_approved_png_assets(self) -> None:
+        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        relative_icon = "assets/branding/pictologics/slicer/Pictologics-128.png"
+        self.assertIn(
+            'set(EXTENSION_ICONURL "https://raw.githubusercontent.com/'
+            f'martonkolossvary/SlicerPictologics/main/{relative_icon}")',
+            cmake,
+        )
+        runtime_icon = ROOT / "PictologicsSlicer/Resources/Icons/PictologicsSlicer.png"
+        approved_icon = ROOT / "assets/branding/pictologics/slicer/PictologicsSlicer.png"
+        self.assertEqual(runtime_icon.read_bytes(), approved_icon.read_bytes())
+        for path, size in ((ROOT / relative_icon, 128), (runtime_icon, 256)):
+            with self.subTest(path=path):
+                data = path.read_bytes()
+                self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+                self.assertEqual(data[12:16], b"IHDR")
+                self.assertEqual(struct.unpack(">II", data[16:24]), (size, size))
+                self.assertEqual(data[24:26], bytes((8, 6)))  # 8-bit RGBA
+
+    def test_gui_packages_only_the_selected_runtime_icon(self) -> None:
+        cmake = GUI_CMAKE.read_text(encoding="utf-8")
+        resources = cmake.split("set(MODULE_PYTHON_RESOURCES", 1)[1].split(")", 1)[0]
+        self.assertEqual(
+            [line.strip() for line in resources.splitlines() if "Icons/" in line],
+            ["Resources/Icons/${MODULE_NAME}.png"],
+        )
+        self.assertNotIn("assets/branding", cmake)
+        self.assertNotIn("GLOB", resources)
+
     def test_gui_never_imports_pictologics(self) -> None:
         tree = ast.parse(GUI_SOURCE.read_text(encoding="utf-8"))
         imported_roots: set[str] = set()
@@ -88,7 +138,8 @@ class ExtensionScaffoldTests(unittest.TestCase):
     def test_slicer_only_integration_fixture_is_registered_with_ctest(self) -> None:
         cmake = GUI_TEST_CMAKE.read_text(encoding="utf-8")
         self.assertIn("PictologicsSlicerIntegrationTest.py", cmake)
-        self.assertIn("--additional-module-path", cmake)
+        self.assertIn("--additional-module-paths", cmake)
+        self.assertNotIn("--additional-module-path\n", cmake)
         self.assertRegex(
             cmake,
             r"set_tests_properties\(\s*py_PictologicsSlicerIntegrationTest\s+"

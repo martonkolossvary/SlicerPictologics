@@ -1,13 +1,20 @@
-# SlicerPictologics
+# Pictologics for 3D Slicer
 
 [![CI](https://github.com/martonkolossvary/SlicerPictologics/actions/workflows/ci.yml/badge.svg)](https://github.com/martonkolossvary/SlicerPictologics/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/martonkolossvary/SlicerPictologics/graph/badge.svg)](https://codecov.io/gh/martonkolossvary/SlicerPictologics)
 
-SlicerPictologics is a 3D Slicer extension for running
+Pictologics is a 3D Slicer extension for running
 [Pictologics](https://github.com/martonkolossvary/pictologics) radiomic feature
 extraction on scalar volumes, selected segmentation regions, and whole-volume
 regions. The displayed module is **Pictologics** in Slicer's **Informatics**
 category.
+
+The catalog identifier is **Pictologics**; the source repository remains
+`SlicerPictologics`, and the internal modules remain `PictologicsSlicer` and
+`PictologicsCLI`. Existing module paths and private dependency environments do not
+need to be renamed. The approved [catalog and module artwork](docs/icon-design.md)
+is included; [reusable raster and vector exports](assets/branding/pictologics/README.md)
+are retained separately from the installed module resources.
 
 The development MVP provides:
 
@@ -44,7 +51,7 @@ Every push, pull request, and candidate release uses the same reusable
 - syntax, Ruff, strict library/worker typing, and unit tests with 100% scoped coverage;
 - released-wheel API, full-JIT extraction, and oblique/anisotropic geometry parity on
   Linux, Windows, and Intel macOS with Python 3.12;
-- real Slicer 5.12.4 on Linux: module discovery, transformed MRML/NIfTI staging,
+- real Slicer 5.12.4 on Linux: GUI/CLI discovery, approved-icon identity, transformed MRML/NIfTI staging,
   asynchronous CLI execution, result validation, and table commit; and
 - catalog JSON syntax (not ExtensionsIndex acceptance).
 
@@ -92,7 +99,7 @@ This keeps module discovery fast while still compiling kernels before extraction
 
 ### Extensions Manager
 
-`SlicerPictologics.json` is a Tier-1 ExtensionsIndex draft. Until it has been submitted,
+[`Pictologics.json`](Pictologics.json) is a Tier-1 ExtensionsIndex draft. Until it has been submitted,
 accepted, and built by the Slicer extension factory, install from source as described
 below. Once published, use **View → Extensions Manager**, search for Pictologics,
 install it, and restart Slicer.
@@ -206,7 +213,7 @@ new job; a malformed marker is retained conservatively for at most seven days.
   intentional so tables carry full provenance; it may be reconciled if Pictologics
   adopts a canonical result schema.
 - Pictologics 0.5.1 has passed private PyPI installation, API and full-JIT probes,
-  and all six integration tests in the reinstalled Slicer 5.12.4 (CPython 3.12,
+  and the integration suite in the reinstalled Slicer 5.12.4 (CPython 3.12,
   x86_64 under Rosetta on macOS). CI additionally requires real Slicer on Linux and
   released-wheel checks on all three desktop platforms. Interactive acceptance,
   Slicer Preview, real Windows Slicer, and Extension Factory packaging remain

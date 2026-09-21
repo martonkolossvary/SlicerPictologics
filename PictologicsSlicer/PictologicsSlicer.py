@@ -206,8 +206,10 @@ class PictologicsSlicer(ScriptedLoadableModule):
         super().__init__(parent)
         self.parent.title = "Pictologics"
         self.parent.categories = ["Informatics"]
+        # Override Slicer's SVG-first discovery in source checkouts containing the old icon.
+        self.parent.icon = qt.QIcon(self.resourcePath("Icons/PictologicsSlicer.png"))
         self.parent.dependencies = ["Segmentations", "Tables"]
-        self.parent.contributors = ["Pictologics contributors"]
+        self.parent.contributors = ["Márton Kolossváry"]
         self.parent.helpText = (
             "Run Pictologics radiomics on a scalar volume, the whole volume, "
             "and/or independently selected segments. Computation runs in a "

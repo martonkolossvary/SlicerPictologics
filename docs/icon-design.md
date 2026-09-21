@@ -5,9 +5,12 @@ Revision 4 is the selected artwork for the
 The [ZIP archive](../assets/branding/pictologics-branding-assets.zip) includes
 Slicer PNGs, native-resolution raster masters, traced SVG/PDF/EPS, and platform
 icons. Vector exports are explicitly labeled as approximations of the raster.
-The existing `PictologicsSlicer.svg`, module behavior, packaging configuration,
-and catalog icon URL have not been changed. Earlier revisions below are retained
-as design history.
+The catalog uses the approved 128-pixel PNG; the module explicitly uses the
+256-pixel `PictologicsSlicer.png`, which is the only icon included in its runtime
+resources. The old `PictologicsSlicer.svg` and earlier proposals are retained in
+source control as design history, not installed by CMake. Extraction behavior,
+dependency paths, and version 0.1.0 are unchanged.
+The revision notes below record the artwork-generation stages before integration.
 
 ## Revision 4: irregular color mosaic
 
@@ -106,7 +109,7 @@ were checked for every file. The 32-, 128-, and 256-pixel exports were visually
 inspected. Small nonzero interior transparency from generation was preserved;
 the artwork is effectively opaque, with antialiased edges.
 
-## Slicer integration remaining
+## Slicer integration
 
 Slicer's [extension documentation](https://github.com/Slicer/Slicer/blob/main/Docs/developer_guide/extensions.md)
 recommends PNG and 128 × 128 pixels. Its
@@ -115,22 +118,21 @@ requires a direct, raw image URL. The current
 [ExtensionsIndex validator](https://github.com/Slicer/ExtensionsIndex/blob/main/scripts/check_description_files.py)
 accepts PNG/JPEG/GIF response types, but not SVG.
 
-The approved revision 4 export has a stable path for `EXTENSION_ICONURL` after
-publication:
+`EXTENSION_ICONURL` now points to the published approved revision 4 export:
 
 ```text
 https://raw.githubusercontent.com/martonkolossvary/SlicerPictologics/main/assets/branding/pictologics/slicer/Pictologics-128.png
 ```
 
-This URL is the remaining integration target. Check that it returns HTTP 200 with
-`Content-Type: image/png` after publication, then update the root CMake metadata.
+This URL was verified to return HTTP 200 with `Content-Type: image/png` and the
+same SHA-256 as the approved asset.
 
-For the module UI, include the selected PNG in `MODULE_PYTHON_RESOURCES` and
-explicitly set `parent.icon` to the new PNG. Slicer 5.12's
+For the module UI, the selected PNG is included in `MODULE_PYTHON_RESOURCES` and
+`parent.icon` explicitly selects it. Slicer 5.12's
 `ScriptedLoadableModule` searches for the module-named SVG before PNG, so merely
 adding a PNG beside the existing SVG will not switch the displayed icon.
-Preserve the previous SVG until replacement is approved. Only package the chosen
-runtime icon(s), not the master or design notes.
+The previous SVG is retained for history but excluded from packaging. The master,
+print/vector exports, archive, and design notes are not runtime resources.
 
 These assets address the icon portion of submission readiness. They do not by
 themselves complete catalog metadata, screenshots, packaging, or Index acceptance.

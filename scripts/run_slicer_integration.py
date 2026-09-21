@@ -2,8 +2,7 @@
 """Run the integration suite inside Slicer; never install or download anything.
 
 Launch with Slicer --no-splash --no-main-window --disable-settings --ignore-slicerrc
---additional-module-path <repo>/PictologicsSlicer
---additional-module-path <repo>/PictologicsCLI
+--additional-module-paths <repo>/PictologicsSlicer <repo>/PictologicsCLI
 --python-script <repo>/scripts/run_slicer_integration.py.
 Set SLICERPICTOLOGICS_RUN_REAL_CLI_TEST=1 to require the real worker gate.
 """

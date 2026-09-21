@@ -1,6 +1,43 @@
 # Release readiness
 
-Review date: 2026-09-19. Extension/result contract remains **0.1.0**.
+Review date: 2026-09-21. Extension/result contract remains **0.1.0**.
+
+## Catalog identity and icon integration
+
+- Catalog identifier and CMake project name: **Pictologics**, with the Tier-1
+  descriptor in [`Pictologics.json`](../Pictologics.json). The repository remains
+  `SlicerPictologics`; internal modules and private dependency paths are unchanged.
+- CMake and the catalog agree on **Informatics**. The catalog description explains
+  intensity, shape, and texture measurements, provenance, and research-only use.
+  The module contributor now matches the extension metadata.
+- The GitHub repository has the required `3d-slicer-extension` topic (updated and
+  read back through the GitHub API).
+- The catalog references the published 128-pixel approved PNG. The GUI explicitly
+  selects the matching 256-pixel PNG; only that icon is listed in the module's
+  CMake resources. Previous designs and reusable exports remain in source control,
+  outside the installed runtime resources. The bundle ZIP and all manifest hashes
+  have been checked after the documentation update.
+- Local validation: **432 tests passed**, 100% scoped library/worker coverage,
+  Ruff, Mypy, and syntax checks. **Seven integration tests passed in Slicer
+  5.12.4 on macOS**, including actual GUI/CLI discovery, icon identity at
+  16/32/128/256 pixels, and real asynchronous extraction.
+- Native visual acceptance: the new icon is visible in Slicer's module selector;
+  light/dark previews at the four sizes were inspected. These were isolated test
+  sessions, not changes to the user's saved Slicer settings.
+- The new discovery assertion exposed an old launcher gap: repeating the singular
+  `--additional-module-path` only supplied the last path. CI, CTest, and the runner
+  instructions now use one plural `--additional-module-paths` followed by both
+  directories. The existing CLI tests could pass without GUI discovery; the new
+  regression test explicitly requires both modules.
+- Upstream ExtensionsIndex checks were run against the **local edited checkout**
+  and public URLs. Schema, file format, name, category, repository name/topic, SCM
+  URL, license, and dependencies passed. The CMake check accepted the PNG URL and
+  matching project name, but still reports the expected missing screenshots.
+  This is not remote CI, an Extension Factory build, or catalog acceptance.
+
+Screenshots, packaged installation/update testing, and the ExtensionsIndex pull
+request remain outstanding. The original stabilization evidence below is retained
+as the 2026-09-19 baseline, not a claim that the new changes have run on GitHub yet.
 
 ## Stabilized baseline
 
@@ -31,8 +68,8 @@ Review date: 2026-09-19. Extension/result contract remains **0.1.0**.
 The [adoption workflow](../.github/workflows/adopt-pictologics-release.yml) polls PyPI
 every six hours, and also supports manual and repository-dispatch triggers.
 Its live [0.5.1 discovery/no-op run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/35464119046)
-passed. There is no newer stable release with which to demonstrate a real automatic
-version-advancing publication yet.
+passed. At the baseline review there was no newer stable release with which to
+demonstrate a real automatic version-advancing publication.
 
 Each candidate must pass the same [qualification workflow](../.github/workflows/compatibility.yml)
 as ordinary CI: workflow lint, unit/coverage/type checks, private-wheel API/JIT and
@@ -48,11 +85,11 @@ new adopted wheel. Startup never silently upgrades dependencies.
 
 ## Reassessment: next priorities
 
-1. **Finish catalog distribution.** Finalize the catalog identifier (the existing
-   Slicer prefix needs review as a library-bridge exception, or choose Pictologics),
-   supply a catalog-compatible raster icon and an informative screenshot, add the
-   `3d-slicer-extension` repository topic, and reconcile CMake/catalog metadata.
-   Run the ExtensionsIndex validator and submit for Preview and the supported Stable
+1. **Finish catalog distribution.** Catalog identity, metadata, and icon integration
+   are complete locally. Commit/publish the changes and qualify them in GitHub CI;
+   capture informative Slicer screenshots using public or synthetic sample data
+   and populate `EXTENSION_SCREENSHOTURLS`. Run the full ExtensionsIndex validator
+   against the published revision and submit for Preview and the supported Stable
    branch. Verify Extension Factory packaging and installation/update through
    Extensions Manager. This is the missing link between automatic adoption and
    delivery to ordinary users.
