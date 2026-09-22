@@ -9,7 +9,8 @@ checklist, not a claim of catalog acceptance or packaged-install verification.
 - Matching CMake project/catalog identity, description, contributor, and Apache-2.0 license.
 - GitHub `3d-slicer-extension` topic and public repository homepage.
 - Public 128-pixel catalog icon and explicit 256-pixel runtime icon.
-- Two genuine, patient-free screenshots and a reproducible demo script.
+- Genuine screenshots using public MRHead sample data and a separate synthetic
+  phantom, with source attribution and reproducible demo scripts.
 - GUI and CLI discovery, real extraction, result-table display, and regression tests.
 - Latest compatibility-qualified package adoption from PyPI; runtime pin remains 0.5.1.
 
@@ -27,9 +28,10 @@ recheck the target branch and checklist at submission time.
 ## Remaining distribution gates
 
 Before any further tutorial or catalog image is pushed, obtain the maintainer's
-visual approval. The two existing screenshots were pushed before this requirement
-was introduced on 2026-09-22 and are awaiting maintainer review. Keep revisions
-local until approved; do not treat automated or agent visual checks as approval.
+visual approval. The MRHead workflow replacement was explicitly approved on
+2026-09-22. The prior synthetic results screenshot is unchanged; no unreviewed
+replacement is included. Keep subsequent revisions local until approved; do not
+treat automated or agent visual checks as approval.
 
 1. Re-run the upstream
    [description validator](https://github.com/Slicer/ExtensionsIndex/blob/main/scripts/check_description_files.py)

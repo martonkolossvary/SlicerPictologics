@@ -23,10 +23,12 @@ Review date: 2026-09-22. Extension/result contract remains **0.1.0**.
   16/32/128/256 pixels, real asynchronous extraction, and actual table-view binding.
 - The published identity/icon changes (`dc63b86`) passed all five GitHub CI jobs:
   [qualification run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/35590611518).
-- Two high-resolution [catalog screenshots](screenshots/README.md) show an actual
-  340-row extraction on a deterministic, non-patient CT-like phantom. The catalog
-  URLs and repository homepage reference them. A safe reproduction script is
-  included; screenshots and branding masters are not runtime module resources.
+- Two high-resolution [catalog screenshots](screenshots/README.md) show genuine
+  extraction workflows. The maintainer-approved workflow image uses Slicer's public
+  MRHead MRI with two illustrative ROIs (170 features each; all 340 rows successful).
+  The unchanged results-table image is from a separate synthetic CT-like phantom
+  run. Captions distinguish the examples, and both reproduction scripts are
+  included. Screenshots and branding masters are not runtime module resources.
 - Screenshot acceptance exposed a first-run results-display bug: table selection
   was propagated before the table view existed. The view is now created first.
   The new Slicer regression test fails on the original implementation and passes
@@ -50,9 +52,10 @@ Review date: 2026-09-22. Extension/result contract remains **0.1.0**.
   passed all five jobs: quality/coverage, released wheels on three desktop
   platforms, and real Slicer on Linux, including the new table-view regression.
 - Maintainer visual approval is required before publishing any further tutorial
-  or catalog images. The existing two captures were published before that rule
-  was requested and are now awaiting maintainer review. No subsequent image
-  additions or revisions have been pushed.
+  or catalog images. The MRHead workflow replacement received explicit visual
+  approval on 2026-09-22. Its exact approved bytes replace the original workflow
+  PNG. The earlier results screenshot is unchanged; no unreviewed replacement is
+  included in this update.
 
 Packaged installation/update testing and the ExtensionsIndex pull request remain
 outstanding. This machine has the downloaded Slicer application, but neither a
@@ -107,9 +110,10 @@ new adopted wheel. Startup never silently upgrades dependencies.
 ## Reassessment: next priorities
 
 1. **Finish catalog distribution.** Catalog identity, metadata, icon integration,
-   and synthetic-data screenshots are implemented. The published code passed
-   GitHub CI and the full ExtensionsIndex validator. Obtain maintainer screenshot
-   approval, then submit for Preview and the supported Stable branch. Verify
+   and example screenshots are implemented, with the MRHead workflow visually
+   approved. The implementation passed GitHub CI and the full ExtensionsIndex
+   validator. Recheck the published assets, then submit for Preview and the
+   supported Stable branch. Verify
    Extension Factory packaging and installation/update through
    Extensions Manager. This is the missing link between automatic adoption and
    delivery to ordinary users.
