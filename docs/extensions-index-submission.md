@@ -13,13 +13,30 @@ checklist, not a claim of catalog acceptance or packaged-install verification.
 - GUI and CLI discovery, real extraction, result-table display, and regression tests.
 - Latest compatibility-qualified package adoption from PyPI; runtime pin remains 0.5.1.
 
+## Validation evidence
+
+On 2026-09-21, the complete upstream validator passed against a fresh clone of
+published revision `74c7320`, including both screenshot URLs. Its measured clone
+size was 64.4 MiB (100 MiB limit). Schema, metadata, name/category/topic, SCM,
+license, and dependency checks all passed. Validator source Git blob:
+`c22e9aba7cc32129398fe396f98830f1dcdc4bc4`.
+
+The upstream index currently has `main` (Preview) and `5.12` (Stable) branches;
+recheck the target branch and checklist at submission time.
+
 ## Remaining distribution gates
 
-1. Run the upstream
-   [description validator](https://github.com/Slicer/ExtensionsIndex/blob/main/.github/scripts/check_description_files.py)
+Before any further tutorial or catalog image is pushed, obtain the maintainer's
+visual approval. The two existing screenshots were pushed before this requirement
+was introduced on 2026-09-22 and are awaiting maintainer review. Keep revisions
+local until approved; do not treat automated or agent visual checks as approval.
+
+1. Re-run the upstream
+   [description validator](https://github.com/Slicer/ExtensionsIndex/blob/main/scripts/check_description_files.py)
    on `Pictologics.json` from a scratch ExtensionsIndex checkout. It must inspect a
    fresh clone of published `main`, not only the local working tree, and verify
-   repository size, schema, metadata, topic, license, and public image URLs.
+   repository size, schema, metadata, topic, license, and public image URLs. This
+   passed for the revision above; repeat if submission assets or metadata change.
 2. Configure/build/package using a matching Slicer build tree and the
    [documented CMake commands](../README.md#configure-and-package-the-extension).
    A downloaded Slicer app is sufficient for source tests but not a build SDK.

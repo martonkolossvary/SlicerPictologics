@@ -1,6 +1,6 @@
 # Release readiness
 
-Review date: 2026-09-21. Extension/result contract remains **0.1.0**.
+Review date: 2026-09-22. Extension/result contract remains **0.1.0**.
 
 ## Catalog identity, icon, and screenshots
 
@@ -39,11 +39,20 @@ Review date: 2026-09-21. Extension/result contract remains **0.1.0**.
   instructions now use one plural `--additional-module-paths` followed by both
   directories. The existing CLI tests could pass without GUI discovery; the new
   regression test explicitly requires both modules.
-- Earlier upstream ExtensionsIndex checks against the local checkout passed
-  schema, format, naming, category, repository name/topic, SCM URL, license, and
-  dependencies; screenshots were the outstanding CMake metadata item. After
-  publication, rerun the full upstream validator against the published revision,
-  including its fresh clone, repository-size, and public-image checks.
+- The full upstream ExtensionsIndex validator passed against a fresh clone of
+  published commit `74c7320`: schema, format, name, category, repository name/topic,
+  SCM URL, CMake metadata, license, dependencies, public icon, and both screenshot
+  URLs. The clone measured **64.4 MiB**, below its 100 MiB limit. The validator was
+  identical to upstream `main` (Git blob `c22e9aba7cc32129398fe396f98830f1dcdc4bc4`).
+  This validates submission metadata, not binary packaging or catalog acceptance.
+- The screenshots and table fix are published as `74c7320`; their GitHub
+  [qualification run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/35629958644)
+  passed all five jobs: quality/coverage, released wheels on three desktop
+  platforms, and real Slicer on Linux, including the new table-view regression.
+- Maintainer visual approval is required before publishing any further tutorial
+  or catalog images. The existing two captures were published before that rule
+  was requested and are now awaiting maintainer review. No subsequent image
+  additions or revisions have been pushed.
 
 Packaged installation/update testing and the ExtensionsIndex pull request remain
 outstanding. This machine has the downloaded Slicer application, but neither a
@@ -98,10 +107,10 @@ new adopted wheel. Startup never silently upgrades dependencies.
 ## Reassessment: next priorities
 
 1. **Finish catalog distribution.** Catalog identity, metadata, icon integration,
-   and synthetic-data screenshots are implemented. Qualify the published revision
-   with GitHub CI and the full ExtensionsIndex validator, then submit for Preview
-   and the supported Stable
-   branch. Verify Extension Factory packaging and installation/update through
+   and synthetic-data screenshots are implemented. The published code passed
+   GitHub CI and the full ExtensionsIndex validator. Obtain maintainer screenshot
+   approval, then submit for Preview and the supported Stable branch. Verify
+   Extension Factory packaging and installation/update through
    Extensions Manager. This is the missing link between automatic adoption and
    delivery to ordinary users.
 2. **Broaden actual application acceptance.** Run Slicer Preview and real Windows
