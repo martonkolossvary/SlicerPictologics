@@ -24,8 +24,11 @@ The development MVP provides:
 - the six Pictologics standard presets, an in-app single-configuration builder
   (feature families, resampling, discretisation, and voxel-validity/sentinel mode),
   and optional custom YAML/JSON configuration with authoring aids;
+- named settings profiles with save, load, and save-copy actions;
 - background execution in a scripted CLI process, progress, and cancellation;
 - atomic long-form results in a `vtkMRMLTableNode`, with replace or append behavior;
+- a read-only results browser with feature search, ROI/configuration/family/status
+  filters, and readable feature details and per-run provenance;
 - CSV export with a provenance sidecar, or a self-contained JSON export, with
   per-run provenance retained when tables are appended; and
 - on-demand installation of Pictologics and its dependencies into a private target.
@@ -169,10 +172,18 @@ cmake --build ../SlicerPictologics-build --config Release --target package
    discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
    custom Pictologics YAML/JSON, generate a starter with **New from preset…**, or run a
    structural **Validate** pre-check).
-4. Choose or create an output table, then select **Run radiomics**.
+4. Choose or create an output table. Check the **Ready** summary of whole-volume,
+   segment, and configuration selections, then select **Run radiomics**. Readiness
+   checks the controls; geometry and custom configurations are checked again during
+   preparation and worker execution.
 5. On first use, review and approve installation into the private dependency target.
    No global Slicer package is replaced. The first run is slower because of JIT warmup.
-6. Use **Cancel** to stop the background job. Cancellation or fatal failure preserves
+6. Follow the current phase and **Processing ROI _n_ of _total_: _name_** message.
+   **Elapsed** includes dependency checks, input preparation, and extraction; it is
+   not an estimate of time remaining and stops at completion, failure, or cancellation.
+   Multi-ROI percentages indicate completed regions, not estimated computation time.
+   A single ROI uses an animated busy indicator. Use **Cancel** to stop the background
+   job. Cancellation or fatal failure preserves
    the previous table; completed results are committed to the scene together.
 7. Select **Export table as CSV or JSON…** to save the current results table. Enable
    **Export wide layout** for one row per ROI with Pictologics' exact
@@ -190,6 +201,45 @@ IBSI code `BC2M` is paired with `BC2M_10` or `BC2M_90`, and a package-wide name 
 Pictologics-specific, not a second official IBSI code. Complete preprocessing
 parameters remain in the feature data dictionary. These columns are part of the
 extension's initial `0.1.0` result contract.
+
+### Browse results and provenance
+
+Select **Browse results and provenance…** in the Output section to open a resizable,
+read-only results window. Search by feature name, IBSI code, native feature key, or
+preprocessing text; combine ROI, configuration, family, and status filters. ROI
+choices are scoped to a run, so appended runs with identical segment names remain
+distinct. Large result sets are paged in groups of 200 rows.
+
+Select a row to inspect its value, both IBSI identifiers, software versions, exact
+run/configuration, configuration hash, preprocessing parameters, processing errors,
+and feature-dictionary metadata. Requested/effective filter parameters appear when
+present in the recorded processing log. Missing provenance is reported explicitly.
+
+The browser is a **snapshot**: use **Refresh selected table** after a new run or
+changing the output table. Filters never change the MRML table or export behavior:
+**Export table as CSV or JSON… still exports the complete selected table**, not just
+the visible matches. Closing the scene clears the browser's snapshot.
+
+### Save and reuse configuration profiles
+
+In **Configuration profiles**, use **Save…** to name and save the checked standard
+presets and optional in-app configuration to a `.pictologics-profile.json` file.
+Use **Load…** to restore them, or **Save copy…** to save the current settings under a
+new name/file without replacing the original. Save again after editing settings;
+changes are not automatically written back to the profile file.
+
+Profiles do not capture image/segmentation selections, subject IDs, output tables,
+or machine-specific dependency paths. Loading validates all settings before changing
+the controls and rejects unsupported values instead of silently clamping them.
+Profile names label saved settings; native configuration names (`in_app` and the
+standard preset names) and exported feature names are unchanged.
+Profiles do not pin a package version: each run uses the extension's adopted
+Pictologics release and records its version and effective configuration in provenance.
+
+These are **Slicer settings files**, not native Pictologics pipeline configuration
+files. Advanced YAML/JSON pipelines still use **Additional config → Load from file**;
+profile saving is disabled in that mode. A profile can select multiple standard
+presets and one in-app configuration, not multiple custom pipelines.
 
 The extension serializes temporary inputs as NIfTI (`.nii.gz`) because Pictologics
 loads NIfTI directly. Temporary files and MRML nodes are removed after success,
@@ -213,8 +263,13 @@ new job; a malformed marker is retained conservatively for at most seven days.
 - The in-app builder composes a single configuration (families, resample, discretise,
   source mode). The full schema-driven, multi-step/multi-configuration builder is still
   deferred: the current Pictologics source has presets and configuration serialization,
-  but not the proposed public schema, structured-validation, or public processing-log
-  APIs. Advanced steps (resegmentation, outlier filtering, IBSI-2 image filters, custom
+  but not a complete public editor schema or structured-validation result API.
+  Processing logs do have a public JSON export (`save_log()`); what is missing is a
+  public in-memory log getter. The extension currently copies the private `_log`
+  as a compatibility fallback and retains it in provenance. Saved configuration
+  profiles are supported; individually implemented advanced controls do not require
+  a complete upstream editor schema. Advanced steps
+  (resegmentation, outlier filtering, IBSI-2 image filters, custom
   discretisation cut-offs) remain reachable through a custom YAML/JSON file. The
   in-app **Validate** aid is a structural pre-check only; the worker performs the
   authoritative validation.
@@ -247,17 +302,26 @@ local gate and CI:
   over `PictologicsSlicer/PictologicsLib` and `PictologicsCLI`. The GUI is exercised by
   the in-Slicer `ScriptedLoadableModuleTest`.
 
-Run everything locally with a Python that has `ruff`, `mypy`, `pytest`, `pytest-cov`,
-and `coverage`:
+From the repository root, use Python 3.12+ in a development environment (not Slicer's
+shared Python). These commands use only tracked repository files and match the
+portable quality checks in CI:
 
 ```sh
-python dev/pre_push.py                # ruff, mypy, syntax, tests + coverage
-python -m pytest --cov --cov-report=term-missing   # just the tests
+python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml
+python -m compileall -q PictologicsSlicer PictologicsCLI scripts
+python -m ruff check PictologicsSlicer PictologicsCLI/PictologicsCLI.py scripts conftest.py tests
+python -m mypy
+python -m pytest --cov --cov-report=term-missing
+python -m json.tool Pictologics.json
 ```
 
-The in-Slicer integration test always runs its deterministic fixture and MRML-staging
-methods under CTest. Its real CLI/JIT method is skipped by default, so Extension Factory
-testing needs neither network access nor a pre-populated Pictologics cache. The test
+These checks do not launch Slicer, install Pictologics, or establish packaged-install
+acceptance. CI separately validates workflow syntax, released wheels, and real Slicer.
+
+The in-Slicer integration test always runs its deterministic fixture, MRML-staging,
+and GUI feedback methods under CTest. Its real CLI/JIT and end-to-end GUI extraction
+methods are skipped by default, so Extension Factory testing needs neither network
+access nor a pre-populated Pictologics cache. The test
 never installs or downloads dependencies. Run that release gate against an existing
 qualified private target with:
 

@@ -39,10 +39,11 @@ treat automated or agent visual checks as approval.
    fresh clone of published `main`, not only the local working tree, and verify
    repository size, schema, metadata, topic, license, and public image URLs. This
    passed for the revision above; repeat if submission assets or metadata change.
-2. Configure/build/package using a matching Slicer build tree and the
-   [documented CMake commands](../README.md#configure-and-package-the-extension).
-   A downloaded Slicer app is sufficient for source tests but not a build SDK.
-   Do not substitute a hand-assembled archive for an Extension Factory build.
+2. Use the Extension Factory to build/package this Python-only extension as part
+   of catalog submission. A local Slicer build tree is not a prerequisite for
+   submission. If a matching build tree is available, a local package can also be
+   produced with the [documented CMake commands](../README.md#configure-and-package-the-extension).
+   Do not substitute a hand-assembled archive for a factory-compatible build.
 3. Inspect the produced archive: both modules, GUI support library, `.ui`, selected
    PNG, CLI XML/script, and the exact requirement file must be present. Branding
    masters, screenshots, tests, and private dependency environments must not leak
@@ -59,6 +60,7 @@ treat automated or agent visual checks as approval.
    explicitly. Follow Extension Factory build results before calling the extension
    available through Extensions Manager.
 
-No ExtensionsIndex pull request has been opened by this task. No Slicer build tree
-is available on this machine as of 2026-09-21, so official package build/install
-acceptance remains the main technical gate.
+No ExtensionsIndex pull request has been opened by this task. Official package
+build/install acceptance remains outstanding, but absence of a local Slicer build
+tree does not block a Python-only submission. As of 2026-09-23, the maintainer has
+requested that catalog submission wait until after the next functional improvements.

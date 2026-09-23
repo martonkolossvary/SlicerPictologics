@@ -17,13 +17,17 @@ import time
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import numpy as np
 import qt
 import slicer
 import vtk
 from PictologicsLib.dependencies import inspect_target
+from PictologicsLib.inline_config import default_inline_state
+from PictologicsLib.profiles import build_profile
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     RESULT_PAYLOAD_SCHEMA_VERSION,
@@ -31,8 +35,10 @@ from PictologicsLib.results import (
     validate_result_payload,
 )
 
+import PictologicsSlicer as gui_module
 from PictologicsSlicer import (
     EXTENSION_VERSION,
+    DependencyInstallDeclined,
     PictologicsSlicerLogic,
     PictologicsSlicerWidget,
 )
@@ -520,6 +526,324 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(harness.ui.progressBar.maximum, 100)
         self.assertEqual(harness.ui.progressBar.value, 100)
         self.assertFalse(harness._cliProgressIndeterminate)
+
+    def _feedback_widget(self):
+        # Exercise Slicer's actual, application-owned module widget. A manually
+        # created Python-owned top-level widget has different PythonQt teardown.
+        with patch.object(gui_module, "PictologicsSlicerLogic", IsolatedPictologicsSlicerLogic):
+            widget = slicer.modules.pictologicsslicer.widgetRepresentation().self()
+        widget.logic = self.logic
+        widget.initializeParameterNode()
+        self.addCleanup(widget._handoffActiveJobCleanup, cancel=True)
+        widget.ui.inputVolumeSelector.setCurrentNode(self.fixture.volume_node)
+        return widget
+
+    def test_readiness_recovers_and_preserves_run_outcome(self) -> None:
+        widget = self._feedback_widget()
+        empty = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode", "Empty")
+        widget.ui.inputVolumeSelector.setCurrentNode(empty)
+        self.assertFalse(widget.ui.runButton.enabled)
+        self.assertIn("no image data", widget.ui.readinessLabel.text)
+        widget.ui.inputVolumeSelector.setCurrentNode(self.fixture.volume_node)
+        self.assertTrue(widget.ui.runButton.enabled)
+        self.assertEqual(widget.ui.readinessLabel.text, "Ready: whole volume; 1 preset(s).")
+        widget.ui.segmentationSelector.setCurrentNode(self.fixture.segmentation_node)
+        self.assertIn("whole volume + 1 segment(s)", widget.ui.readinessLabel.text)
+        widget.ui.wholeVolumeCheckBox.setChecked(False)
+        self.assertIn("Ready: 1 segment(s)", widget.ui.readinessLabel.text)
+        widget.ui.statusLabel.setText("Completed: previous run.")
+        widget._updateRunState()
+        self.assertEqual(widget.ui.statusLabel.text, "Completed: previous run.")
+        widget.ui.inputVolumeSelector.setCurrentNode(empty)
+        self.assertIn("no image data", widget.ui.readinessLabel.text)
+        self.assertEqual(widget.ui.statusLabel.text, "Completed: previous run.")
+        widget.ui.inputVolumeSelector.setCurrentNode(self.fixture.volume_node)
+        widget.ui.additionalConfigCombo.setCurrentIndex(1)
+        self.assertIn("1 in-app configuration", widget.ui.readinessLabel.text)
+        self.assertEqual(widget.ui.statusLabel.textFormat, qt.Qt.PlainText)
+
+    def test_profiles_save_load_copy_and_reject_invalid_settings(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.segmentationSelector.setCurrentNode(self.fixture.segmentation_node)
+        widget.ui.additionalConfigCombo.setCurrentIndex(1)
+        widget.ui.resampleXSpinBox.setValue(2.0)
+        widget.ui.discretiseMethodCombo.setCurrentIndex(1)
+        widget.ui.discretiseValueSpinBox.setValue(25.5)
+        widget.ui.sourceModeCombo.setCurrentIndex(2)
+        widget.ui.sentinelValueLineEdit.setText("-3024")
+        original_state = widget._inlineStateFromGUI()
+        original_ids = widget._selectedSegmentIDs()
+        destination = self.temporary_directory / "saved.pictologics-profile.json"
+        chosen = {"file": destination, "name": "Test profile"}
+        dialog_qt = SimpleNamespace(
+            Qt=qt.Qt, QLineEdit=qt.QLineEdit, QListWidgetItem=qt.QListWidgetItem,
+            QInputDialog=SimpleNamespace(getText=lambda *args: chosen["name"]),
+            QFileDialog=SimpleNamespace(getSaveFileName=lambda *args: str(chosen["file"]),
+                                        getOpenFileName=lambda *args: str(chosen["file"])),
+        )
+        with patch.object(gui_module, "qt", dialog_qt), patch.object(slicer.util, "errorDisplay") as errors:
+            widget.ui.saveProfileButton.click()
+            errors.assert_not_called()
+            original_bytes = destination.read_bytes()
+            document = json.loads(original_bytes)
+            self.assertEqual(document["name"], "Test profile")
+            self.assertEqual(document["inline_state"], original_state)
+            self.assertNotIn("subject_id", document)
+            widget.ui.resampleXSpinBox.setValue(3.0)
+            widget.ui.additionalConfigCombo.setCurrentIndex(0)
+            widget.ui.loadProfileButton.click()
+            self.assertEqual(widget._inlineStateFromGUI(), original_state)
+            self.assertEqual(widget._currentAdditionalSource(), "inline")
+            self.assertEqual(widget._selectedSegmentIDs(), original_ids)
+            self.assertEqual(widget.ui.inputVolumeSelector.currentNode(), self.fixture.volume_node)
+            self.assertEqual(widget._storedInlineState(), original_state)
+            # A duplicate may not overwrite the source, including canonical-path aliases.
+            chosen["name"] = "Test copy"
+            widget.ui.duplicateProfileButton.click()
+            self.assertTrue(errors.called)
+            self.assertEqual(destination.read_bytes(), original_bytes)
+            errors.reset_mock()
+            chosen["file"] = self.temporary_directory / "copy.pictologics-profile.json"
+            widget.ui.duplicateProfileButton.click()
+            errors.assert_not_called()
+            self.assertEqual(json.loads(chosen["file"].read_text())["name"], "Test copy")
+            self.assertEqual(destination.read_bytes(), original_bytes)
+            document["inline_state"]["spacing"][0] = 999
+            chosen["file"].write_text(json.dumps(document), encoding="utf-8")
+            widget.ui.loadProfileButton.click()
+            self.assertTrue(errors.called)
+            self.assertEqual(widget._inlineStateFromGUI(), original_state)
+            # Extension normalization must not bypass overwrite confirmation.
+            normalized = self.temporary_directory / "normalized.pictologics-profile.json"
+            normalized.write_text("keep original", encoding="utf-8")
+            chosen["file"] = self.temporary_directory / "normalized"
+            with patch.object(slicer.util, "confirmYesNoDisplay", return_value=False) as confirm:
+                widget.ui.saveProfileButton.click()
+                confirm.assert_called_once()
+            self.assertEqual(normalized.read_text(), "keep original")
+            widget.ui.additionalConfigCombo.setCurrentIndex(2)
+            self.assertFalse(widget.ui.saveProfileButton.enabled)
+            self.assertFalse(widget.ui.duplicateProfileButton.enabled)
+
+    def test_results_browser_filters_details_pagination_and_export_are_read_only(self) -> None:
+        widget = self._feedback_widget()
+        table = None
+        for run, value, outcome in (("run-a", 1.25, "ok"), ("run-b", None, "error")):
+            row = dict.fromkeys(LONG_RESULT_COLUMNS, "")
+            row.update(run_id=run, timestamp="2026-09-22", image_name="Example", roi_id="same-id",
+                       roi_name="Same lesion name", roi_source="segmentation", configuration="test",
+                       feature_name="Volume", feature_key="volume_BC2M_10", pictologics_feature_name="test__volume_BC2M_10",
+                       ibsi_code="BC2M", pictologics_ibsi_code="BC2M_10", feature_family="ivh", value=value, status=outcome)
+            provenance = {"effective_configuration": {"configs": {"test": {"source_mode": "auto", "steps": []}}}}
+            payload = {"schema_version": RESULT_PAYLOAD_SCHEMA_VERSION, "run_id": run,
+                       "rows": [dict(row) for _ in range(205)], "provenance": provenance, "errors": []}
+            table = self.logic.commitRows(table, payload["rows"], append=table is not None,
+                                         payload=payload, manifest={"configuration_sha256": f"hash-{run}"})
+        widget.ui.outputTableSelector.setCurrentNode(table)
+        canonical = self.logic.rowsFromTable(table)
+        mtime = self.logic.tableModificationTime(table)
+        self.assertTrue(widget.ui.browseResultsButton.enabled)
+        widget.onBrowseResults()
+        browser = widget._resultsBrowser
+        self.assertEqual(browser.table.rowCount, 200)
+        self.assertEqual(len(browser.indices), 410)
+        browser.next.click()
+        self.assertEqual(browser.page, 1)
+        browser.next.click()
+        self.assertEqual(browser.table.rowCount, 10)
+        browser.previous.click()
+        self.assertEqual(browser.page, 1)
+        browser.filters["status"].setCurrentIndex(browser.filters["status"].findText("error"))
+        self.assertEqual(browser.page, 0)
+        self.assertEqual(len(browser.indices), 205)
+        self.assertIn("SHA-256: hash-run-b", browser.details.toPlainText())
+        self.assertNotIn("hash-run-a", browser.details.toPlainText())
+        self.assertIn("Value: Not available", browser.details.toPlainText())
+        browser.search.setText("bc2m_10")
+        self.assertEqual(len(browser.indices), 205)
+        browser.search.setText("does-not-exist")
+        self.assertEqual(browser.table.rowCount, 0)
+        self.assertEqual(browser.details.toPlainText(), "No matching result selected.")
+        browser.reset_button.click()
+        self.assertEqual(len(browser.indices), 410)
+        browser.filters["roi"].setCurrentIndex(2)
+        self.assertEqual(len(browser.indices), 205)
+        self.assertIn("hash-run-b", browser.details.toPlainText())
+        self.assertEqual(self.logic.tableModificationTime(table), mtime)
+        self.assertEqual(self.logic.rowsFromTable(table), canonical)
+        export_path = self.temporary_directory / "browser-export.json"
+        self.logic.exportTable(table, export_path)
+        self.assertEqual(len(json.loads(export_path.read_text())["rows"]), 410)
+        self.assertEqual(browser.table.editTriggers, qt.QAbstractItemView.NoEditTriggers)
+        # Refresh clears stale snapshots, and malformed provenance does not hide rows.
+        table.SetAttribute("Pictologics.ProvenanceHistoryJSON", "not-json")
+        browser.refresh_button.click()
+        self.assertEqual(len(browser.rows), 410)
+        self.assertIn("not valid JSON", browser.source.text)
+        self.assertIn("Provenance unavailable", browser.details.toPlainText())
+        widget.onSceneStartClose()
+        self.assertEqual(browser.rows, [])
+        self.assertFalse(browser.dialog.visible)
+
+    def test_elapsed_roi_feedback_and_cancellation_preserve_terminal_state(self) -> None:
+        widget = self._feedback_widget()
+        node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLCommandLineModuleNode")
+        widget._cliNode = node
+        widget._activeJob = {"manifest": {"rois": [
+            {"roi_name": "First"}, {"roi_name": "A < B"},
+        ]}}
+        widget._startRunFeedback()
+        widget._runStartedAt -= 65
+        widget._cliObserverTag = node.AddObserver(vtk.vtkCommand.ModifiedEvent, widget.onCliModified)
+        node.StartContinuousOutputUpdate()
+        widget._continuousOutputNode = node
+        node.SetStatus(node.Running)
+        node.SetOutputText('PICTOLOGICS_ROI {"index":0,"total":2}\n')
+        self.assertEqual(widget.ui.statusLabel.text, "Processing ROI 1 of 2: First")
+        node.SetOutputText('PICTOLOGICS_ROI {"index":1,"total":2}\n')
+        self.assertEqual(widget.ui.statusLabel.text, "Processing ROI 2 of 2: A < B")
+        self.assertEqual(widget.ui.elapsedTimeLabel.text, "Elapsed: 00:01:05")
+        self.assertTrue(widget._runFeedbackTimer.isActive())
+        widget._updateRunState()
+        self.assertFalse(widget.ui.runButton.enabled)
+        self.assertIn("inputs are locked", widget.ui.readinessLabel.text)
+        widget.onCancel()
+        self.assertIn("Cancelling", widget.ui.statusLabel.text)
+        widget._updateRunFeedback()
+        widget._updateRunState()
+        self.assertIn("Cancelling", widget.ui.statusLabel.text)
+        self.assertFalse(widget.ui.cancelButton.enabled)
+        # No worker/staging exists in this test: exercise actual MRML terminal events.
+        with patch.object(widget.logic, "cleanupJob"):
+            node.SetStatus(node.Cancelled)
+        self.assertIn("was cancelled", widget.ui.statusLabel.text)
+        self.assertIsNone(widget._runStartedAt)
+        self.assertFalse(widget._runFeedbackTimer.isActive())
+        self.assertFalse(node.IsContinuousOutputUpdate())
+        elapsed = widget.ui.elapsedTimeLabel.text
+        widget._updateRunFeedback()
+        self.assertEqual(widget.ui.elapsedTimeLabel.text, elapsed)
+        self.assertTrue(widget.ui.runButton.enabled)
+
+    def test_launch_failure_or_decline_stops_elapsed_feedback(self) -> None:
+        widget = self._feedback_widget()
+        for error in (DependencyInstallDeclined("declined"), RuntimeError("probe failure")):
+            with self.subTest(error=type(error).__name__), patch.object(
+                widget.logic, "ensureDependencies", side_effect=error
+            ), patch.object(slicer.util, "errorDisplay"):
+                widget.onRun()
+                self.assertIn("run did not start", widget.ui.statusLabel.text.lower())
+                self.assertIsNone(widget._runStartedAt)
+                self.assertFalse(widget._runFeedbackTimer.isActive())
+                self.assertTrue(widget.ui.runButton.enabled)
+
+    def test_cli_failure_stops_elapsed_feedback_and_preserves_error(self) -> None:
+        widget = self._feedback_widget()
+        node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLCommandLineModuleNode")
+        widget._cliNode = node
+        widget._activeJob = {"manifest": {"rois": [{"roi_name": "First"}]}}
+        widget._startRunFeedback()
+        widget._cliObserverTag = node.AddObserver(vtk.vtkCommand.ModifiedEvent, widget.onCliModified)
+        with patch.object(widget.logic, "cleanupJob"), patch.object(slicer.util, "errorDisplay"):
+            node.SetStatus(node.CompletedWithErrors, False)
+            widget._updateRunFeedback()  # Terminal-state fallback without a ModifiedEvent.
+        self.assertIn("failed; the output table was not changed", widget.ui.statusLabel.text)
+        self.assertFalse(widget._runFeedbackTimer.isActive())
+        self.assertIsNone(widget._runStartedAt)
+        widget._updateRunFeedback()
+        widget._updateRunState()
+        self.assertIn("failed; the output table was not changed", widget.ui.statusLabel.text)
+        # A subsequent run starts a fresh clock rather than continuing the failed run.
+        widget._startRunFeedback()
+        self.assertEqual(widget.ui.elapsedTimeLabel.text, "Elapsed: 00:00:00")
+
+    def test_scene_close_and_cleanup_stop_elapsed_feedback(self) -> None:
+        widget = self._feedback_widget()
+        widget._startRunFeedback()
+        widget.onSceneStartClose()
+        self.assertFalse(widget._runFeedbackTimer.isActive())
+        self.assertIsNone(widget._runStartedAt)
+        widget._startRunFeedback()
+        widget.cleanup()
+        self.assertIsNone(widget._runFeedbackTimer)
+        self.assertIsNone(widget._runStartedAt)
+
+    @unittest.skipUnless(
+        os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1",
+        f"Set {RUN_REAL_CLI_TEST_ENV}=1 to run the existing-dependency CLI gate.",
+    )
+    def test_real_gui_run_reports_roi_and_freezes_elapsed_time(self) -> None:
+        dependency_path, _ = _qualified_dependency_target(self.logic)
+        widget = self._feedback_widget()
+        widget.ui.segmentationSelector.setCurrentNode(self.fixture.segmentation_node)
+        profile_path = self.temporary_directory / "real-run.pictologics-profile.json"
+        profile_path.write_text(json.dumps(build_profile(
+            "Real extraction profile", ["standard_fbn_32"], default_inline_state()
+        )), encoding="utf-8")
+        dialog_qt = SimpleNamespace(
+            Qt=qt.Qt, QListWidgetItem=qt.QListWidgetItem,
+            QFileDialog=SimpleNamespace(getOpenFileName=lambda *args: str(profile_path)),
+        )
+        with patch.object(gui_module, "qt", dialog_qt), patch.object(slicer.util, "errorDisplay") as errors:
+            widget.onLoadProfile()
+            errors.assert_not_called()
+        self.assertEqual(widget._currentAdditionalSource(), "inline")
+        inspection = inspect_target(dependency_path, widget.logic.pictologicsRequirement())
+        messages = []
+        update_feedback = widget._updateRunFeedback
+
+        def capture_feedback():
+            update_feedback()
+            messages.append(str(widget.ui.statusLabel.text))
+
+        with patch.object(widget.logic, "ensureDependencies", return_value=inspection), patch.object(
+            widget.logic, "showTable"
+        ), patch.object(widget, "_updateRunFeedback", side_effect=capture_feedback):
+            widget.onRun()
+            cli_node, job = widget._cliNode, widget._activeJob
+            self.assertIsNotNone(cli_node)
+            self.assertIsNotNone(job)
+            try:
+                observation = _wait_for_cli_terminal(
+                    cli_node, widget.logic, job, timeout_seconds=CLI_TIMEOUT_SECONDS
+                )
+            except BaseException:
+                if widget.logic.jobWorkerIsAlive(job):
+                    self.retain_temporary_directory = True
+                    type(self).retained_async_failure = "GUI feedback worker still owns staging."
+                raise
+            self.assertTrue(observation.terminal_state.completed)
+            self.assertFalse(observation.terminal_state.failed)
+            deadline = time.monotonic() + 5.0
+            while widget._activeJob is not None and time.monotonic() < deadline:
+                _pump_slicer_events()
+        self.assertIsNone(widget._activeJob)
+        self.assertIsNone(widget._runStartedAt)
+        self.assertFalse(widget._runFeedbackTimer.isActive())
+        self.assertFalse(cli_node.IsContinuousOutputUpdate())
+        self.assertIn("Processing ROI 1 of 2: Whole volume", messages)
+        self.assertIn(f"Processing ROI 2 of 2: {SEGMENT_NAME}", messages)
+        self.assertIn("Completed:", widget.ui.statusLabel.text)
+        self.assertIn("Ready:", widget.ui.readinessLabel.text)
+        self.assertTrue(widget.ui.runButton.enabled)
+        self.assertEqual(widget.ui.progressBar.value, 100)
+        table = widget.ui.outputTableSelector.currentNode()
+        self.assertGreater(table.GetNumberOfRows(), 0)
+        roi_names = table.GetTable().GetColumnByName("roi_name")
+        self.assertEqual(
+            {roi_names.GetValue(index) for index in range(roi_names.GetNumberOfValues())},
+            {"Whole volume", SEGMENT_NAME},
+        )
+        configurations = table.GetTable().GetColumnByName("configuration")
+        self.assertEqual({configurations.GetValue(index) for index in range(configurations.GetNumberOfValues())},
+                         {"standard_fbn_32", "in_app"})
+        widget.onBrowseResults()
+        browser = widget._resultsBrowser
+        browser.filters["configuration"].setCurrentIndex(browser.filters["configuration"].findText("in_app"))
+        self.assertGreater(len(browser.indices), 0)
+        self.assertIn("Configuration: in_app", browser.details.toPlainText())
+        self.assertIn("PROCESSING LOG", browser.details.toPlainText())
+        self.assertNotIn("No matching processing log", browser.details.toPlainText())
 
     def test_oblique_volume_and_shared_linear_transform(self) -> None:
         fixture = self.fixture

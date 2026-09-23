@@ -2,11 +2,16 @@ set(MODULE_NAME PictologicsSlicer)
 
 set(MODULE_PYTHON_SCRIPTS
   ${MODULE_NAME}.py
+  PictologicsWidgets/__init__.py
+  PictologicsWidgets/results_browser.py
   PictologicsLib/__init__.py
   PictologicsLib/dependency_probe.py
   PictologicsLib/dependencies.py
   PictologicsLib/inline_config.py
   PictologicsLib/jobs.py
+  PictologicsLib/progress.py
+  PictologicsLib/profiles.py
+  PictologicsLib/result_browser.py
   PictologicsLib/results.py
   PictologicsLib/staging.py
   )

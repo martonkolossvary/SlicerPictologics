@@ -137,6 +137,12 @@ class ExtensionScaffoldTests(unittest.TestCase):
             "cancelButton",
             "exportButton",
             "progressBar",
+            "readinessLabel",
+            "elapsedTimeLabel",
+            "browseResultsButton",
+            "saveProfileButton",
+            "loadProfileButton",
+            "duplicateProfileButton",
         }
         self.assertEqual(expected - names, set())
 
@@ -149,6 +155,8 @@ class ExtensionScaffoldTests(unittest.TestCase):
         cmake = GUI_CMAKE.read_text(encoding="utf-8")
         scripts = cmake.split("set(MODULE_PYTHON_SCRIPTS", 1)[1].split(")", 1)[0]
         support_root = ROOT / "PictologicsSlicer/PictologicsLib"
+        self.assertIn("PictologicsWidgets/__init__.py", scripts)
+        self.assertIn("PictologicsWidgets/results_browser.py", scripts)
         for module in support_root.glob("*.py"):
             relative = module.relative_to(ROOT / "PictologicsSlicer").as_posix()
             with self.subTest(module=relative):

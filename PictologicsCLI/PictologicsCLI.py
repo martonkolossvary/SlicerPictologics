@@ -1026,6 +1026,10 @@ class ProgressReporter:
     def roi_started(self, index: int, total: int, roi: ROIManifest) -> None:
         self.progress(index / total)
         self.comment(f"Processing ROI {index + 1} of {total}: {roi.roi_name}")
+        # Slicer's Python API exposes progress percentages but not SEM's
+        # ProgressMessage. Keep a compact marker in ordinary stdout so the GUI
+        # can read exact ROI boundaries without inferring them from rounded %.
+        self._write("PICTOLOGICS_ROI " + json.dumps({"index": index, "total": total}))
 
     def roi_finished(self, index: int, total: int) -> None:
         self.progress((index + 1) / total)

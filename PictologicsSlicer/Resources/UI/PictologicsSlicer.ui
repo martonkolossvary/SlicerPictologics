@@ -232,6 +232,19 @@
     </widget>
    </item>
    <item>
+    <widget class="ctkCollapsibleButton" name="profilesCollapsibleButton">
+     <property name="text"><string>Configuration profiles</string></property>
+     <layout class="QVBoxLayout" name="profilesLayout">
+      <item><layout class="QHBoxLayout" name="profileButtonsLayout">
+       <item><widget class="QPushButton" name="loadProfileButton"><property name="text"><string>Load…</string></property></widget></item>
+       <item><widget class="QPushButton" name="saveProfileButton"><property name="text"><string>Save…</string></property><property name="toolTip"><string>Save checked presets and in-app settings. Advanced configuration files remain a separate workflow.</string></property></widget></item>
+       <item><widget class="QPushButton" name="duplicateProfileButton"><property name="text"><string>Save copy…</string></property><property name="toolTip"><string>Save current settings as a new named profile without replacing the original file.</string></property></widget></item>
+      </layout></item>
+      <item><widget class="QLabel" name="profileStatusLabel"><property name="text"><string>Profiles contain settings only; no patient data.</string></property><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::PlainText</enum></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="ctkCollapsibleButton" name="outputCollapsibleButton">
      <property name="text"><string>Output</string></property>
      <layout class="QFormLayout" name="outputFormLayout">
@@ -267,6 +280,12 @@
         <property name="enabled"><bool>false</bool></property>
        </widget>
       </item>
+      <item row="4" column="1">
+       <widget class="QPushButton" name="browseResultsButton">
+        <property name="text"><string>Browse results and provenance…</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -287,6 +306,13 @@
        </widget>
       </item>
      </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="readinessLabel">
+     <property name="text"><string>Select an input scalar volume.</string></property>
+     <property name="wordWrap"><bool>true</bool></property>
+     <property name="toolTip"><string>Input readiness only. Geometry and custom configurations are checked again when the job is prepared and executed.</string></property>
     </widget>
    </item>
    <item>
@@ -312,8 +338,14 @@
     </widget>
    </item>
    <item>
+    <widget class="QLabel" name="elapsedTimeLabel">
+     <property name="text"><string>Elapsed: 00:00:00</string></property>
+     <property name="toolTip"><string>Total wall time since Run was selected, including dependency checks and input preparation. Not an estimate of time remaining.</string></property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="statusLabel">
-     <property name="text"><string>Select a scalar volume to begin.</string></property>
+     <property name="text"><string>No run started.</string></property>
      <property name="wordWrap"><bool>true</bool></property>
     </widget>
    </item>

@@ -1,6 +1,6 @@
 # Release readiness
 
-Review date: 2026-09-22. Extension/result contract remains **0.1.0**.
+Review date: 2026-09-23. Extension/result contract remains **0.1.0**.
 
 ## Catalog identity, icon, and screenshots
 
@@ -17,10 +17,16 @@ Review date: 2026-09-22. Extension/result contract remains **0.1.0**.
   CMake resources. Previous designs and reusable exports remain in source control,
   outside the installed runtime resources. The bundle ZIP and all manifest hashes
   have been checked after the documentation update.
-- Local validation: **433 tests passed**, 100% scoped library/worker coverage,
-  scoped Ruff, Mypy, and syntax checks. **Eight integration tests passed in Slicer
+- Local validation: **498 tests and 151 subtests passed**, 100% scoped library/worker
+  coverage, scoped Ruff, Mypy, and syntax checks. **Sixteen integration tests passed in Slicer
   5.12.4 on macOS**, including actual GUI/CLI discovery, icon identity at
-  16/32/128/256 pixels, real asynchronous extraction, and actual table-view binding.
+  16/32/128/256 pixels, real asynchronous extraction, actual table-view binding,
+  readiness recovery, timer/cancellation/failure cleanup, profile save/load/copy,
+  read-only results filtering, and a real multi-ROI GUI run loaded from a saved
+  profile, with both ROI names observed live and actual processing logs inspected
+  through the results browser. The Slicer process exited successfully. A subsequent
+  fast run also passed after the final UI sizing and overwrite-confirmation changes
+  (14 passed, the two opt-in extraction tests skipped).
 - The published identity/icon changes (`dc63b86`) passed all five GitHub CI jobs:
   [qualification run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/35590611518).
 - Two high-resolution [catalog screenshots](screenshots/README.md) show genuine
@@ -58,9 +64,10 @@ Review date: 2026-09-22. Extension/result contract remains **0.1.0**.
   included in this update.
 
 Packaged installation/update testing and the ExtensionsIndex pull request remain
-outstanding. This machine has the downloaded Slicer application, but neither a
-Slicer build tree (`SlicerConfig.cmake`) nor CMake; source-module acceptance is not
-an Extension Factory package build. See the [packaging/submission checklist](extensions-index-submission.md).
+outstanding. Source-module acceptance is not an Extension Factory package build.
+This Python-only extension does not require a local Slicer build tree before
+submission; the factory-produced packages still need clean-install verification.
+See the [packaging/submission checklist](extensions-index-submission.md).
 The original stabilization evidence below is retained as the 2026-09-19 baseline.
 
 ## Stabilized baseline
@@ -107,6 +114,59 @@ Development users pull the new extension code; catalog users will update the ext
 through Slicer once catalog distribution is available. Then the module installs the
 new adopted wheel. Startup never silently upgrades dependencies.
 
+## Readiness and run-feedback usability pass
+
+- Input readiness now has its own label, including a summary of whole-volume,
+  selected-segment, and configuration selections. Correcting invalid inputs clears
+  that validation message without overwriting the previous run's outcome.
+- Runs show setup/execution/result-loading phases, exact current ROI number/name,
+  and monotonic elapsed wall time including setup. The clock freezes on terminal
+  outcomes and is stopped on scene close or module cleanup. Cancellation feedback
+  is not overwritten by late progress updates.
+- Existing ROI-boundary percentages and single-ROI indeterminate progress remain;
+  no estimated completion time or within-kernel progress is claimed. A compact
+  worker stdout marker bridges Slicer's missing Python progress-message accessor.
+- README processing-log wording now distinguishes public `save_log()` JSON export
+  from the missing public in-memory getter. The worker's private `_log` fallback
+  remains unchanged; replacing it is a separate compatibility change.
+- Local quality instructions now contain the tracked commands used by CI, without
+  relying on the ignored `dev/pre_push.py` helper. Neither result schema nor package
+  pin has changed. No catalog/tutorial screenshot was modified.
+- This usability pass has been validated locally; GitHub CI and published catalog
+  validation linked above describe earlier commits. Check the milestone commit's
+  own CI before using it for catalog submission.
+
+## Results inspection and saved profiles
+
+- **Browse results…** opens a read-only snapshot of the selected table, with
+  feature/code/preprocessing search and conjunctive ROI, configuration, family,
+  and status filters. Pages contain up to 200 rows. ROI identity includes the run,
+  so appended runs with identical ROI names remain distinguishable.
+- Selecting a row shows feature values, both IBSI identifiers, the package's
+  feature key and long name, preprocessing, configuration hash, software versions,
+  matching processing logs, requested/effective parameters where recorded, and
+  ROI errors. Missing or ambiguous provenance is reported rather than borrowing
+  details from another run. Patient-derived text is displayed as plain text.
+- Browsing never modifies the canonical table or its schema. Existing exports
+  still include the entire selected table, not just the filtered snapshot. Refresh
+  reloads the selected table and resets filters; scene close clears the snapshot.
+- **Configuration profiles** provides named **Load…**, **Save…**, and **Save copy…**
+  actions for selected standard presets and the optional in-app configuration.
+  Loading validates every setting before changing controls and leaves patient,
+  image, ROI, and output selections untouched. Save copy protects the original
+  file; filename-extension normalization also checks before overwriting a file.
+- Profiles use a separate settings-only JSON format. They are not upstream
+  pipeline configuration files, dependency pins, or a multi-configuration editor.
+  Advanced YAML/JSON files remain reusable through the existing file mode. Profile
+  names do not rename native configurations in results, and edits require an
+  explicit save. No patient/scene identifiers are automatically stored in profiles.
+- Extension/result contract **0.1.0**, the Pictologics **0.5.1** requirement, and all
+  catalog/tutorial images remain unchanged. On 2026-09-23, the normal Slicer session
+  discovered both modules through saved paths, opened the new controls, and reused
+  its existing private 0.5.1 installation. The maintainer authorized publishing this
+  milestone to the existing GitHub repository, while holding catalog submission
+  and broader release until after the next functional improvements.
+
 ## Reassessment: next priorities
 
 1. **Finish catalog distribution.** Catalog identity, metadata, icon integration,
@@ -121,11 +181,11 @@ new adopted wheel. Startup never silently upgrades dependencies.
    Slicer (normal-Python Windows checks alone are insufficient), then record an
    interactive checklist: first install, restart, multiple ROIs, busy/progress,
    cancellation, append/export, and scene close during execution.
-3. **Expose 0.5.1's new information in the UI.** The package now supplies versioned
-   filter-capability metadata and requested/effective filtering parameters. Use it
-   for a filter browser and clearer preprocessing/provenance inspection. It is not
-   yet a complete configuration schema, so a fully generated multi-step editor still
-   needs additional upstream API work.
+3. **Expand preprocessing controls.** Use 0.5.1's versioned filter-capability
+   metadata for a filter browser and guided authoring of additional supported
+   operations. Requested/effective parameters are now visible in result details
+   when recorded. Capability metadata is not a complete configuration schema, so
+   a fully generated multi-step editor still needs additional upstream API work.
 
 The sibling Pictologics package is already at published 0.5.1. Its untracked
 `notify-slicer-extension.yml` draft was left untouched: the independent schedule makes

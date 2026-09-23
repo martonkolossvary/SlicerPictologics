@@ -40,6 +40,8 @@ from PictologicsLib.inline_config import (
     preset_names,
 )
 from PictologicsLib.jobs import build_job_manifest, sha256_file, write_job_manifest
+from PictologicsLib.profiles import build_profile, validate_profile
+from PictologicsLib.progress import current_roi_index, elapsed_text
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     RESULT_PAYLOAD_SCHEMA_VERSION,
@@ -49,6 +51,7 @@ from PictologicsLib.results import (
     validate_result_payload,
 )
 from PictologicsLib.staging import process_is_alive, read_pid_marker
+from PictologicsWidgets.results_browser import ResultsBrowser
 from slicer.ScriptedLoadableModule import (
     ScriptedLoadableModule,
     ScriptedLoadableModuleLogic,
@@ -235,7 +238,14 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._finishingJob = False
         self._dependencyOperationInProgress = False
         self._cliProgressIndeterminate = False
+        self._runStartedAt: float | None = None
+        self._runFeedbackTimer = None
+        self._cancelRequested = False
+        self._continuousOutputNode = None
         self._lastPayload: dict[str, Any] | None = None
+        self._resultsBrowser = None
+        self._profilePath: Path | None = None
+        self._profileName = "Radiomics profile"
 
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
@@ -243,6 +253,13 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         uiWidget = slicer.util.loadUI(self.resourcePath("UI/PictologicsSlicer.ui"))
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
+        # Names from user data must remain plain text, including strings with < >.
+        for label in (self.ui.readinessLabel, self.ui.statusLabel):
+            label.setTextFormat(qt.Qt.PlainText)
+        self.ui.elapsedTimeLabel.hide()
+        self._runFeedbackTimer = qt.QTimer(uiWidget)
+        self._runFeedbackTimer.setInterval(1000)
+        self._runFeedbackTimer.connect("timeout()", self._updateRunFeedback)
         uiWidget.setMRMLScene(slicer.mrmlScene)
         # Do not depend on Designer signal wiring for scene propagation.
         for selector in (
@@ -274,9 +291,17 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.refreshPackageStatus()
 
     def cleanup(self):
+        if self._resultsBrowser is not None:
+            self._resultsBrowser.close()
+        self._stopRunFeedback()
         self.setParameterNode(None)
         self._handoffActiveJobCleanup(cancel=True)
         self.removeObservers()
+        if self._runFeedbackTimer is not None:
+            # Break the Qt signal -> Python widget -> C++ parent ownership cycle
+            # before the module's widgets are destroyed.
+            self._runFeedbackTimer.disconnect("timeout()", self._updateRunFeedback)
+            self._runFeedbackTimer = None
 
     def enter(self):
         self.initializeParameterNode()
@@ -350,6 +375,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.runButton.connect("clicked()", self.onRun)
         self.ui.cancelButton.connect("clicked()", self.onCancel)
         self.ui.exportButton.connect("clicked()", self.onExport)
+        self.ui.browseResultsButton.connect("clicked()", self.onBrowseResults)
+        self.ui.saveProfileButton.connect("clicked()", self.onSaveProfile)
+        self.ui.loadProfileButton.connect("clicked()", self.onLoadProfile)
+        self.ui.duplicateProfileButton.connect("clicked()", self.onDuplicateProfile)
 
     def _populateStandardConfigurations(self):
         self.ui.standardConfigListWidget.blockSignals(True)
@@ -392,10 +421,18 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.updateGUIFromParameterNode()
 
     def onSceneStartClose(self, caller=None, event=None):
+        if self._resultsBrowser is not None:
+            self._resultsBrowser.close()
+        self._profilePath = None
+        self._profileName = "Radiomics profile"
+        self.ui.profileStatusLabel.setText("Profiles contain settings only; no patient data.")
+        self._stopRunFeedback()
         if self._activeJob is not None:
             # A CLI result belongs to the scene in which it was submitted. Never
             # let a late completion write patient A's rows into a newly loaded scene.
             self._activeJob["discard_results"] = True
+            self._cancelRequested = True
+            self.ui.statusLabel.setText("Scene closing; discarding this run's results.")
             if self._nodeIsBusy(self._cliNode):
                 self._cliNode.Cancel()
         self.setParameterNode(None)
@@ -715,7 +752,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         if not hasattr(self, "ui"):
             return
         cliBusy = self._nodeIsBusy(self._cliNode)
-        busy = cliBusy or self._dependencyOperationInProgress
+        busy = cliBusy or self._activeJob is not None or self._dependencyOperationInProgress
         error = self._validationError()
         for control in (
             self.ui.inputVolumeSelector,
@@ -730,20 +767,144 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.outputTableSelector,
             self.ui.appendResultsCheckBox,
             self.ui.exportWideCheckBox,
+            self.ui.loadProfileButton,
         ):
             control.setEnabled(not busy)
         self.ui.runButton.setEnabled(not busy and error is None)
-        self.ui.cancelButton.setEnabled(cliBusy)
+        self.ui.cancelButton.setEnabled(cliBusy and not self._cancelRequested)
         self.ui.updatePackageButton.setEnabled(not busy)
         tableNode = self.ui.outputTableSelector.currentNode()
+        self.ui.saveProfileButton.setEnabled(not busy and self._currentAdditionalSource() != "file")
+        self.ui.duplicateProfileButton.setEnabled(not busy and self._currentAdditionalSource() != "file")
         self.ui.exportButton.setEnabled(
             not busy
             and tableNode is not None
             and tableNode.GetTable() is not None
             and tableNode.GetTable().GetNumberOfRows() > 0
         )
-        if not busy and error:
-            self.ui.statusLabel.setText(error)
+        self.ui.browseResultsButton.setEnabled(self.ui.exportButton.enabled)
+        if busy:
+            self.ui.readinessLabel.setText("Run or package operation in progress; inputs are locked.")
+        elif error:
+            self.ui.readinessLabel.setText(error)
+        else:
+            segmentCount = len(self._selectedSegmentIDs())
+            regionParts = []
+            if self.ui.wholeVolumeCheckBox.checked:
+                regionParts.append("whole volume")
+            if segmentCount:
+                regionParts.append(f"{segmentCount} segment(s)")
+            configParts = []
+            presets = self._selectedConfigurations()
+            if presets:
+                configParts.append(f"{len(presets)} preset(s)")
+            source = self._currentAdditionalSource()
+            if source == "inline":
+                configParts.append("1 in-app configuration")
+            elif source == "file":
+                # A file may define several configurations; do not guess its count.
+                configParts.append("custom file (validated by worker)")
+            self.ui.readinessLabel.setText(
+                f"Ready: {' + '.join(regionParts)}; {' + '.join(configParts)}."
+            )
+
+    def onBrowseResults(self):
+        if self._resultsBrowser is None:
+            self._resultsBrowser = ResultsBrowser(self.parent, self._refreshResultsBrowser)
+        if self._refreshResultsBrowser():
+            self._resultsBrowser.dialog.show()
+            self._resultsBrowser.dialog.raise_()
+
+    def _refreshResultsBrowser(self):
+        table = self.ui.outputTableSelector.currentNode()
+        try:
+            if table is None:
+                raise ValueError("Select a Pictologics results table first.")
+            rows = self.logic.rowsFromTable(table)
+            warning = ""
+            try:
+                history = self.logic.provenanceHistory(table)
+            except ValueError as exc:
+                history, warning = [], str(exc)
+            self._resultsBrowser.set_data(table.GetName(), rows, history, warning)
+            return True
+        except Exception as exc:
+            self._resultsBrowser.set_data("Unavailable", [], [], str(exc))
+            slicer.util.errorDisplay(str(exc), windowTitle="Pictologics results")
+            return False
+
+    def onSaveProfile(self):
+        self._saveProfile(copyProfile=False)
+
+    def onDuplicateProfile(self):
+        self._saveProfile(copyProfile=True)
+
+    def _saveProfile(self, *, copyProfile: bool):
+        if self._dependencyOperationInProgress or self._activeJob is not None:
+            return
+        try:
+            if self._currentAdditionalSource() == "file":
+                raise ValueError("Profiles support presets and in-app settings. Custom YAML/JSON files are already reusable.")
+            suggested = self._profileName + (" copy" if copyProfile else "")
+            answer = qt.QInputDialog.getText(self.parent, "Save configuration profile", "Profile name:", qt.QLineEdit.Normal, suggested)
+            if isinstance(answer, (tuple, list)) and len(answer) > 1 and not answer[1]:
+                return
+            name = self._dialogPath(answer)
+            if not name:
+                return
+            document = build_profile(name, self._selectedConfigurations(),
+                                     self._inlineStateFromGUI() if self._currentAdditionalSource() == "inline" else None)
+            suggestedPath = str(self._profilePath) if self._profilePath and not copyProfile else "profile-copy.pictologics-profile.json" if copyProfile else "profile.pictologics-profile.json"
+            selected = self._dialogPath(qt.QFileDialog.getSaveFileName(
+                self.parent, "Save configuration profile", suggestedPath,
+                "Pictologics settings profile (*.pictologics-profile.json)",
+            ))
+            if not selected:
+                return
+            destination = Path(selected)
+            if destination.suffix.lower() != ".json":
+                destination = destination.with_name(destination.name + ".pictologics-profile.json")
+            if copyProfile and self._profilePath and destination.resolve() == self._profilePath.resolve():
+                raise ValueError("Choose a different file for the duplicate; the original profile was not changed.")
+            if str(destination) != selected and destination.exists() and not slicer.util.confirmYesNoDisplay(
+                f"Replace the existing profile {destination.name}?", windowTitle="Save profile"
+            ):
+                return
+            self.logic._atomicWriteJSON(destination, document)
+            self._profilePath, self._profileName = destination, document["name"]
+            self.ui.profileStatusLabel.setText(f"Saved {document['name']}. Save again after changing settings.")
+        except Exception as exc:
+            slicer.util.errorDisplay(str(exc), windowTitle="Could not save profile")
+
+    def onLoadProfile(self):
+        if self._dependencyOperationInProgress or self._activeJob is not None:
+            return
+        selected = self._dialogPath(qt.QFileDialog.getOpenFileName(
+            self.parent, "Load configuration profile", str(self._profilePath or ""),
+            "Pictologics settings profile (*.pictologics-profile.json);;JSON (*.json)",
+        ))
+        if not selected:
+            return
+        try:
+            # Complete validation before changing a single control or parameter.
+            document = validate_profile(json.loads(Path(selected).read_text(encoding="utf-8")))
+            self._updatingGUIFromParameterNode = True
+            try:
+                self.ui.additionalConfigCombo.setCurrentIndex(1 if document["inline_state"] is not None else 0)
+                if document["inline_state"] is not None:
+                    self._applyInlineState(document["inline_state"])
+                for index in range(self.ui.standardConfigListWidget.count):
+                    item = self.ui.standardConfigListWidget.item(index)
+                    item.setCheckState(qt.Qt.Checked if str(item.data(ITEM_VALUE_ROLE)) in document["presets"] else qt.Qt.Unchecked)
+                self._updateConfigVisibility()
+            finally:
+                self._updatingGUIFromParameterNode = False
+            self.updateParameterNodeFromGUI()
+            self._updateRunState()
+            self._profilePath, self._profileName = Path(selected), document["name"]
+            self.ui.profileStatusLabel.setText(f"Loaded {document['name']}. Save again after changing settings.")
+        except Exception as exc:
+            slicer.util.errorDisplay(str(exc), windowTitle="Could not load profile")
 
     def onBrowseConfiguration(self):
         selected = qt.QFileDialog.getOpenFileName(
@@ -926,6 +1087,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         # Mark the entire launch path busy before the first processEvents() call so a
         # queued Run/Update click cannot start a second 500+ MB installation.
         self._dependencyOperationInProgress = True
+        self._startRunFeedback()
         self._restoreCliProgress(0)
         self._updateRunState()
         try:
@@ -973,11 +1135,13 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 }
             )
             self._cliNode = self.logic.startJob(self._activeJob)
+            self._cliNode.StartContinuousOutputUpdate()
+            self._continuousOutputNode = self._cliNode
             self._cliObserverTag = self._cliNode.AddObserver(
                 vtk.vtkCommand.ModifiedEvent, self.onCliModified
             )
             self._beginCliProgress(len(self._activeJob["manifest"]["rois"]))
-            self.ui.statusLabel.setText("Pictologics is running in the background…")
+            self.ui.statusLabel.setText("Starting Pictologics worker…")
             self._updateRunState()
             # Handle a setup failure that completed between cli.run() and observer
             # registration; no later ModifiedEvent is guaranteed in that race.
@@ -998,13 +1162,57 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.statusLabel.setText("The run did not start.")
         finally:
             self._dependencyOperationInProgress = False
+            if self._activeJob is None:
+                self._stopRunFeedback()
             self._updateRunState()
 
     def onCancel(self):
         if self._nodeIsBusy(self._cliNode):
-            self._cliNode.Cancel()
+            self._cancelRequested = True
             self.ui.statusLabel.setText("Cancelling Pictologics…")
             self.ui.cancelButton.setEnabled(False)
+            # Cancel may synchronously deliver a terminal event; set feedback first.
+            self._cliNode.Cancel()
+
+    def _startRunFeedback(self):
+        self._runStartedAt = time.monotonic()
+        self._cancelRequested = False
+        self.ui.elapsedTimeLabel.show()
+        self._updateRunFeedback()
+        self._runFeedbackTimer.start()
+
+    def _stopRunFeedback(self):
+        if self._runFeedbackTimer is not None:
+            self._runFeedbackTimer.stop()
+        if self._runStartedAt is not None:
+            self.ui.elapsedTimeLabel.setText(elapsed_text(time.monotonic() - self._runStartedAt))
+        self._runStartedAt = None
+
+    def _updateRunFeedback(self):
+        if self._runStartedAt is not None:
+            self.ui.elapsedTimeLabel.setText(elapsed_text(time.monotonic() - self._runStartedAt))
+        if (
+            self._activeJob is None
+            or self._cliNode is None
+            or self._finishingJob
+        ):
+            return
+        if not self._nodeIsBusy(self._cliNode):
+            # Also sample terminal state on the timer: a CLI can finish between
+            # event delivery and observer registration, or coalesce notifications.
+            self.onCliModified(self._cliNode)
+            return
+        if self._cancelRequested or self._activeJob.get("discard_results"):
+            return
+        if self._cliProgressPercent(self._cliNode) >= 100:
+            self.ui.statusLabel.setText("Finalizing worker output…")
+            return
+        rois = self._activeJob["manifest"]["rois"]
+        index = current_roi_index(str(self._cliNode.GetOutputText() or ""), len(rois))
+        if index is not None:
+            self.ui.statusLabel.setText(
+                f"Processing ROI {index + 1} of {len(rois)}: {rois[index]['roi_name']}"
+            )
 
     def _beginCliProgress(self, roiCount: int):
         # The current worker reports completed ROI boundaries. A single ROI has
@@ -1039,6 +1247,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 pass
 
         if cliNode.IsBusy():
+            self._updateRunFeedback()
             return
 
         status = int(cliNode.GetStatus())
@@ -1077,6 +1286,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                         "Pictologics failed; the output table was not changed."
                     )
             else:
+                self.ui.statusLabel.setText("Validating and loading results…")
                 self._acceptCompletedJob()
         except Exception as exc:
             LOGGER.exception("Could not commit Pictologics results")
@@ -1087,6 +1297,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 "Results were not committed; the previous table is unchanged."
             )
         finally:
+            self._stopRunFeedback()
             if self._activeJob:
                 self.logic.cleanupJob(self._activeJob)
             self._activeJob = None
@@ -1165,6 +1376,12 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 pass
         self._cliObserverTag = None
         self._cliNode = None
+        if self._continuousOutputNode is not None:
+            try:
+                self._continuousOutputNode.EndContinuousOutputUpdate()
+            except RuntimeError:
+                pass
+            self._continuousOutputNode = None
         if removeNode and node is not None:
             try:
                 if node.GetScene() == slicer.mrmlScene:
@@ -1184,6 +1401,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
     def _handoffActiveJobCleanup(self, *, cancel: bool):
         """Detach UI callbacks and transfer a running job to cleanup-only polling."""
 
+        self._stopRunFeedback()
         job = self._activeJob
         node = self._cliNode
         if job is not None:
