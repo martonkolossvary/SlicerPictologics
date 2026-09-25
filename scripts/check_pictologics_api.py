@@ -99,6 +99,32 @@ def _check_inline_builder_round_trip() -> None:
                 _check_refinement_values(loaded, expected_name)
 
 
+def _check_mirrored_step_parameters() -> None:
+    """The in-app lint keeps its own copy of the package's step and parameter names.
+
+    A difference would make the Validate button report false problems or miss real
+    ones, so it must stop adoption until the copy is updated.
+    """
+
+    from PictologicsLib.inline_config import _VALID_STEP_PARAMS
+
+    package_steps = getattr(pictologics.RadiomicsPipeline, "_VALID_STEPS", None)
+    if not isinstance(package_steps, dict):
+        raise RuntimeError("RadiomicsPipeline._VALID_STEPS is unavailable; update the lint copy")
+    actual = {step: frozenset(params) for step, params in package_steps.items()}
+    if actual != _VALID_STEP_PARAMS:
+        empty: frozenset[str] = frozenset()
+        differences = {
+            step: sorted(actual.get(step, empty) ^ _VALID_STEP_PARAMS.get(step, empty))
+            for step in sorted(set(actual) | set(_VALID_STEP_PARAMS))
+            if actual.get(step) != _VALID_STEP_PARAMS.get(step)
+        }
+        raise RuntimeError(
+            "PictologicsLib.inline_config._VALID_STEP_PARAMS differs from "
+            f"RadiomicsPipeline._VALID_STEPS: {differences}"
+        )
+
+
 def _check_refinement_values(pipeline, config_name: str) -> None:
     """Independent numerical oracle for each mask target on the released wheel."""
     import numpy as np
@@ -164,6 +190,7 @@ def main() -> int:
         if not callable(getattr(pictologics, name, None)):
             raise RuntimeError(f"pictologics.{name} is unavailable")
 
+    _check_mirrored_step_parameters()
     _check_inline_builder_round_trip()
 
     print(
