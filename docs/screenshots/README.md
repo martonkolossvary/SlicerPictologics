@@ -4,9 +4,14 @@ Captured in 3D Slicer 5.12.4 on macOS (Intel/Rosetta), using the published
 Pictologics 0.5.1 wheel in the extension's existing private environment.
 Both PNGs are genuine, unretouched application-window captures, not mockups.
 
-- `pictologics-workflow.png`: captured and visually approved by the maintainer on
-  2026-09-22. Real public **MRHead MRI** with two selected demonstration ROIs,
-  configuration controls, and completed extraction. Resolution: 3680 × 2280.
+- `pictologics-workflow.png`: captured with
+  [`capture_sample_data_demo.py`](../../scripts/capture_sample_data_demo.py) and
+  visually approved by the maintainer on 2026-09-25. Real public **MRHead MRI** with
+  two selected demonstration ROIs, configuration controls, profiles, the readiness
+  line, the elapsed time, and completed extraction. Resolution: 3680 × 1990. The
+  capture shows the Slicer window contents without the macOS title bar; the view
+  annotations and segment names identify the public sample and the demonstration
+  ROIs. It replaces the 2026-09-22 image, which showed an earlier screen.
 - `pictologics-results.png`: captured on 2026-09-21 from a **separate synthetic
   phantom run**, showing the actual result table and export controls. This image
   is unchanged; approval of the new workflow image does not approve other revisions.
@@ -28,7 +33,7 @@ statuses `ok`**, with `standard_fbn_32`. The image contains no fabricated result
 The sample volume itself is not included in this repository.
 
 Approved workflow PNG SHA-256:
-`6d6e4ed47a2e6d1c33b305cafbc6c58aca30294b3ac0ec3871bba93ffb09e9a1`.
+`39b53217849fe6fc16e6c5cc5f95c08c53532ec9eb709da1ce0985a33f9ae5e5`.
 
 ## Synthetic results-table example
 
@@ -57,6 +62,11 @@ From the repository root on macOS:
 
 On Linux or Windows, substitute the Slicer executable and absolute module/script
 paths. The isolated launch avoids changing saved application preferences.
+
+To run the same demo and save the capture automatically, launch
+`scripts/capture_sample_data_demo.py` instead, with `PICTOLOGICS_CAPTURE_PATH` set to
+the PNG file to write. It waits for the real run to finish and then saves the window
+contents, without the operating-system title bar.
 
 1. Maximize the Slicer window and select **Run radiomics**. Leave both demonstration
    ROIs and `standard_fbn_32` selected. Alternatively, set

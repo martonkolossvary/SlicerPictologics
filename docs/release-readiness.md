@@ -218,6 +218,22 @@ new adopted wheel. Startup never silently upgrades dependencies.
   runner in Slicer cannot import or collect. They now use `unittest`.
 - **Catalog text.** The description names radiomics, and the module help links the
   documentation.
+- **Memory warning.** Before a run, the module estimates the resampled scan size for
+  the checked presets and the in-app or file configuration. When one copy needs more
+  than about 1 GB, it asks before anything starts.
+- **Worker module title.** Slicer cannot hide a CLI module, so its title is now
+  **Pictologics Worker (internal)**.
+- **Step-list check.** The release gate compares the in-app lint's copy of the step
+  and parameter names with `RadiomicsPipeline._VALID_STEPS` and stops adoption on a
+  difference. It passed against the released 0.5.1 wheel and caught a planted
+  difference.
+- **Homepage.** The README now starts with use; developer details moved to
+  [`development.md`](development.md).
+- **Catalog check.** The official ExtensionsIndex check script (blob
+  `c22e9aba7cc32129398fe396f98830f1dcdc4bc4`) passed on the published `main`. On the
+  local `catalog-readiness` branch, all repository-content checks passed (69.6 MB);
+  only the URL-scheme check failed, because that run used a local `file://` address.
+  Run it again on the pushed commit.
 - **Column names.** The long table now uses `config` and `family`, the names of
   Pictologics' `describe_features()`, instead of `configuration` and
   `feature_family`. The result format number is 2. Tables in format 1 cannot be
@@ -226,9 +242,16 @@ new adopted wheel. Startup never silently upgrades dependencies.
   that all names agree.
 - **Validation.** 463 portable tests and 241 subtests passed, with 100% scoped
   library/worker coverage, Ruff, and Mypy. The worker smoke and geometry-parity
-  scripts passed against the local Pictologics source. All 19 Slicer 5.12.4
+  scripts passed against the local Pictologics source. All 20 Slicer 5.12.4
   integration tests passed on macOS, including both real-worker tests with the
   installed Pictologics 0.5.1 wheel.
+- **Real update run.** In the isolated `--disable-settings` profile, the update
+  action installed Pictologics 0.5.1 from PyPI, passed both environment probes,
+  activated `0.5.1-c8ea659d`, and deleted the older environment.
+- **Workflow screenshot.** A new MRHead capture (real run, 340 rows, all `ok`) was
+  approved by the maintainer on 2026-09-25 and replaces the earlier image. It shows
+  the profiles section, the readiness line, and the elapsed time. The Qt capture has
+  no macOS title bar.
 
 ## Reassessment: next priorities
 
