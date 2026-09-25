@@ -264,7 +264,7 @@
            <item>
             <widget class="QPushButton" name="validateConfigButton">
              <property name="text"><string>Validate</string></property>
-             <property name="toolTip"><string>Structural pre-check of the selected file. The worker performs the authoritative validation at run time.</string></property>
+             <property name="toolTip"><string>Load the selected file with the installed Pictologics, as a run loads it. Before Pictologics is installed, this is only a quick structural check.</string></property>
             </widget>
            </item>
           </layout>

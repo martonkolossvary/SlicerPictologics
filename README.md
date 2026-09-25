@@ -82,8 +82,8 @@ old version is deleted automatically.
 3. Check one or more standard presets and/or add one more configuration via
    **Additional config**: *Build one in app* (choose feature families, resampling,
    optional ROI refinement, discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
-   custom Pictologics YAML/JSON, generate a starter with **New from preset…**, or run a
-   structural **Validate** pre-check).
+   custom Pictologics YAML/JSON, generate a starter with **New from preset…**, or press
+   **Validate** to load the file with Pictologics as a run does).
 4. Choose or create an output table. Check the **Ready** summary of whole-volume,
    segment, and configuration selections, then select **Run radiomics**. Readiness
    checks the controls; geometry and custom configurations are checked again during
@@ -211,8 +211,8 @@ presets and one in-app configuration, not multiple custom pipelines.
   (families, resample, resegment, filter outliers, discretise, source mode).
   Further advanced steps (IBSI-2 image filters, custom discretisation cut-offs, mask
   binarization, and largest-component selection), or a different step order, still
-  require a custom YAML/JSON file. The in-app **Validate** aid is a structural
-  pre-check only; the worker performs the authoritative validation.
+  require a custom YAML/JSON file. Before Pictologics is installed, **Validate** does
+  only a quick structural check.
 - Pictologics resamples the whole scan for each region, not only the area around it.
   Large scans with fine resampling spacing can therefore need several gigabytes of
   memory.

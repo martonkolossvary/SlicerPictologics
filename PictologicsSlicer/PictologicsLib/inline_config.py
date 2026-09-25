@@ -4,7 +4,9 @@ The GUI never imports Pictologics, so it cannot use ``RadiomicsPipeline`` to bui
 validate configurations. This module builds the exact serialization dict that
 Pictologics' ``from_dict`` / ``load_configs`` accepts, provides preset starter
 templates for the "new configuration from preset" authoring aid, and performs a fast
-*structural* lint (shape plus known step/parameter names) for the "validate" aid.
+*structural* lint (shape plus known step/parameter names) for the "validate" aid
+when Pictologics is not installed yet. It also reads the result of the worker's
+configuration check, which loads a file with Pictologics as a run does.
 
 The step/parameter names below mirror the adopted Pictologics contract
 (``RadiomicsPipeline._VALID_STEPS`` and the standard templates). The worker's
@@ -14,6 +16,7 @@ catches obvious mistakes before a job is submitted.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -361,3 +364,24 @@ def lint_configuration_document(document: Any) -> list[str]:
             continue
         issues.extend(_lint_steps(str(config_name), steps))
     return issues
+
+
+# Must equal PictologicsCLI.CONFIGURATION_CHECK_PREFIX.
+CONFIGURATION_CHECK_PREFIX = "PICTOLOGICS_CONFIGURATION_CHECK "
+
+
+def parse_configuration_check(output: str) -> dict[str, Any]:
+    """Return the result that ``PictologicsCLI.py --check-configuration`` printed.
+
+    The result has ``valid``, and then ``configurations`` and ``document`` or ``error``.
+    Other output lines are log text; the last one explains a check that did not finish.
+    """
+
+    lines = [line for line in output.splitlines() if line.strip()]
+    for line in reversed(lines):
+        if line.startswith(CONFIGURATION_CHECK_PREFIX):
+            result: dict[str, Any] = json.loads(line[len(CONFIGURATION_CHECK_PREFIX) :])
+            return result
+    raise ValueError(
+        "The configuration check did not finish: " + (lines[-1] if lines else "no output")
+    )

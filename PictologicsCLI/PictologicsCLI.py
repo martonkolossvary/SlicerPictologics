@@ -30,6 +30,9 @@ from xml.sax.saxutils import escape as xml_escape
 
 MANIFEST_SCHEMA_VERSION = 1
 OUTPUT_SCHEMA_VERSION = 2
+# The GUI runs `PictologicsCLI.py --check-configuration <file> <dependencyPath>` and
+# reads the one output line that starts with this prefix.
+CONFIGURATION_CHECK_PREFIX = "PICTOLOGICS_CONFIGURATION_CHECK "
 
 MANIFEST_REQUIRED_KEYS = frozenset(
     {
@@ -884,19 +887,106 @@ def _catalog_to_records(catalog: Any) -> list[dict[str, Any]]:
     return records
 
 
-def create_pipeline(pictologics: Any, manifest: JobManifest) -> PipelineBundle:
-    """Create a standard/custom pipeline and its describe_features lookup."""
-
+def _new_pipeline(pictologics: Any) -> Any:
     try:
         # Pictologics 0.5.1 and earlier can copy wrong values from one configuration
         # to another when its reuse shortcut (deduplication) is on. Compute every
         # configuration on its own until the adopted release contains the fix.
-        pipeline = pictologics.RadiomicsPipeline(deduplicate=False)
+        return pictologics.RadiomicsPipeline(deduplicate=False)
     except Exception as exc:
         raise WorkerSetupError(
             f"cannot initialize RadiomicsPipeline: {type(exc).__name__}: {exc}"
         ) from exc
 
+
+def _merge_custom_configurations(
+    pictologics: Any, pipeline: Any, path: Path
+) -> list[str]:
+    """Add the configurations of a custom file to ``pipeline``; return their names."""
+
+    try:
+        # Pictologics' load_configs(validate=True) only *warns* on malformed
+        # steps/params and on configs it silently skips; it never raises. Capture
+        # those UserWarnings and fail loudly so an invalid custom file is rejected
+        # before extraction instead of silently producing NaN feature rows.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            custom_pipeline = pictologics.RadiomicsPipeline.load_configs(
+                path,
+                validate=True,
+                load_standard=False,
+            )
+            custom_names = list(custom_pipeline.list_configs())
+        validation_messages = [
+            str(entry.message)
+            for entry in caught
+            if issubclass(entry.category, UserWarning)
+        ]
+    except Exception as exc:
+        raise WorkerSetupError(
+            f"cannot load custom configuration '{path}': {type(exc).__name__}: {exc}"
+        ) from exc
+    if validation_messages:
+        raise WorkerSetupError(
+            "custom configuration failed validation: " + "; ".join(validation_messages)
+        )
+    if not custom_names:
+        raise WorkerSetupError("custom configuration file contains no configurations")
+    existing = set(pipeline.list_configs())
+    collisions = sorted(existing.intersection(custom_names))
+    if collisions:
+        raise WorkerSetupError(
+            "custom configuration names collide with built-in configurations: "
+            + ", ".join(collisions)
+        )
+    if len(custom_names) != len(set(custom_names)):
+        raise WorkerSetupError("custom configuration file contains duplicate names")
+    try:
+        pipeline.merge_configs(custom_pipeline, overwrite=False)
+    except Exception as exc:
+        raise WorkerSetupError(f"cannot register custom configurations: {exc}") from exc
+    return custom_names
+
+
+def _describe_configurations(
+    pipeline: Any, selected: Sequence[str]
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    """Return the feature catalog of ``selected``, by configuration, and their settings."""
+
+    try:
+        catalog_records = _catalog_to_records(pipeline.describe_features())
+    except PictologicsCLIError:
+        raise
+    except Exception as exc:
+        raise WorkerSetupError(f"cannot describe configured features: {exc}") from exc
+
+    selected_set = set(selected)
+    selected_records = [
+        record for record in catalog_records if record["config"] in selected_set
+    ]
+    catalog_by_config: dict[str, list[dict[str, Any]]] = {name: [] for name in selected}
+    for record in selected_records:
+        catalog_by_config[record["config"]].append(record)
+    empty_configs = [name for name in selected if not catalog_by_config[name]]
+    if empty_configs:
+        raise WorkerSetupError(
+            "configuration(s) describe no features; add an extract_features step: "
+            + ", ".join(empty_configs)
+        )
+
+    try:
+        configuration_document = pipeline.to_dict(config_names=list(selected))
+    except Exception as exc:
+        raise WorkerSetupError(
+            f"cannot serialize effective configurations: {exc}"
+        ) from exc
+    return selected_records, catalog_by_config, configuration_document
+
+
+def create_pipeline(pictologics: Any, manifest: JobManifest) -> PipelineBundle:
+    """Create a standard/custom pipeline and its describe_features lookup."""
+
+    pipeline = _new_pipeline(pictologics)
     try:
         available_standard = set(pipeline.get_all_standard_config_names())
     except Exception as exc:
@@ -916,97 +1006,38 @@ def create_pipeline(pictologics: Any, manifest: JobManifest) -> PipelineBundle:
 
     selected = list(manifest.standard_configurations)
     if manifest.custom_configuration_path is not None:
-        try:
-            # Pictologics' load_configs(validate=True) only *warns* on malformed
-            # steps/params and on configs it silently skips; it never raises. Capture
-            # those UserWarnings and fail loudly so an invalid custom file is rejected
-            # before extraction instead of silently producing NaN feature rows.
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
-                custom_pipeline = pictologics.RadiomicsPipeline.load_configs(
-                    manifest.custom_configuration_path,
-                    validate=True,
-                    load_standard=False,
-                )
-                custom_names = list(custom_pipeline.list_configs())
-            validation_messages = [
-                str(entry.message)
-                for entry in caught
-                if issubclass(entry.category, UserWarning)
-            ]
-        except Exception as exc:
-            raise WorkerSetupError(
-                f"cannot load custom configuration '{manifest.custom_configuration_path}': "
-                f"{type(exc).__name__}: {exc}"
-            ) from exc
-        if validation_messages:
-            raise WorkerSetupError(
-                "custom configuration failed validation: "
-                + "; ".join(validation_messages)
+        selected.extend(
+            _merge_custom_configurations(
+                pictologics, pipeline, manifest.custom_configuration_path
             )
-        if not custom_names:
-            raise WorkerSetupError(
-                "custom configuration file contains no configurations"
-            )
-        existing = set(pipeline.list_configs())
-        collisions = sorted(existing.intersection(custom_names))
-        if collisions:
-            raise WorkerSetupError(
-                "custom configuration names collide with built-in configurations: "
-                + ", ".join(collisions)
-            )
-        if len(custom_names) != len(set(custom_names)):
-            raise WorkerSetupError("custom configuration file contains duplicate names")
-        try:
-            pipeline.merge_configs(custom_pipeline, overwrite=False)
-        except Exception as exc:
-            raise WorkerSetupError(
-                f"cannot register custom configurations: {exc}"
-            ) from exc
-        selected.extend(custom_names)
-
+        )
     if not selected:
         raise WorkerSetupError("no configurations were selected")
 
-    try:
-        catalog_records = _catalog_to_records(pipeline.describe_features())
-    except PictologicsCLIError:
-        raise
-    except Exception as exc:
-        raise WorkerSetupError(f"cannot describe configured features: {exc}") from exc
-
-    selected_set = set(selected)
-    selected_records = [
-        record for record in catalog_records if record["config"] in selected_set
-    ]
-    catalog_by_config_mutable: dict[str, list[dict[str, Any]]] = {
-        name: [] for name in selected
-    }
-    for record in selected_records:
-        catalog_by_config_mutable[record["config"]].append(record)
-    empty_configs = [name for name in selected if not catalog_by_config_mutable[name]]
-    if empty_configs:
-        raise WorkerSetupError(
-            "configuration(s) describe no features; add an extract_features step: "
-            + ", ".join(empty_configs)
-        )
-
-    try:
-        configuration_document = pipeline.to_dict(config_names=selected)
-    except Exception as exc:
-        raise WorkerSetupError(
-            f"cannot serialize effective configurations: {exc}"
-        ) from exc
-
+    selected_records, catalog_by_config, configuration_document = (
+        _describe_configurations(pipeline, selected)
+    )
     return PipelineBundle(
         pipeline=pipeline,
         selected_configurations=tuple(selected),
         catalog_records=tuple(selected_records),
         catalog_by_config={
-            name: tuple(records) for name, records in catalog_by_config_mutable.items()
+            name: tuple(records) for name, records in catalog_by_config.items()
         },
         configuration_document=configuration_document,
     )
+
+
+def check_configuration_file(pictologics: Any, path: Path) -> dict[str, Any]:
+    """Check a custom configuration file with the same steps as a run."""
+
+    try:
+        pipeline = _new_pipeline(pictologics)
+        names = _merge_custom_configurations(pictologics, pipeline, path)
+        _, _, document = _describe_configurations(pipeline, names)
+    except WorkerSetupError as exc:
+        return {"valid": False, "error": str(exc)}
+    return {"valid": True, "configurations": names, "document": document}
 
 
 class ProgressReporter:
@@ -1522,6 +1553,22 @@ def run_cli(
             pass
 
 
+def run_configuration_check(
+    configuration_path: str,
+    dependency_path: str,
+    *,
+    stdout: TextIO | None = None,
+) -> None:
+    """Print the check of one custom configuration file, for the GUI Validate aid."""
+
+    isolate_dependency_path(dependency_path)
+    pictologics = import_private_pictologics(dependency_path, warmup=False)
+    result = check_configuration_file(pictologics, Path(configuration_path))
+    stream = stdout if stdout is not None else sys.stdout
+    stream.write(CONFIGURATION_CHECK_PREFIX + json.dumps(_json_safe(result)) + "\n")
+    stream.flush()
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -1531,9 +1578,13 @@ def main(
     """CLI entry point. Return nonzero and a concise, actionable stderr message."""
 
     error_stream = stderr if stderr is not None else sys.stderr
+    arguments = list(sys.argv[1:] if argv is None else argv)
     try:
-        args = parse_arguments(argv)
-        run_cli(args, stdout=stdout)
+        if arguments[:1] == ["--check-configuration"]:
+            configuration_path, dependency_path = arguments[1:]
+            run_configuration_check(configuration_path, dependency_path, stdout=stdout)
+        else:
+            run_cli(parse_arguments(arguments), stdout=stdout)
     except PictologicsCLIError as exc:
         error_stream.write(f"PictologicsCLI error: {exc}\n")
         error_stream.flush()

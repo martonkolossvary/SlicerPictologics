@@ -1149,6 +1149,61 @@ class CreatePipelineTests(unittest.TestCase):
             worker.create_pipeline(pic(MergeError), manifest)
 
 
+class ConfigurationCheckTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.custom = self.root / "custom.yaml"
+        self.custom.write_text("configs: {}\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_valid_file_reports_names_and_effective_settings(self):
+        class CustomPipeline(FakePipeline):
+            @classmethod
+            def load_configs(cls, file_path, validate=False, load_standard=False):
+                inst = cls()
+                inst._custom = True
+                return inst
+
+            def list_configs(self):
+                return ["custom_a"] if getattr(self, "_custom", False) else ["standard_fbn_32"]
+
+            def describe_features(self):
+                return FakeCatalog([dict(CATALOG_RECORD, config="custom_a")])
+
+        self.assertEqual(
+            worker.check_configuration_file(pic(CustomPipeline), self.custom),
+            {"valid": True, "configurations": ["custom_a"], "document": {"configs": ["custom_a"]}},
+        )
+
+    def test_invalid_file_reports_the_error_of_a_run(self):
+        self.custom.write_text("# trigger-warning\n", encoding="utf-8")
+        result = worker.check_configuration_file(FakePictologics, self.custom)
+        self.assertFalse(result["valid"])
+        self.assertIn("custom configuration failed validation", result["error"])
+
+    def test_main_prints_one_prefixed_result_line(self):
+        output = io.StringIO()
+        with mock.patch.object(worker, "isolate_dependency_path") as isolate, mock.patch.object(
+            worker, "import_private_pictologics", return_value=FakePictologics
+        ) as import_private:
+            code = worker.main(
+                ["--check-configuration", str(self.custom), str(self.root)],
+                stdout=output,
+                stderr=io.StringIO(),
+            )
+        self.assertEqual(code, 0)
+        isolate.assert_called_once_with(str(self.root))
+        import_private.assert_called_once_with(str(self.root), warmup=False)
+        line = output.getvalue()
+        self.assertTrue(line.startswith(worker.CONFIGURATION_CHECK_PREFIX))
+        result = json.loads(line[len(worker.CONFIGURATION_CHECK_PREFIX) :])
+        self.assertFalse(result["valid"])
+        self.assertIn("collide", result["error"])
+
+
 class ExecuteJobTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

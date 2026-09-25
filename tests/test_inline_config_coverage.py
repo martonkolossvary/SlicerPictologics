@@ -12,6 +12,7 @@ from PictologicsLib.inline_config import (
     build_inline_configuration_document,
     default_inline_state,
     lint_configuration_document,
+    parse_configuration_check,
     preset_configuration_document,
     preset_names,
 )
@@ -344,6 +345,18 @@ class LintConfigTests(unittest.TestCase):
         self.assertTrue(
             any("no extract_features step" in issue for issue in issues)
         )
+
+
+class ConfigurationCheckOutputTests(unittest.TestCase):
+    def test_result_line_is_found_among_log_lines(self) -> None:
+        output = 'numba log\nPICTOLOGICS_CONFIGURATION_CHECK {"valid": false, "error": "bad"}\n\n'
+        self.assertEqual(parse_configuration_check(output), {"valid": False, "error": "bad"})
+
+    def test_missing_result_names_the_last_output_line(self) -> None:
+        with self.assertRaisesRegex(ValueError, "did not finish: PictologicsCLI error: boom$"):
+            parse_configuration_check("start\nPictologicsCLI error: boom\n\n")
+        with self.assertRaisesRegex(ValueError, "did not finish: no output$"):
+            parse_configuration_check("")
 
 
 if __name__ == "__main__":

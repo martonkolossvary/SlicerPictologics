@@ -30,7 +30,9 @@ from PictologicsLib.inline_config import (
     ROI_REFINEMENT_DEFAULTS,
     build_inline_configuration_document,
     default_inline_state,
+    preset_configuration_document,
 )
+from PictologicsLib.memory import BYTES_PER_VOXEL, largest_voxel_count
 from PictologicsLib.profiles import build_profile
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
@@ -779,6 +781,55 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         ) as ensure:
             widget.onRun()
         ensure.assert_called_once()
+
+    def test_validate_does_the_quick_check_before_pictologics_is_installed(self) -> None:
+        widget = self._feedback_widget()
+        path = self.temporary_directory / "custom.json"
+        path.write_text(json.dumps({"configs": {"mine": {"steps": [{"step": "bogus"}]}}}),
+                        encoding="utf-8")
+        widget.ui.customConfigPathLineEdit.setText(str(path))
+        widget.onValidateConfiguration()
+        self.assertTrue(widget.ui.statusLabel.text.startswith("Configuration has 2 issue(s): "))
+        self.assertIn("unknown step type 'bogus'", widget.ui.statusLabel.text)
+
+    @unittest.skipUnless(
+        os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1",
+        f"Set {RUN_REAL_CLI_TEST_ENV}=1 to run the existing-dependency CLI gate.",
+    )
+    def test_validate_and_memory_estimate_load_yaml_with_pictologics(self) -> None:
+        dependency_path, _ = _qualified_dependency_target(self.logic)
+        inspection = inspect_target(dependency_path, self.logic.pictologicsRequirement())
+        widget = self._feedback_widget()
+        widget.ui.additionalConfigCombo.setCurrentIndex(gui_module.ADDITIONAL_SOURCES.index("file"))
+        steps = [
+            {"step": "resample", "params": {"new_spacing": [0.25, 0.25, 0.25]}},
+            {"step": "extract_features", "params": {"families": ["intensity"]}},
+        ]
+        # JSON text is also YAML, and Slicer's Python has no YAML writer.
+        valid = self.temporary_directory / "fine.yaml"
+        valid.write_text(json.dumps({"configs": {"yaml_fine": {"steps": steps}}}), encoding="utf-8")
+        steps[1]["params"]["bogus"] = 1
+        invalid = self.temporary_directory / "unknown-parameter.yml"
+        invalid.write_text(json.dumps({"configs": {"yaml_bad": {"steps": steps}}}), encoding="utf-8")
+        volume = self.fixture.volume_node
+        presets_only = largest_voxel_count(volume.GetImageData().GetDimensions(), volume.GetSpacing(),
+                                           [preset_configuration_document("standard_fbn_32")])
+        with patch.object(widget.logic, "inspectDependencies", return_value=inspection):
+            widget.ui.customConfigPathLineEdit.setText(str(invalid))
+            widget.onValidateConfiguration()
+            self.assertIn("Pictologics does not accept this file: custom configuration failed "
+                          "validation", widget.ui.statusLabel.text)
+            self.assertIn("unknown parameter 'bogus'", widget.ui.statusLabel.text)
+            widget.ui.customConfigPathLineEdit.setText(str(valid))
+            widget.onValidateConfiguration()
+            self.assertEqual(widget.ui.statusLabel.text,
+                             "Pictologics accepts this file. It holds 1 configuration(s): yaml_fine.")
+            # Only the finer YAML resampling is above this limit.
+            with patch.object(gui_module, "LARGE_IMAGE_BYTES", presets_only * BYTES_PER_VOXEL), patch.object(
+                slicer.util, "confirmOkCancelDisplay", return_value=False
+            ) as confirm:
+                self.assertFalse(widget._confirmLargeRun())
+        confirm.assert_called_once()
 
     def test_launch_failure_or_decline_stops_elapsed_feedback(self) -> None:
         widget = self._feedback_widget()

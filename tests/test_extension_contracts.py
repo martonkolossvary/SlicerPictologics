@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import io
 import json
 import re
 import struct
@@ -10,6 +11,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "PictologicsSlicer"))
@@ -18,6 +20,7 @@ from PictologicsLib.dependencies import (  # noqa: E402
     check_dependency_constraints,
     parse_pictologics_requirement,
 )
+from PictologicsLib.inline_config import parse_configuration_check  # noqa: E402
 from PictologicsLib.jobs import build_job_manifest  # noqa: E402
 
 GUI_SOURCE = ROOT / "PictologicsSlicer/PictologicsSlicer.py"
@@ -247,6 +250,17 @@ class CrossProcessContractTests(unittest.TestCase):
             normalized = worker.validate_manifest(manifest, base_dir=root)
 
         self.assertEqual(normalized.to_dict(), manifest)
+
+    def test_gui_reads_the_worker_configuration_check(self) -> None:
+        worker = load_worker_module()
+        result = {"valid": True, "configurations": ["custom"], "document": {"configs": {}}}
+        output = io.StringIO()
+        with mock.patch.object(worker, "isolate_dependency_path"), mock.patch.object(
+            worker, "import_private_pictologics"
+        ), mock.patch.object(worker, "check_configuration_file", return_value=result):
+            code = worker.main(["--check-configuration", "custom.yaml", "dep"], stdout=output)
+        self.assertEqual(code, 0)
+        self.assertEqual(parse_configuration_check("log line\n" + output.getvalue()), result)
 
 
 class ReleaseAdoptionTests(unittest.TestCase):

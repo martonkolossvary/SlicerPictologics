@@ -114,6 +114,17 @@ getter. The extension currently copies the private `_log` as a compatibility fal
 and retains it in provenance. Individually implemented advanced controls do not
 require a complete upstream editor schema.
 
+## Configuration check
+
+**Validate** runs `PictologicsCLI.py --check-configuration <file> <private folder>` in
+PythonSlicer. The worker loads the file with the same code as a run:
+`load_configs(validate=True)` with warnings as errors, the name checks,
+`describe_features()`, and `to_dict()`. It prints one line that starts with
+`PICTOLOGICS_CONFIGURATION_CHECK`, followed by JSON. For a YAML file, the memory
+estimate uses the effective configuration of that JSON, because Slicer's Python has
+no YAML reader. Before Pictologics is installed, **Validate** does the structural
+lint only.
+
 ## Load a development checkout
 
 Python-only Slicer modules do not require a local Slicer build for source development.

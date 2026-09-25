@@ -38,6 +38,7 @@ from PictologicsLib.inline_config import (
     build_inline_configuration_document,
     default_inline_state,
     lint_configuration_document,
+    parse_configuration_check,
     preset_configuration_document,
     preset_names,
 )
@@ -1002,6 +1003,28 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 windowTitle="Pictologics",
             )
             return
+        self.ui.statusLabel.setText("Checking the configuration file with Pictologics…")
+        slicer.app.processEvents()
+        try:
+            with slicer.util.WaitCursor():
+                check = self.logic.checkConfigurationFile(path)
+        except Exception as exc:
+            LOGGER.exception("Could not check the configuration file")
+            self.ui.statusLabel.setText(f"Could not check the configuration file: {exc}")
+            return
+        if check is not None:
+            if check["valid"]:
+                names = check["configurations"]
+                self.ui.statusLabel.setText(
+                    f"Pictologics accepts this file. It holds {len(names)} "
+                    f"configuration(s): {', '.join(names)}."
+                )
+            else:
+                self.ui.statusLabel.setText(
+                    f"Pictologics does not accept this file: {check['error']}"
+                )
+            return
+        # Pictologics is not installed yet: do the quick structural check only.
         try:
             document = self._parseConfigurationFile(path)
         except ValueError as exc:
@@ -1009,8 +1032,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             return
         if document is None:
             self.ui.statusLabel.setText(
-                "Loaded a YAML file; structural pre-check needs PyYAML. The worker "
-                "validates it authoritatively at run time."
+                "Pictologics is not installed yet, so a YAML file cannot be checked. "
+                "The first run installs Pictologics and checks the file."
             )
             return
         issues = lint_configuration_document(document)
@@ -1020,8 +1043,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
         else:
             self.ui.statusLabel.setText(
-                "Configuration passed the structural pre-check. The worker validates "
-                "it authoritatively at run time."
+                "The file passed the quick structural check. Pictologics is not "
+                "installed yet; the first run installs it and checks the file."
             )
 
     @staticmethod
@@ -1216,7 +1239,14 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             path = Path(str(self.ui.customConfigPathLineEdit.text).strip()).expanduser()
             try:
                 document = self._parseConfigurationFile(path)
-            except (OSError, ValueError):
+                if document is None:
+                    # Slicer has no YAML reader, so the worker reads the file.
+                    with slicer.util.WaitCursor():
+                        check = self.logic.checkConfigurationFile(path)
+                    document = check["document"] if check and check["valid"] else None
+            except Exception:
+                # The worker reports a file that it cannot load when the run starts.
+                LOGGER.debug("Could not read the configuration file", exc_info=True)
                 document = None
             if isinstance(document, dict):
                 documents.append(document)
@@ -1739,10 +1769,8 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             Path(__file__).resolve().parent / "PictologicsLib" / "dependency_probe.py"
         )
 
-    def probeDependencyEnvironment(
-        self, target: Path, expectedVersion: str, *, warmup: bool
-    ) -> None:
-        """Validate a candidate in a fresh PythonSlicer interpreter."""
+    def _launchPythonSlicer(self, arguments: Sequence[str]):
+        """Start a fresh PythonSlicer process for the private Pictologics folder."""
 
         pythonSlicer = shutil.which("PythonSlicer")
         if not pythonSlicer:
@@ -1750,16 +1778,8 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 "PythonSlicer was not found; the private Pictologics environment "
                 "cannot be validated safely."
             )
-        command = [
-            pythonSlicer,
-            str(self.dependencyProbePath()),
-            str(target),
-            expectedVersion,
-        ]
-        if not warmup:
-            command.append("--skip-warmup")
-        process = slicer.util.launchConsoleProcess(
-            command,
+        return slicer.util.launchConsoleProcess(
+            [pythonSlicer, *arguments],
             useStartupEnvironment=False,
             updateEnvironment={
                 "NUMBA_CACHE_DIR": str(self.privatePaths()["numba_cache"]),
@@ -1767,6 +1787,36 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 "PYTHONNOUSERSITE": "1",
             },
         )
+
+    def checkConfigurationFile(self, path: Path) -> dict[str, Any] | None:
+        """Load a custom configuration file with Pictologics, as a run loads it.
+
+        Return None when the adopted Pictologics release is not installed yet.
+        """
+
+        inspection = self.inspectDependencies()
+        if not inspection.satisfied or inspection.ambiguous:
+            return None
+        process = self._launchPythonSlicer(
+            [
+                str(slicer.modules.pictologicscli.path),
+                "--check-configuration",
+                str(path),
+                str(inspection.target),
+            ]
+        )
+        output, _ = process.communicate()
+        return parse_configuration_check(output)
+
+    def probeDependencyEnvironment(
+        self, target: Path, expectedVersion: str, *, warmup: bool
+    ) -> None:
+        """Validate a candidate in a fresh PythonSlicer interpreter."""
+
+        command = [str(self.dependencyProbePath()), str(target), expectedVersion]
+        if not warmup:
+            command.append("--skip-warmup")
+        process = self._launchPythonSlicer(command)
         try:
             slicer.util.logProcessOutput(process)
         except Exception as exc:
