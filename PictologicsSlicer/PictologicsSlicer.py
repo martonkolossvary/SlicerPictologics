@@ -33,6 +33,7 @@ from PictologicsLib.dependencies import (
     parse_pictologics_requirement,
 )
 from PictologicsLib.inline_config import (
+    MASK_TARGETS,
     build_inline_configuration_document,
     default_inline_state,
     lint_configuration_document,
@@ -348,11 +349,18 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         for _family, attribute in FAMILY_CHECKBOXES:
             getattr(self.ui, attribute).connect("toggled(bool)", self.onControlsChanged)
         self.ui.resampleCheckBox.connect("toggled(bool)", self.onControlsChanged)
+        self.ui.resegmentGroup.connect("toggled(bool)", self.onControlsChanged)
+        self.ui.outlierGroup.connect("toggled(bool)", self.onControlsChanged)
+        for control in (self.ui.rangeMinLineEdit, self.ui.rangeMaxLineEdit):
+            control.connect("textChanged(QString)", self.onControlsChanged)
+        for combo in (self.ui.resegmentTargetCombo, self.ui.outlierTargetCombo):
+            combo.connect("currentIndexChanged(int)", self.onControlsChanged)
         for spin in (
             self.ui.resampleXSpinBox,
             self.ui.resampleYSpinBox,
             self.ui.resampleZSpinBox,
             self.ui.discretiseValueSpinBox,
+            self.ui.outlierSigmaSpinBox,
         ):
             spin.connect("valueChanged(double)", self.onControlsChanged)
         self.ui.interpolationCombo.connect(
@@ -646,6 +654,13 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             "discretise_value": float(self.ui.discretiseValueSpinBox.value),
             "source_mode": str(self.ui.sourceModeCombo.currentText),
             "sentinel_value": sentinel_text or None,
+            "resegment": bool(self.ui.resegmentGroup.checked),
+            "range_min": str(self.ui.rangeMinLineEdit.text).strip() or None,
+            "range_max": str(self.ui.rangeMaxLineEdit.text).strip() or None,
+            "resegment_apply_to": MASK_TARGETS[self.ui.resegmentTargetCombo.currentIndex],
+            "filter_outliers": bool(self.ui.outlierGroup.checked),
+            "outlier_sigma": float(self.ui.outlierSigmaSpinBox.value),
+            "outlier_apply_to": MASK_TARGETS[self.ui.outlierTargetCombo.currentIndex],
         }
 
     def _applyInlineState(self, state: dict[str, Any]):
@@ -671,6 +686,16 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._setComboText(self.ui.sourceModeCombo, state.get("source_mode", "full_image"))
         sentinel = state.get("sentinel_value")
         self.ui.sentinelValueLineEdit.setText("" if sentinel is None else str(sentinel))
+        self.ui.resegmentGroup.setChecked(bool(state.get("resegment", False)))
+        self.ui.outlierGroup.setChecked(bool(state.get("filter_outliers", False)))
+        for key, edit in (("range_min", self.ui.rangeMinLineEdit), ("range_max", self.ui.rangeMaxLineEdit)):
+            value = state.get(key)
+            edit.setText("" if value is None else str(value))
+        self.ui.outlierSigmaSpinBox.setValue(float(state.get("outlier_sigma", 3.0)))
+        for key, combo in (("resegment_apply_to", self.ui.resegmentTargetCombo),
+                           ("outlier_apply_to", self.ui.outlierTargetCombo)):
+            target = state.get(key, "both")
+            combo.setCurrentIndex(MASK_TARGETS.index(target) if target in MASK_TARGETS else 0)
 
     def onSegmentationChanged(self, node=None):
         if self._updatingGUIFromParameterNode:

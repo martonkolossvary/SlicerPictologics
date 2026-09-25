@@ -14,6 +14,7 @@ catches obvious mistakes before a job is submitted.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -36,13 +37,35 @@ OPTIONAL_FEATURE_FAMILIES: tuple[str, ...] = (
 ALL_FEATURE_FAMILIES: tuple[str, ...] = CORE_FEATURE_FAMILIES + OPTIONAL_FEATURE_FAMILIES
 
 # Families that are only meaningful on a discretised image.
-DISCRETISATION_REQUIRED_FAMILIES: frozenset[str] = frozenset(
-    {"texture", "histogram", "ivh"}
-)
+DISCRETISATION_REQUIRED_FAMILIES: frozenset[str] = frozenset({"texture", "histogram", "ivh"})
 
 RESAMPLE_INTERPOLATIONS: tuple[str, ...] = ("linear", "nearest")
 DISCRETISATION_METHODS: tuple[str, ...] = ("FBN", "FBS")
 SOURCE_MODES: tuple[str, ...] = ("full_image", "roi_only", "auto")
+MASK_TARGETS: tuple[str, ...] = ("both", "intensity", "morph")
+ROI_REFINEMENT_DEFAULTS: dict[str, Any] = {
+    "resegment": False,
+    "range_min": None,
+    "range_max": None,
+    "resegment_apply_to": "both",
+    "filter_outliers": False,
+    "outlier_sigma": 3.0,
+    "outlier_apply_to": "both",
+}
+
+
+def finite_number(value: Any, label: str) -> float:
+    """Parse a numeric editor value without accepting booleans or infinities."""
+    try:
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise ValueError
+        result = float(value)
+        if not math.isfinite(result):
+            raise ValueError
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{label} must be a finite number.") from exc
+    return result
+
 
 # Mirror of RadiomicsPipeline._VALID_STEPS for the adopted Pictologics release.
 _VALID_STEP_PARAMS: dict[str, frozenset[str]] = {
@@ -60,9 +83,7 @@ _VALID_STEP_PARAMS: dict[str, frozenset[str]] = {
     "binarize_mask": frozenset({"threshold", "mask_values", "apply_to"}),
     "keep_largest_component": frozenset({"apply_to"}),
     "round_intensities": frozenset(),
-    "discretise": frozenset(
-        {"method", "n_bins", "bin_width", "min_val", "max_val", "cutoffs"}
-    ),
+    "discretise": frozenset({"method", "n_bins", "bin_width", "min_val", "max_val", "cutoffs"}),
     "filter": frozenset(
         {
             "type",
@@ -116,6 +137,7 @@ def default_inline_state() -> dict[str, Any]:
         "discretise_value": 32.0,
         "source_mode": "full_image",
         "sentinel_value": None,
+        **ROI_REFINEMENT_DEFAULTS,
     }
 
 
@@ -150,6 +172,35 @@ def build_inline_configuration_document(state: Mapping[str, Any]) -> dict[str, A
             }
         )
 
+    # Refinement runs on continuous intensities, after any resampling and before
+    # discretisation. Always serialize the target: upstream defaults affect shape.
+    if state.get("resegment", False):
+        bounds = {
+            key: finite_number(state[key], label) if state.get(key) is not None else None
+            for key, label in (
+                ("range_min", "Minimum intensity"),
+                ("range_max", "Maximum intensity"),
+            )
+        }
+        lower, upper = bounds["range_min"], bounds["range_max"]
+        if lower is None and upper is None:
+            raise ValueError("Intensity-range resegmentation requires at least one bound.")
+        if lower is not None and upper is not None and lower > upper:
+            raise ValueError("Minimum intensity must not exceed maximum intensity.")
+        target = state.get("resegment_apply_to", "both")
+        if target not in MASK_TARGETS:
+            raise ValueError("Unknown resegmentation mask target.")
+        steps.append({"step": "resegment", "params": {**bounds, "apply_to": target}})
+
+    if state.get("filter_outliers", False):
+        sigma = finite_number(state.get("outlier_sigma", 3.0), "Outlier sigma")
+        if sigma <= 0:
+            raise ValueError("Outlier sigma must be positive.")
+        target = state.get("outlier_apply_to", "both")
+        if target not in MASK_TARGETS:
+            raise ValueError("Unknown outlier-filter mask target.")
+        steps.append({"step": "filter_outliers", "params": {"sigma": sigma, "apply_to": target}})
+
     needs_discretisation = bool(DISCRETISATION_REQUIRED_FAMILIES.intersection(families))
     if state.get("discretise", False):
         method = str(state.get("discretise_method", "FBN"))
@@ -166,9 +217,7 @@ def build_inline_configuration_document(state: Mapping[str, Any]) -> dict[str, A
         steps.append({"step": "discretise", "params": params})
     elif needs_discretisation:
         offenders = sorted(DISCRETISATION_REQUIRED_FAMILIES.intersection(families))
-        raise ValueError(
-            "These families require a discretise step: " + ", ".join(offenders)
-        )
+        raise ValueError("These families require a discretise step: " + ", ".join(offenders))
 
     steps.append({"step": "extract_features", "params": {"families": families}})
 
@@ -258,9 +307,7 @@ def _lint_steps(config_name: str, steps: Sequence[Any]) -> list[str]:
             params = {}
         for param in params:
             if param not in _VALID_STEP_PARAMS[step_name]:
-                issues.append(
-                    f"{location} ({step_name}) has unknown parameter '{param}'"
-                )
+                issues.append(f"{location} ({step_name}) has unknown parameter '{param}'")
         if step_name == "discretise":
             discretised = True
         if step_name == "extract_features":

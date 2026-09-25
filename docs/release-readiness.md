@@ -1,6 +1,6 @@
 # Release readiness
 
-Review date: 2026-09-23. Extension/result contract remains **0.1.0**.
+Review date: 2026-09-24. Extension/result contract remains **0.1.0**.
 
 ## Catalog identity, icon, and screenshots
 
@@ -133,8 +133,10 @@ new adopted wheel. Startup never silently upgrades dependencies.
   relying on the ignored `dev/pre_push.py` helper. Neither result schema nor package
   pin has changed. No catalog/tutorial screenshot was modified.
 - This usability pass has been validated locally; GitHub CI and published catalog
-  validation linked above describe earlier commits. Check the milestone commit's
-  own CI before using it for catalog submission.
+  validation linked above describe earlier commits. The usability milestone was
+  subsequently published as `7a912cc`; all five jobs in its
+  [GitHub CI run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/35881923998)
+  passed, including real Slicer on Linux and released wheels on three platforms.
 
 ## Results inspection and saved profiles
 
@@ -167,7 +169,38 @@ new adopted wheel. Startup never silently upgrades dependencies.
   milestone to the existing GitHub repository, while holding catalog submission
   and broader release until after the next functional improvements.
 
+## Guided ROI refinement (local follow-up)
+
+- The in-app builder now offers optional intensity-range resegmentation and
+  sigma-based outlier filtering, with independent explicit `both`, `intensity`,
+  and `morph` mask targets. Both steps default to disabled, so existing presets
+  and default in-app calculations are unchanged.
+- Controls explain inclusive bounds, image intensity units, effects on morphology,
+  and the fixed resample/refine/discretise/extract order. Invalid active settings
+  block Run; original images and segmentations are not modified. Empty required
+  masks remain worker-reported errors rather than silently reverting to the ROI.
+- Settings persist in the scene parameter node and named profiles. Original
+  version-1 profiles migrate with refinement disabled; invalid or partly specified
+  new profile fields are rejected before changing the UI.
+- **534 portable tests and 151 subtests passed**, with 100% scoped library/worker
+  statement coverage; Ruff, Mypy, and syntax checks passed. **All 17 Slicer 5.12.4
+  integration tests passed**, including the new controls, legacy-profile loading,
+  actual two-ROI extraction, readable refinement logs, and independent checks of
+  mean intensity and voxel-counting volume after refinement.
+- The released **0.5.1** wheel passed the expanded API/configuration gate in Slicer's
+  standalone Python. Independent mean/volume expectations verified all three mask
+  targets and confirmed source arrays were not changed. This gate is used by the
+  existing multi-platform release-adoption workflow when these local changes are
+  eventually published.
+- This follow-up remains local and uncommitted for maintainer review. It does not
+  change the extension/result version, package pin, or any tutorial/catalog images.
+
 ## Reassessment: next priorities
+
+The maintainer has explicitly deferred catalog submission and broader release
+until after functional improvements. Review the new refinement controls first;
+then consider the next guided preprocessing feature below. Distribution remains
+a later acceptance gate, not an authorized publication action.
 
 1. **Finish catalog distribution.** Catalog identity, metadata, icon integration,
    and example screenshots are implemented, with the MRHead workflow visually
@@ -181,7 +214,7 @@ new adopted wheel. Startup never silently upgrades dependencies.
    Slicer (normal-Python Windows checks alone are insufficient), then record an
    interactive checklist: first install, restart, multiple ROIs, busy/progress,
    cancellation, append/export, and scene close during execution.
-3. **Expand preprocessing controls.** Use 0.5.1's versioned filter-capability
+3. **Expand preprocessing controls beyond ROI refinement.** Use 0.5.1's versioned filter-capability
    metadata for a filter browser and guided authoring of additional supported
    operations. Requested/effective parameters are now visible in result details
    when recorded. Capability metadata is not a complete configuration schema, so

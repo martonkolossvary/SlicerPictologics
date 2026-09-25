@@ -143,6 +143,14 @@ class ExtensionScaffoldTests(unittest.TestCase):
             "saveProfileButton",
             "loadProfileButton",
             "duplicateProfileButton",
+            "resegmentGroup",
+            "rangeMinLineEdit",
+            "rangeMaxLineEdit",
+            "resegmentTargetCombo",
+            "outlierGroup",
+            "outlierSigmaSpinBox",
+            "outlierTargetCombo",
+            "preprocessingOrderLabel",
         }
         self.assertEqual(expected - names, set())
 

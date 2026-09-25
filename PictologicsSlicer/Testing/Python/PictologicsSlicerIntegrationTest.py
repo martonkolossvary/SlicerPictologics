@@ -26,7 +26,11 @@ import qt
 import slicer
 import vtk
 from PictologicsLib.dependencies import inspect_target
-from PictologicsLib.inline_config import default_inline_state
+from PictologicsLib.inline_config import (
+    ROI_REFINEMENT_DEFAULTS,
+    build_inline_configuration_document,
+    default_inline_state,
+)
 from PictologicsLib.profiles import build_profile
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
@@ -571,6 +575,13 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         widget.ui.discretiseValueSpinBox.setValue(25.5)
         widget.ui.sourceModeCombo.setCurrentIndex(2)
         widget.ui.sentinelValueLineEdit.setText("-3024")
+        widget.ui.resegmentGroup.setChecked(True)
+        widget.ui.rangeMinLineEdit.setText("-100.25")
+        widget.ui.rangeMaxLineEdit.setText("400")
+        widget.ui.resegmentTargetCombo.setCurrentIndex(1)
+        widget.ui.outlierGroup.setChecked(True)
+        widget.ui.outlierSigmaSpinBox.setValue(2.5)
+        widget.ui.outlierTargetCombo.setCurrentIndex(2)
         original_state = widget._inlineStateFromGUI()
         original_ids = widget._selectedSegmentIDs()
         destination = self.temporary_directory / "saved.pictologics-profile.json"
@@ -777,8 +788,11 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         widget = self._feedback_widget()
         widget.ui.segmentationSelector.setCurrentNode(self.fixture.segmentation_node)
         profile_path = self.temporary_directory / "real-run.pictologics-profile.json"
+        state = default_inline_state()
+        state.update(resample=False, resegment=True, range_min=-50.0, range_max=500.0,
+                     filter_outliers=True, outlier_sigma=1.0)
         profile_path.write_text(json.dumps(build_profile(
-            "Real extraction profile", ["standard_fbn_32"], default_inline_state()
+            "Real extraction profile", ["standard_fbn_32"], state
         )), encoding="utf-8")
         dialog_qt = SimpleNamespace(
             Qt=qt.Qt, QListWidgetItem=qt.QListWidgetItem,
@@ -844,6 +858,72 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertIn("Configuration: in_app", browser.details.toPlainText())
         self.assertIn("PROCESSING LOG", browser.details.toPlainText())
         self.assertNotIn("No matching processing log", browser.details.toPlainText())
+        self.assertIn("resegment", browser.details.toPlainText())
+        self.assertIn("filter_outliers", browser.details.toPlainText())
+        # Independent numeric check: the GUI-emitted pipeline must refine masks,
+        # not clip intensity values or discretise before deciding voxel membership.
+        rows = widget.logic.rowsFromTable(table)
+        voxel_volume = abs(np.linalg.det((self.fixture.expected_transform_to_parent
+                                          @ self.fixture.expected_ijk_to_ras)[:3, :3]))
+        for roi_name, mask in (("Whole volume", np.ones_like(self.fixture.expected_mask)),
+                               (SEGMENT_NAME, self.fixture.expected_mask)):
+            values = self.fixture.expected_image[mask > 0].astype(np.float64)
+            values = values[(values >= -50.0) & (values <= 500.0)]
+            mean, std = values.mean(), values.std(ddof=0)
+            values = values[(values >= mean - std) & (values <= mean + std)]
+            actual = {row["feature_key"]: row["value"] for row in rows
+                      if row["roi_name"] == roi_name and row["configuration"] == "in_app"}
+            self.assertAlmostEqual(actual["mean_intensity_Q4LE"], float(values.mean()), places=6)
+            self.assertAlmostEqual(actual["volume_voxel_counting_YEKZ"],
+                                   len(values) * voxel_volume, places=3)
+        np.testing.assert_array_equal(slicer.util.arrayFromVolume(self.fixture.volume_node),
+                                      self.fixture.expected_image)
+
+    def test_roi_refinement_controls_validate_persist_and_load_legacy_profiles(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.additionalConfigCombo.setCurrentIndex(1)
+        self.assertFalse(widget.ui.resegmentGroup.checked)
+        self.assertFalse(widget.ui.rangeMinLineEdit.enabled)
+        self.assertFalse(widget.ui.outlierGroup.checked)
+        widget.ui.resegmentGroup.setChecked(True)
+        self.assertTrue(widget.ui.rangeMinLineEdit.enabled)
+        self.assertFalse(widget.ui.runButton.enabled)
+        self.assertIn("at least one bound", widget.ui.readinessLabel.text)
+        widget.ui.rangeMinLineEdit.setText("-50")
+        widget.ui.rangeMaxLineEdit.setText("500")
+        widget.ui.outlierGroup.setChecked(True)
+        widget.ui.outlierSigmaSpinBox.setValue(1.5)
+        widget.ui.resegmentTargetCombo.setCurrentIndex(1)
+        widget.ui.outlierTargetCombo.setCurrentIndex(2)
+        self.assertTrue(widget.ui.runButton.enabled)
+        state = widget._inlineStateFromGUI()
+        self.assertEqual(widget._storedInlineState(), state)
+        steps = build_inline_configuration_document(state)["configs"]["in_app"]["steps"]
+        self.assertEqual(steps[1]["params"]["apply_to"], "intensity")
+        self.assertEqual(steps[2]["params"]["apply_to"], "morph")
+        widget.ui.rangeMinLineEdit.setText("501")
+        self.assertFalse(widget.ui.runButton.enabled)
+        self.assertIn("must not exceed", widget.ui.readinessLabel.text)
+        widget.ui.rangeMinLineEdit.setText("NaN")
+        self.assertFalse(widget.ui.runButton.enabled)
+        self.assertIn("finite number", widget.ui.readinessLabel.text)
+        widget.ui.resegmentGroup.setChecked(False)
+        self.assertTrue(widget.ui.runButton.enabled)
+        # Previously saved profiles omit these optional controls entirely.
+        legacy = build_profile("Legacy", ["standard_fbn_32"], default_inline_state())
+        legacy["inline_state"] = {key: value for key, value in legacy["inline_state"].items()
+                                  if key not in ROI_REFINEMENT_DEFAULTS}
+        legacy_path = self.temporary_directory / "legacy.json"
+        legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+        dialog_qt = SimpleNamespace(Qt=qt.Qt, QListWidgetItem=qt.QListWidgetItem,
+            QFileDialog=SimpleNamespace(getOpenFileName=lambda *args: str(legacy_path)))
+        with patch.object(gui_module, "qt", dialog_qt), patch.object(slicer.util, "errorDisplay") as errors:
+            widget.onLoadProfile()
+            errors.assert_not_called()
+        self.assertFalse(widget.ui.resegmentGroup.checked)
+        self.assertFalse(widget.ui.outlierGroup.checked)
+        self.assertEqual(widget._inlineStateFromGUI(), default_inline_state())
+        self.assertTrue(widget.ui.runButton.enabled)
 
     def test_oblique_volume_and_shared_linear_transform(self) -> None:
         fixture = self.fixture

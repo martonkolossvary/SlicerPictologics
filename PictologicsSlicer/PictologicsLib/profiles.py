@@ -7,7 +7,14 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
-from .inline_config import build_inline_configuration_document, default_inline_state, preset_names
+from .inline_config import (
+    MASK_TARGETS,
+    ROI_REFINEMENT_DEFAULTS,
+    build_inline_configuration_document,
+    default_inline_state,
+    finite_number,
+    preset_names,
+)
 
 PROFILE_FORMAT = "slicer-pictologics-profile"
 PROFILE_SCHEMA_VERSION = 1
@@ -44,10 +51,19 @@ def validate_profile(document: Any) -> dict[str, Any]:
         if not presets:
             raise ValueError("Select at least one preset or an in-app configuration.")
     else:
+        # The original version-1 profiles predate optional ROI refinement. Keep
+        # their effective configuration identical by adding disabled defaults.
+        if isinstance(state, dict) and set(state) == set(default_inline_state()) - set(
+            ROI_REFINEMENT_DEFAULTS
+        ):
+            state = {**state, **ROI_REFINEMENT_DEFAULTS}
         if not isinstance(state, dict) or set(state) != set(default_inline_state()):
             raise ValueError("Profile contains unsupported in-app settings.")
-        if any(type(state[key]) is not bool for key in ("resample", "discretise")):
-            raise ValueError("Resample and discretise must be booleans.")
+        if any(
+            type(state[key]) is not bool
+            for key in ("resample", "discretise", "resegment", "filter_outliers")
+        ):
+            raise ValueError("Preprocessing enable flags must be booleans.")
         families = state["families"]
         if (
             not isinstance(families, list)
@@ -59,7 +75,8 @@ def validate_profile(document: Any) -> dict[str, Any]:
         if not isinstance(spacing, list) or len(spacing) != 3:
             raise ValueError("Spacing must contain three numbers.")
         for value, maximum in [(value, 100.0) for value in spacing] + [
-            (state["discretise_value"], 100000.0)
+            (state["discretise_value"], 100000.0),
+            (state["outlier_sigma"], 1000.0),
         ]:
             if (
                 isinstance(value, bool)
@@ -90,8 +107,15 @@ def validate_profile(document: Any) -> dict[str, Any]:
                 valid_sentinel = False
             if not valid_sentinel:
                 raise ValueError("Sentinel must be a finite number or null.")
+        for key in ("range_min", "range_max"):
+            if state[key] is not None:
+                finite_number(state[key], key)
+        for key in ("resegment_apply_to", "outlier_apply_to"):
+            if state[key] not in MASK_TARGETS:
+                raise ValueError("Unsupported ROI-refinement mask target.")
         build_inline_configuration_document(state)
     result = copy.deepcopy(document)
+    result["inline_state"] = copy.deepcopy(state)
     result["name"] = name.strip()
     return result
 

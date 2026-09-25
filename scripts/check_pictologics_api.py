@@ -50,6 +50,7 @@ def _check_inline_builder_round_trip() -> None:
     import yaml
     from PictologicsLib.inline_config import (
         INLINE_CONFIG_NAME,
+        MASK_TARGETS,
         build_inline_configuration_document,
         default_inline_state,
         preset_configuration_document,
@@ -59,6 +60,24 @@ def _check_inline_builder_round_trip() -> None:
     documents = {INLINE_CONFIG_NAME: build_inline_configuration_document(default_inline_state())}
     for preset in preset_names():
         documents[preset] = preset_configuration_document(preset)
+    for target in MASK_TARGETS:
+        state = default_inline_state()
+        state.update(
+            resample=False,
+            discretise=False,
+            families=["intensity", "morphology"],
+            resegment=True,
+            range_min=100.0,
+            range_max=400.0,
+            resegment_apply_to=target,
+            filter_outliers=True,
+            outlier_sigma=1.0,
+            outlier_apply_to=target,
+        )
+        document = build_inline_configuration_document(state)
+        name = f"refinement_{target}"
+        document["configs"][name] = document["configs"].pop(INLINE_CONFIG_NAME)
+        documents[name] = document
 
     with tempfile.TemporaryDirectory(prefix="pictologics-inline-check-") as directory:
         for expected_name, document in documents.items():
@@ -73,13 +92,33 @@ def _check_inline_builder_round_trip() -> None:
                     f"Inline/preset document did not register '{expected_name}'; got {names}"
                 )
             catalog = loaded.describe_features()
-            described = {
-                record["config"] for record in catalog.to_dict(orient="records")
-            }
+            described = {record["config"] for record in catalog.to_dict(orient="records")}
             if expected_name not in described:
-                raise RuntimeError(
-                    f"Inline/preset config '{expected_name}' described no features"
-                )
+                raise RuntimeError(f"Inline/preset config '{expected_name}' described no features")
+            if expected_name.startswith("refinement_"):
+                _check_refinement_values(loaded, expected_name)
+
+
+def _check_refinement_values(pipeline, config_name: str) -> None:
+    """Independent numerical oracle for each mask target on the released wheel."""
+    import numpy as np
+
+    data = np.arange(512, dtype=np.float64).reshape(8, 8, 8)
+    original = data.copy()
+    mask_array = np.ones_like(data, dtype=np.uint8)
+    image = pictologics.Image(array=data, spacing=(2.0, 3.0, 4.0), origin=(0.0, 0.0, 0.0))
+    mask = pictologics.Image(array=mask_array, spacing=image.spacing, origin=image.origin)
+    values = data[(data >= 100) & (data <= 400)]
+    mean, std = values.mean(), values.std(ddof=0)
+    refined = values[(values >= mean - std) & (values <= mean + std)]
+    target = config_name.removeprefix("refinement_")
+    expected_mean = refined.mean() if target in ("both", "intensity") else data.mean()
+    expected_volume = (len(refined) if target in ("both", "morph") else data.size) * 24.0
+    results = pipeline.run(image, mask, config_names=[config_name])[config_name]
+    np.testing.assert_allclose(results["mean_intensity_Q4LE"], expected_mean, rtol=1e-10)
+    np.testing.assert_allclose(results["volume_voxel_counting_YEKZ"], expected_volume, rtol=1e-10)
+    np.testing.assert_array_equal(data, original)
+    np.testing.assert_array_equal(mask_array, np.ones_like(mask_array))
 
 
 def main() -> int:
@@ -107,9 +146,7 @@ def main() -> int:
         )
 
     run_parameters = inspect.signature(pipeline.run).parameters
-    missing_parameters = {"image", "mask", "subject_id", "config_names"} - set(
-        run_parameters
-    )
+    missing_parameters = {"image", "mask", "subject_id", "config_names"} - set(run_parameters)
     if missing_parameters:
         raise RuntimeError(
             f"RadiomicsPipeline.run contract changed; missing {sorted(missing_parameters)}"

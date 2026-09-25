@@ -22,7 +22,8 @@ The development MVP provides:
 - any number of independently processed segments from one segmentation, plus an
   optional whole-volume region;
 - the six Pictologics standard presets, an in-app single-configuration builder
-  (feature families, resampling, discretisation, and voxel-validity/sentinel mode),
+  (feature families, resampling, intensity-range resegmentation, outlier filtering,
+  discretisation, and voxel-validity/sentinel mode),
   and optional custom YAML/JSON configuration with authoring aids;
 - named settings profiles with save, load, and save-copy actions;
 - background execution in a scripted CLI process, progress, and cancellation;
@@ -169,7 +170,7 @@ cmake --build ../SlicerPictologics-build --config Release --target package
    whether to include the whole volume. Overlapping segments remain independent.
 3. Check one or more standard presets and/or add one more configuration via
    **Additional config**: *Build one in app* (choose feature families, resampling,
-   discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
+   optional ROI refinement, discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
    custom Pictologics YAML/JSON, generate a starter with **New from preset…**, or run a
    structural **Validate** pre-check).
 4. Choose or create an output table. Check the **Ready** summary of whole-volume,
@@ -202,6 +203,36 @@ Pictologics-specific, not a second official IBSI code. Complete preprocessing
 parameters remain in the feature data dictionary. These columns are part of the
 extension's initial `0.1.0` result contract.
 
+### Refine ROIs without editing a configuration file
+
+Choose **Additional config → Build one in app**. Two optional, initially disabled
+steps refine the calculation masks without modifying the input image or segmentation:
+
+- **Intensity-range resegmentation:** enter an inclusive minimum and/or maximum
+  in the image's intensity units (not necessarily HU). A blank bound is unlimited;
+  at least one bound is required when enabled. Invalid numbers and reversed bounds
+  block Run with an explanation in the readiness label.
+- **Outlier filtering:** retain values within the current ROI mean ± sigma times
+  its population standard deviation. Sigma must be positive; the editor supports
+  0.001–1000 with three-decimal precision. The default is 3, but the step remains
+  disabled until explicitly enabled.
+
+Each step has an independent **Apply to** choice:
+
+- **Both masks (changes shape):** refine intensity and morphology masks, matching
+  Pictologics' default behavior for these steps.
+- **Intensity only (preserves shape):** refine the intensity mask while keeping
+  the morphology mask unchanged by this step.
+- **Morphology only:** refine the morphology mask without changing intensity-mask
+  membership. Outlier statistics are computed separately for each targeted mask.
+
+The fixed order is **resample → intensity range → outliers → discretise → features**;
+disabled steps are skipped. These controls affect only `in_app`, not the checked
+standard presets. ROI refinement removes voxels from calculation masks; it does
+not clip or overwrite image intensities. If a required mask becomes empty, the
+worker reports the ROI error instead of falling back to the original mask.
+Effective steps, mask targets, and parameters are retained in result provenance.
+
 ### Browse results and provenance
 
 Select **Browse results and provenance…** in the Output section to open a resizable,
@@ -227,6 +258,10 @@ presets and optional in-app configuration to a `.pictologics-profile.json` file.
 Use **Load…** to restore them, or **Save copy…** to save the current settings under a
 new name/file without replacing the original. Save again after editing settings;
 changes are not automatically written back to the profile file.
+Profiles include the optional ROI-refinement controls. Original version-1 profiles
+without these fields still load with both refinement steps disabled, preserving
+their previous behavior. Newly saved profiles with these fields require this newer
+extension code; older versions reject them rather than silently ignoring settings.
 
 Profiles do not capture image/segmentation selections, subject IDs, output tables,
 or machine-specific dependency paths. Loading validates all settings before changing
@@ -260,17 +295,18 @@ new job; a malformed marker is retained conservatively for at most seven days.
   has no cooperative progress/cancellation callback, so a running native kernel cannot
   report fine-grained progress. Multi-ROI jobs report completed-ROI percentages;
   single-ROI jobs display an indeterminate busy indicator until the package returns.
-- The in-app builder composes a single configuration (families, resample, discretise,
-  source mode). The full schema-driven, multi-step/multi-configuration builder is still
+- The in-app builder composes a single configuration with a fixed step order
+  (families, resample, resegment, filter outliers, discretise, source mode).
+  The full schema-driven, multi-step/multi-configuration builder is still
   deferred: the current Pictologics source has presets and configuration serialization,
   but not a complete public editor schema or structured-validation result API.
   Processing logs do have a public JSON export (`save_log()`); what is missing is a
   public in-memory log getter. The extension currently copies the private `_log`
   as a compatibility fallback and retains it in provenance. Saved configuration
   profiles are supported; individually implemented advanced controls do not require
-  a complete upstream editor schema. Advanced steps
-  (resegmentation, outlier filtering, IBSI-2 image filters, custom
-  discretisation cut-offs) remain reachable through a custom YAML/JSON file. The
+  a complete upstream editor schema. Further advanced steps
+  (IBSI-2 image filters, custom discretisation cut-offs, mask binarization, and
+  largest-component selection), or a different step order, still require a custom YAML/JSON file. The
   in-app **Validate** aid is a structural pre-check only; the worker performs the
   authoritative validation.
 - Retired immutable dependency environments are retained to avoid deleting libraries

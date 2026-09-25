@@ -150,12 +150,50 @@
            </layout>
           </widget>
          </item>
-         <item row="2" column="0">
+         <item row="2" column="0" colspan="2">
+          <widget class="QGroupBox" name="resegmentGroup">
+           <property name="title"><string>Intensity-range resegmentation</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="checked"><bool>false</bool></property>
+           <property name="toolTip"><string>Keep ROI voxels within inclusive intensity bounds after resampling and before discretisation. Use the image's intensity units; these are not necessarily HU. Original segmentation nodes are not modified.</string></property>
+           <layout class="QFormLayout" name="resegmentLayout">
+            <item row="0" column="0"><widget class="QLabel" name="rangeMinLabel"><property name="text"><string>Minimum intensity:</string></property></widget></item>
+            <item row="0" column="1"><widget class="QLineEdit" name="rangeMinLineEdit"><property name="placeholderText"><string>No lower bound</string></property><property name="toolTip"><string>Inclusive lower bound in image intensity units. Leave one bound blank for a one-sided range.</string></property></widget></item>
+            <item row="1" column="0"><widget class="QLabel" name="rangeMaxLabel"><property name="text"><string>Maximum intensity:</string></property></widget></item>
+            <item row="1" column="1"><widget class="QLineEdit" name="rangeMaxLineEdit"><property name="placeholderText"><string>No upper bound</string></property><property name="toolTip"><string>Inclusive upper bound. At least one bound is required when this step is enabled.</string></property></widget></item>
+            <item row="2" column="0"><widget class="QLabel" name="resegmentTargetLabel"><property name="text"><string>Apply to:</string></property></widget></item>
+            <item row="2" column="1"><widget class="QComboBox" name="resegmentTargetCombo">
+             <item><property name="text"><string>Both masks (changes shape)</string></property></item>
+             <item><property name="text"><string>Intensity only (preserves shape)</string></property></item>
+             <item><property name="text"><string>Morphology only</string></property></item>
+            </widget></item>
+           </layout>
+          </widget>
+         </item>
+         <item row="3" column="0" colspan="2">
+          <widget class="QGroupBox" name="outlierGroup">
+           <property name="title"><string>Outlier filtering</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="checked"><bool>false</bool></property>
+           <property name="toolTip"><string>Exclude voxels outside mean +/- sigma times the population standard deviation of each targeted ROI mask. Runs after intensity-range resegmentation, if enabled. Original segmentation nodes are not modified.</string></property>
+           <layout class="QFormLayout" name="outlierLayout">
+            <item row="0" column="0"><widget class="QLabel" name="outlierSigmaLabel"><property name="text"><string>Standard deviations (sigma):</string></property></widget></item>
+            <item row="0" column="1"><widget class="QDoubleSpinBox" name="outlierSigmaSpinBox"><property name="decimals"><number>3</number></property><property name="minimum"><double>0.001</double></property><property name="maximum"><double>1000.0</double></property><property name="value"><double>3.0</double></property></widget></item>
+            <item row="1" column="0"><widget class="QLabel" name="outlierTargetLabel"><property name="text"><string>Apply to:</string></property></widget></item>
+            <item row="1" column="1"><widget class="QComboBox" name="outlierTargetCombo">
+             <item><property name="text"><string>Both masks (changes shape)</string></property></item>
+             <item><property name="text"><string>Intensity only (preserves shape)</string></property></item>
+             <item><property name="text"><string>Morphology only</string></property></item>
+            </widget></item>
+           </layout>
+          </widget>
+         </item>
+         <item row="4" column="0">
           <widget class="QLabel" name="discretiseLabel">
            <property name="text"><string>Discretise:</string></property>
           </widget>
          </item>
-         <item row="2" column="1">
+         <item row="4" column="1">
           <widget class="QWidget" name="discretiseWidget" native="true">
            <layout class="QHBoxLayout" name="discretiseRowLayout">
             <property name="leftMargin"><number>0</number></property>
@@ -168,12 +206,12 @@
            </layout>
           </widget>
          </item>
-         <item row="3" column="0">
+         <item row="5" column="0">
           <widget class="QLabel" name="sourceModeLabel">
            <property name="text"><string>Voxel validity:</string></property>
           </widget>
          </item>
-         <item row="3" column="1">
+         <item row="5" column="1">
           <widget class="QWidget" name="sourceModeWidget" native="true">
            <layout class="QHBoxLayout" name="sourceModeRowLayout">
             <property name="leftMargin"><number>0</number></property>
@@ -183,6 +221,12 @@
             <item><widget class="QComboBox" name="sourceModeCombo"><property name="toolTip"><string>full_image treats all voxels as valid; roi_only/auto exclude sentinel/padding voxels from resampling and filtering.</string></property><item><property name="text"><string>full_image</string></property></item><item><property name="text"><string>roi_only</string></property></item><item><property name="text"><string>auto</string></property></item></widget></item>
             <item><widget class="QLineEdit" name="sentinelValueLineEdit"><property name="placeholderText"><string>Sentinel value (optional)</string></property></widget></item>
            </layout>
+         </widget>
+         </item>
+         <item row="6" column="0" colspan="2">
+          <widget class="QLabel" name="preprocessingOrderLabel">
+           <property name="text"><string>Order: resample → intensity range → outliers → discretise → features. Disabled steps are skipped. These controls affect only the in_app configuration, not the checked standard presets.</string></property>
+           <property name="wordWrap"><bool>true</bool></property>
           </widget>
          </item>
         </layout>
