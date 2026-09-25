@@ -22,6 +22,7 @@ The extension provides:
 - atomic long-form results in a `vtkMRMLTableNode`, with replace or append behavior;
 - a read-only results browser with feature search, ROI/configuration/family/status
   filters, and readable feature details and per-run provenance;
+- a scripting method that runs many cases, one after the other, into one table;
 - CSV export with a provenance sidecar, or a self-contained JSON export, with
   per-run provenance retained when tables are appended; and
 - installation of Pictologics and its dependencies into a private folder, after you
@@ -195,10 +196,40 @@ files. Advanced YAML/JSON pipelines still use **Additional config → Load from 
 profile saving is disabled in that mode. A profile can select multiple standard
 presets and one in-app configuration, not multiple custom pipelines.
 
+### Process many cases with a script
+
+Use Slicer's Python console (**View → Python Console**) to run many cases into one
+table. Change the folder and the file names to match your data.
+
+```python
+from pathlib import Path
+
+logic = slicer.util.getModuleLogic("PictologicsSlicer")
+study = Path("/path/to/study")
+table = None
+for case in sorted(path for path in study.iterdir() if path.is_dir()):
+    volume = slicer.util.loadVolume(str(case / "image.nii.gz"))
+    segmentation = slicer.util.loadSegmentation(str(case / "segmentation.seg.nrrd"))
+    table = logic.process(volume, segmentation, subjectID=case.name, outputTable=table)
+    slicer.mrmlScene.RemoveNode(volume)
+    slicer.mrmlScene.RemoveNode(segmentation)
+logic.exportTable(table, study / "radiomics.csv")
+```
+
+- `logic.process` returns when the case is complete. Slicer does not respond during
+  a case.
+- All segments are regions by default. Use `segmentIDs=[...]` to select segments, and
+  `includeWholeVolume=True` to add the whole scan.
+- Use `standardConfigurations=[...]` to select presets, and
+  `customConfigurationPath="settings.yaml"` to add a configuration file.
+- A region that fails gets rows with a status that is not `ok`, and the loop
+  continues. A case that cannot run stops the loop with an error.
+- Use `logic.exportTable(table, path, wide=True)` for one row per region.
+
 ## Current limitations
 
-- One scalar 3D volume is processed per run; vector/4D and patient-batch workflows are
-  out of scope.
+- One scalar 3D volume is processed per run; vector and 4D images are out of scope.
+  To process many cases, use a script (see above).
 - The extension accepts segmentation regions and whole-volume mode, not multi-label
   labelmap selection.
 - Nonlinear parent transforms are rejected. Resample with an explicit interpolation

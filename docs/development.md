@@ -125,6 +125,14 @@ estimate uses the effective configuration of that JSON, because Slicer's Python 
 no YAML reader. Before Pictologics is installed, **Validate** does the structural
 lint only.
 
+## Scripting interface
+
+`PictologicsSlicerLogic.process()` runs one case to the end and returns the results
+table. It uses the same path as **Run radiomics**: dependency check, NIfTI staging,
+the worker, result validation, and the atomic table commit. Rows and a provenance
+record go after the rows that are in the given table. The README shows a loop over
+case folders; an opt-in in-Slicer test runs two cases into one table.
+
 ## Load a development checkout
 
 Python-only Slicer modules do not require a local Slicer build for source development.

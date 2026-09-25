@@ -974,6 +974,33 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         np.testing.assert_array_equal(slicer.util.arrayFromVolume(self.fixture.volume_node),
                                       self.fixture.expected_image)
 
+    @unittest.skipUnless(
+        os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1",
+        f"Set {RUN_REAL_CLI_TEST_ENV}=1 to run the existing-dependency CLI gate.",
+    )
+    def test_scripted_batch_appends_each_case_to_one_table(self) -> None:
+        dependency_path, _ = _qualified_dependency_target(self.logic)
+        inspection = inspect_target(dependency_path, self.logic.pictologicsRequirement())
+        scene_before = _scene_node_ids()
+        table = None
+        with patch.object(self.logic, "ensureDependencies", return_value=inspection):
+            for subject in ("case-1", "case-2"):
+                table = self.logic.process(self.fixture.volume_node, self.fixture.segmentation_node,
+                                           subjectID=subject, outputTable=table)
+        rows = self.logic.rowsFromTable(table)
+        history = self.logic.provenanceHistory(table, required=True)
+        self.assertEqual(len(history), 2)
+        self.assertEqual({row["run_id"] for row in rows}, {record["run_id"] for record in history})
+        for subject in ("case-1", "case-2"):
+            statuses = [row["status"] for row in rows if row["subject_id"] == subject]
+            self.assertEqual(len(statuses), len(rows) / 2)
+            self.assertIn("ok", statuses)
+            self.assertLessEqual(set(statuses), {"ok", "not_computed"})
+        self.assertEqual({row["roi_name"] for row in rows}, {SEGMENT_NAME})
+        self.assertEqual({row["config"] for row in rows}, {"standard_fbn_32"})
+        self.assertEqual(_scene_node_ids() - scene_before, {table.GetID()})
+        self.assertEqual(list(self.logic.jobsRoot().glob("job-*")), [])
+
     def test_roi_refinement_controls_validate_persist_and_load_legacy_profiles(self) -> None:
         widget = self._feedback_widget()
         widget.ui.additionalConfigCombo.setCurrentIndex(1)

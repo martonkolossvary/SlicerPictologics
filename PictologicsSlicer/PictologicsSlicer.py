@@ -2061,7 +2061,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 pass
 
     @staticmethod
-    def startJob(job: dict[str, Any]):
+    def startJob(job: dict[str, Any], *, wait: bool = False):
         cliModule = getattr(slicer.modules, "pictologicscli", None)
         if cliModule is None:
             raise RuntimeError(
@@ -2073,7 +2073,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             "dependencyPath": str(job["dependency_path"]),
             "outputResults": str(job["output_path"]),
         }
-        return slicer.cli.run(cliModule, None, parameters, wait_for_completion=False)
+        return slicer.cli.run(cliModule, None, parameters, wait_for_completion=wait)
 
     @classmethod
     def cleanupJob(cls, job: dict[str, Any]):
@@ -2088,6 +2088,62 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             and not workDir.is_symlink()
         ):
             shutil.rmtree(workDir, ignore_errors=True)
+
+    def process(
+        self,
+        inputVolumeNode,
+        segmentationNode=None,
+        *,
+        segmentIDs: Sequence[str] | None = None,
+        includeWholeVolume: bool = False,
+        standardConfigurations: Sequence[str] = (DEFAULT_CONFIGURATION,),
+        customConfigurationPath: str | None = None,
+        subjectID: str = "",
+        outputTable=None,
+    ):
+        """Run Pictologics to the end and return the results table (for scripts).
+
+        Slicer waits until the worker stops. The new rows go after the rows that are
+        in ``outputTable``; with no table, a new table is made. By default, every
+        segment of the segmentation is a region.
+        """
+
+        inspection = self.ensureDependencies(forceUpgrade=False)
+        job = self.prepareJob(
+            inputVolumeNode=inputVolumeNode,
+            segmentationNode=segmentationNode,
+            selectedSegmentIDs=(
+                self.segmentIDs(segmentationNode) if segmentIDs is None else segmentIDs
+            ),
+            includeWholeVolume=includeWholeVolume,
+            standardConfigurations=standardConfigurations,
+            customConfigurationPath=customConfigurationPath,
+            subjectID=subjectID,
+            installedVersion=inspection.installed_version or "",
+            dependencyPath=inspection.target,
+        )
+        cliNode = None
+        try:
+            cliNode = self.startJob(job, wait=True)
+            if cliNode.GetStatus() & cliNode.ErrorsMask:
+                raise RuntimeError(
+                    str(cliNode.GetErrorText() or "").strip()
+                    or f"Pictologics CLI ended with status: {cliNode.GetStatusString()}"
+                )
+            payload = load_result_payload(job["output_path"])
+            if payload["run_id"] != job["manifest"]["run_id"]:
+                raise RuntimeError("The result run ID does not match the submitted job.")
+            return self.commitRows(
+                outputTable,
+                payload["rows"],
+                append=True,
+                payload=payload,
+                manifest=job["manifest"],
+            )
+        finally:
+            if cliNode is not None:
+                slicer.mrmlScene.RemoveNode(cliNode)
+            self.cleanupJob(job)
 
     @staticmethod
     def _markerPID(marker: Path) -> int | None:
