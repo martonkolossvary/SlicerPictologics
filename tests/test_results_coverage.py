@@ -16,6 +16,7 @@ from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     ResultPayloadError,
     build_result_payload,
+    configuration_conflicts,
     export_rows,
     export_rows_csv,
     export_rows_json,
@@ -466,6 +467,27 @@ class PayloadFileTests(unittest.TestCase):
             bad.write_text("{not valid json", encoding="utf-8")
             with self.assertRaisesRegex(ResultPayloadError, "Unable to read"):
                 load_result_payload(bad)
+
+
+
+class ConfigurationConflictTests(unittest.TestCase):
+    @staticmethod
+    def provenance(**configs: object) -> dict[str, object]:
+        return {"effective_configuration": {"configs": configs}}
+
+    def test_same_name_with_other_settings_is_a_conflict(self) -> None:
+        history = [
+            {"provenance": self.provenance(in_app={"steps": [1]}, preset={"steps": [2]})},
+            {"provenance": "not a mapping"},
+            {"provenance": {"effective_configuration": {"configs": ["not", "a", "mapping"]}}},
+            {},
+        ]
+        self.assertEqual(
+            configuration_conflicts(history, self.provenance(in_app={"steps": [3]}, preset={"steps": [2]})),
+            ["in_app"],
+        )
+        self.assertEqual(configuration_conflicts(history, self.provenance(other={"steps": [3]})), [])
+        self.assertEqual(configuration_conflicts(history, {}), [])
 
 
 if __name__ == "__main__":

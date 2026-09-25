@@ -49,6 +49,7 @@ from PictologicsLib.progress import current_roi_index, elapsed_text
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     RESULT_PAYLOAD_SCHEMA_VERSION,
+    configuration_conflicts,
     export_rows,
     load_result_payload,
     rows_to_wide,
@@ -1441,6 +1442,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 "results were not committed to avoid overwriting newer data."
             )
 
+        selectedTable = tableNode
         tableNode = self.logic.commitRows(
             tableNode,
             payload["rows"],
@@ -1448,6 +1450,13 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             payload=payload,
             manifest=self._activeJob["manifest"],
         )
+        moved = ""
+        if selectedTable is not None and tableNode is not selectedTable:
+            names = ", ".join(self.logic.configurationConflicts(selectedTable, payload))
+            moved = (
+                f" {selectedTable.GetName()} holds {names} with other settings, so the "
+                "results went to a new table."
+            )
         self._lastPayload = payload
         self.ui.outputTableSelector.setCurrentNode(tableNode)
         self.updateParameterNodeFromGUI()
@@ -1458,12 +1467,12 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.statusLabel.setText(
                 f"Completed with {errorCount} ROI error(s) and {nonOkCount} non-success "
                 f"feature row(s): {len(payload['rows'])} rows committed to "
-                f"{tableNode.GetName()}."
+                f"{tableNode.GetName()}.{moved}"
             )
         else:
             self.ui.statusLabel.setText(
                 f"Completed: {len(payload['rows'])} feature rows committed to "
-                f"{tableNode.GetName()}."
+                f"{tableNode.GetName()}.{moved}"
             )
         self.logic.showTable(tableNode)
 
@@ -2277,7 +2286,19 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                     "Append was requested, but the selected table is not marked as a "
                     "versioned Pictologics result table."
                 )
-            candidate.DeepCopy(existing)
+            conflicts = self.configurationConflicts(tableNode, payload)
+            if conflicts:
+                # One column must keep one meaning, so these rows go to a new table.
+                LOGGER.warning(
+                    "Table %s holds configuration(s) %s with other settings; the new "
+                    "results go to a new table.",
+                    tableNode.GetName(),
+                    ", ".join(conflicts),
+                )
+                tableNode = None
+                append = False
+        if append and tableNode is not None and tableNode.GetTable().GetNumberOfColumns() > 0:
+            candidate.DeepCopy(tableNode.GetTable())
         else:
             for columnName in LONG_RESULT_COLUMNS:
                 column = (
@@ -2343,7 +2364,8 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         created = False
         if tableNode is None:
             tableNode = slicer.mrmlScene.AddNewNodeByClass(
-                "vtkMRMLTableNode", "Pictologics Results"
+                "vtkMRMLTableNode",
+                slicer.mrmlScene.GenerateUniqueName("Pictologics Results"),
             )
             created = True
         previousTable = vtk.vtkTable()
@@ -2374,6 +2396,15 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                     tableNode.EndModify(rollbackModified)
             raise
         return tableNode
+
+    def configurationConflicts(self, tableNode, payload: dict[str, Any]) -> list[str]:
+        """Return the names that the table already holds with other settings."""
+
+        if tableNode is None or tableNode.GetTable().GetNumberOfRows() == 0:
+            return []
+        return configuration_conflicts(
+            self.provenanceHistory(tableNode, required=True), payload.get("provenance", {})
+        )
 
     @staticmethod
     def tableModificationTime(tableNode) -> int | None:
@@ -2512,7 +2543,8 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         )
         exportedPaths.append(provenancePath)
         if dictionaryRows:
-            dictionaryPath = path.with_name(f"{path.stem}.dictionary.csv")
+            # eigenradiomics finds features_catalog.csv next to features.csv.
+            dictionaryPath = path.with_name(f"{path.stem}_catalog.csv")
             self._atomicWriteCSV(
                 dictionaryPath,
                 dictionaryRows,

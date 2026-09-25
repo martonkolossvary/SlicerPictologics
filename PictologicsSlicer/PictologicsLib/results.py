@@ -289,6 +289,30 @@ def rows_to_wide(rows: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:
     return result
 
 
+def _effective_configurations(provenance: object) -> Mapping[str, Any]:
+    effective = provenance.get("effective_configuration") if isinstance(provenance, Mapping) else None
+    configs = effective.get("configs") if isinstance(effective, Mapping) else None
+    return configs if isinstance(configs, Mapping) else {}
+
+
+def configuration_conflicts(
+    history: Iterable[Mapping[str, Any]], provenance: Mapping[str, Any]
+) -> list[str]:
+    """Return the configuration names that *provenance* uses with other settings.
+
+    A results column is ``config__feature_key``. If two runs use one configuration
+    name with different effective settings, one column would hold values of two
+    meanings. *history* is the per-run provenance history of a table.
+    """
+
+    new = _effective_configurations(provenance)
+    conflicts: set[str] = set()
+    for record in history:
+        old = _effective_configurations(record.get("provenance"))
+        conflicts.update(name for name in new.keys() & old.keys() if new[name] != old[name])
+    return sorted(conflicts)
+
+
 def _fsync_parent_dir(path: Path) -> None:
     """Persist a rename by fsyncing the destination's directory.
 

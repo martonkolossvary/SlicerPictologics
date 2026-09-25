@@ -104,8 +104,9 @@ old version is deleted automatically.
    `config__feature_key` columns instead of the default long layout. JSON
    includes the complete per-run provenance
    history and feature data dictionary; CSV writes companion `.provenance.json` and
-   `.dictionary.csv` files (the latter is the Slicer-side equivalent of Pictologics'
-   `describe_features()`).
+   `_catalog.csv` files (the latter is the Slicer-side equivalent of Pictologics'
+   `describe_features()`). For example, `features.csv` gets `features_catalog.csv`,
+   the name that eigenradiomics finds automatically.
 
 The long table keeps the official `ibsi_code` and also reports the exact native
 `feature_key`, Pictologics' disambiguated `pictologics_ibsi_code`, the package-wide
@@ -122,6 +123,11 @@ The columns `config`, `family`, `feature_name`, `feature_key`, `ibsi_code`, and
 result format 2 of the extension's initial `0.1.0` release. Tables in format 1, from
 earlier development versions, cannot be appended, browsed, or exported; run the
 extraction again.
+
+One results column keeps one meaning. If you append a run to a table that already
+holds a configuration of the same name with other settings, the new results go to a
+new table, and the status line names the configuration. For example, the in-app
+configuration is always named `in_app`, so changed in-app settings start a new table.
 
 ### Refine ROIs without editing a configuration file
 
@@ -213,7 +219,7 @@ for case in sorted(path for path in study.iterdir() if path.is_dir()):
     table = logic.process(volume, segmentation, subjectID=case.name, outputTable=table)
     slicer.mrmlScene.RemoveNode(volume)
     slicer.mrmlScene.RemoveNode(segmentation)
-logic.exportTable(table, study / "radiomics.csv")
+logic.exportTable(table, study / "features.csv", wide=True)
 ```
 
 - `logic.process` returns when the case is complete. Slicer does not respond during
@@ -224,7 +230,26 @@ logic.exportTable(table, study / "radiomics.csv")
   `customConfigurationPath="settings.yaml"` to add a configuration file.
 - A region that fails gets rows with a status that is not `ok`, and the loop
   continues. A case that cannot run stops the loop with an error.
-- Use `logic.exportTable(table, path, wide=True)` for one row per region.
+- `wide=True` writes one row per region. The export also writes
+  `features_catalog.csv`, so the files are ready for eigenradiomics (see below).
+
+### Analyze the results with eigenradiomics
+
+[eigenradiomics](https://github.com/martonkolossvary/eigenradiomics) reads the wide CSV
+export and its catalog. Name the export `features.csv`, so that the catalog is
+`features_catalog.csv`, which eigenradiomics finds automatically.
+
+```python
+from eigenradiomics import RadiomicsDataset
+
+dataset = RadiomicsDataset.from_pictologics(
+    "features.csv", drop_subject_id=False, group="subject_id"
+)
+```
+
+`drop_subject_id=False` keeps the extension's `subject_id` column, which the loader
+otherwise deletes. The feature columns have the same names as in Pictologics' own wide
+output.
 
 ## Current limitations
 

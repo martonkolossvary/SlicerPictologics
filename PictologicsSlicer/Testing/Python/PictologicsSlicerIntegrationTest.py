@@ -723,6 +723,35 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(browser.rows, [])
         self.assertFalse(browser.dialog.visible)
 
+    def test_append_with_other_settings_goes_to_a_new_table(self) -> None:
+        def payload(run: str, steps: list[dict[str, str]]) -> dict[str, Any]:
+            row = dict.fromkeys(LONG_RESULT_COLUMNS, "")
+            row.update(run_id=run, timestamp="2026-09-25", image_name="Example", roi_id="1", roi_name="Lesion",
+                       roi_source="segmentation", config="in_app", family="morphology", feature_name="volume",
+                       feature_key="volume_RNU0", pictologics_feature_name="in_app__volume_RNU0",
+                       ibsi_code="RNU0", pictologics_ibsi_code="RNU0", value=1.0, status="ok")
+            provenance = {"effective_configuration": {"configs": {"in_app": {"steps": steps}}},
+                          "feature_catalog": [{"config": "in_app", "feature_key": "volume_RNU0"}]}
+            return {"schema_version": RESULT_PAYLOAD_SCHEMA_VERSION, "run_id": run, "rows": [row],
+                    "provenance": provenance, "errors": []}
+
+        def commit(table: Any, result: dict[str, Any]) -> Any:
+            return self.logic.commitRows(table, result["rows"], append=True, payload=result,
+                                         manifest={"configuration_sha256": result["run_id"]})
+
+        table = commit(None, payload("run-a", [{"step": "extract_features"}]))
+        self.assertIs(commit(table, payload("run-b", [{"step": "extract_features"}])), table)
+        other = payload("run-c", [{"step": "resample"}, {"step": "extract_features"}])
+        with self.assertLogs(gui_module.LOGGER, "WARNING"):
+            moved = commit(table, other)
+        self.assertIsNot(moved, table)
+        self.assertNotEqual(moved.GetName(), table.GetName())
+        self.assertEqual((table.GetNumberOfRows(), moved.GetNumberOfRows()), (2, 1))
+        self.assertEqual(self.logic.configurationConflicts(table, other), ["in_app"])
+        exported = self.logic.exportTable(moved, self.temporary_directory / "features.csv", wide=True)
+        self.assertEqual([path.name for path in exported],
+                         ["features.csv", "features.provenance.json", "features_catalog.csv"])
+
     def test_elapsed_roi_feedback_and_cancellation_preserve_terminal_state(self) -> None:
         widget = self._feedback_widget()
         node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLCommandLineModuleNode")
