@@ -667,9 +667,9 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         for run, value, outcome in (("run-a", 1.25, "ok"), ("run-b", None, "error")):
             row = dict.fromkeys(LONG_RESULT_COLUMNS, "")
             row.update(run_id=run, timestamp="2026-09-22", image_name="Example", roi_id="same-id",
-                       roi_name="Same lesion name", roi_source="segmentation", configuration="test",
+                       roi_name="Same lesion name", roi_source="segmentation", config="test",
                        feature_name="Volume", feature_key="volume_BC2M_10", pictologics_feature_name="test__volume_BC2M_10",
-                       ibsi_code="BC2M", pictologics_ibsi_code="BC2M_10", feature_family="ivh", value=value, status=outcome)
+                       ibsi_code="BC2M", pictologics_ibsi_code="BC2M_10", family="ivh", value=value, status=outcome)
             provenance = {"effective_configuration": {"configs": {"test": {"source_mode": "auto", "steps": []}}}}
             payload = {"schema_version": RESULT_PAYLOAD_SCHEMA_VERSION, "run_id": run,
                        "rows": [dict(row) for _ in range(205)], "provenance": provenance, "errors": []}
@@ -873,7 +873,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             {roi_names.GetValue(index) for index in range(roi_names.GetNumberOfValues())},
             {"Whole volume", SEGMENT_NAME},
         )
-        configurations = table.GetTable().GetColumnByName("configuration")
+        configurations = table.GetTable().GetColumnByName("config")
         self.assertEqual({configurations.GetValue(index) for index in range(configurations.GetNumberOfValues())},
                          {"standard_fbn_32", "in_app"})
         widget.onBrowseResults()
@@ -897,7 +897,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             mean, std = values.mean(), values.std(ddof=0)
             values = values[(values >= mean - std) & (values <= mean + std)]
             actual = {row["feature_key"]: row["value"] for row in rows
-                      if row["roi_name"] == roi_name and row["configuration"] == "in_app"}
+                      if row["roi_name"] == roi_name and row["config"] == "in_app"}
             self.assertAlmostEqual(actual["mean_intensity_Q4LE"], float(values.mean()), places=6)
             self.assertAlmostEqual(actual["volume_voxel_counting_YEKZ"],
                                    len(values) * voxel_volume, places=3)
@@ -1436,7 +1436,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                 {row["roi_id"] for row in rows},
                 {"whole-volume", fixture.segment_id},
             )
-            self.assertEqual({row["configuration"] for row in rows}, {"standard_fbn_32"})
+            self.assertEqual({row["config"] for row in rows}, {"standard_fbn_32"})
             self.assertEqual({row["pictologics_version"] for row in rows}, {installed_version})
             self.assertEqual({row["extension_version"] for row in rows}, {EXTENSION_VERSION})
             self.assertEqual({row["subject_id"] for row in rows}, {SUBJECT_ID})
@@ -1455,7 +1455,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             self.assertTrue(
                 all(
                     row["pictologics_feature_name"]
-                    == f"{row['configuration']}__{row['feature_key']}"
+                    == f"{row['config']}__{row['feature_key']}"
                     for row in rows
                 )
             )
@@ -1490,8 +1490,8 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                     )
                     row_identities = {
                         (
-                            row["configuration"],
-                            row["feature_family"],
+                            row["config"],
+                            row["family"],
                             row["feature_name"],
                             row["feature_key"],
                             row["ibsi_code"],

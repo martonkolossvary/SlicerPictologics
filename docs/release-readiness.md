@@ -218,6 +218,12 @@ new adopted wheel. Startup never silently upgrades dependencies.
   runner in Slicer cannot import or collect. They now use `unittest`.
 - **Catalog text.** The description names radiomics, and the module help links the
   documentation.
+- **Column names.** The long table now uses `config` and `family`, the names of
+  Pictologics' `describe_features()`, instead of `configuration` and
+  `feature_family`. The result format number is 2. Tables in format 1 cannot be
+  appended, browsed, or exported. A planned Pictologics release renames the full-key
+  column of its long `format_results` layout from `feature_name` to `feature_key`, so
+  that all names agree.
 - **Validation.** 463 portable tests and 241 subtests passed, with 100% scoped
   library/worker coverage, Ruff, and Mypy. The worker smoke and geometry-parity
   scripts passed against the local Pictologics source. All 19 Slicer 5.12.4

@@ -1190,7 +1190,7 @@ class ExecuteJobTests(unittest.TestCase):
             self.root / "private",
             progress=worker.ProgressReporter(stream),
         )
-        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["schema_version"], 2)
         self.assertEqual(len(payload["rows"]), 2)
         first, second = payload["rows"]
         self.assertEqual(tuple(first), worker.LONG_ROW_COLUMNS)
@@ -1301,7 +1301,7 @@ class BuildLongRowsTests(unittest.TestCase):
             self.log,
             pictologics_version="9.8.7",
         )
-        by_name = {(r["configuration"], r["feature_name"]): r for r in rows}
+        by_name = {(r["config"], r["feature_name"]): r for r in rows}
         self.assertEqual(by_name[("standard_fbn_32", "joint_entropy")]["status"], "ok")
         extra = by_name[("standard_fbn_32", "extra")]
         self.assertEqual(extra["ibsi_code"], "ZZ99")
@@ -1310,7 +1310,7 @@ class BuildLongRowsTests(unittest.TestCase):
             extra["pictologics_feature_name"], "standard_fbn_32__extra_ZZ99"
         )
         self.assertEqual(extra["preprocessing_sequence"], "")
-        self.assertEqual(extra["feature_family"], "unknown")
+        self.assertEqual(extra["family"], "unknown")
         plain = by_name[("standard_fbn_32", "plainname")]
         self.assertEqual(plain["ibsi_code"], "")
         self.assertEqual(plain["pictologics_ibsi_code"], "")

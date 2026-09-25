@@ -35,8 +35,8 @@ def filter_result_indices(
         index
         for index, row in enumerate(rows)
         if (roi is None or roi_identity(row) == roi)
-        and (not configuration or row.get("configuration") == configuration)
-        and (not family or row.get("feature_family") == family)
+        and (not configuration or row.get("config") == configuration)
+        and (not family or row.get("family") == family)
         and (not status or row.get("status") == status)
         and all(
             token in " ".join(str(row.get(key, "")) for key in SEARCH_COLUMNS).casefold()
@@ -68,7 +68,7 @@ def result_details(row: Mapping[str, Any], history: Sequence[Mapping[str, Any]])
         ("Name", "feature_name"),
         ("Value", "value"),
         ("Status", "status"),
-        ("Family", "feature_family"),
+        ("Family", "family"),
         ("Official IBSI code", "ibsi_code"),
         ("Pictologics IBSI code", "pictologics_ibsi_code"),
         ("Native key", "feature_key"),
@@ -83,7 +83,7 @@ def result_details(row: Mapping[str, Any], history: Sequence[Mapping[str, Any]])
         ("ROI", "roi_name"),
         ("ROI ID", "roi_id"),
         ("ROI source", "roi_source"),
-        ("Configuration", "configuration"),
+        ("Configuration", "config"),
         ("Run ID", "run_id"),
         ("Started", "timestamp"),
         ("Pictologics version", "pictologics_version"),
@@ -97,7 +97,7 @@ def result_details(row: Mapping[str, Any], history: Sequence[Mapping[str, Any]])
     provenance = _mapping(record.get("provenance"))
     lines.extend(["", "CONFIGURATION", f"SHA-256: {_value(record.get('configuration_sha256'))}"])
     configs = _mapping(_mapping(provenance.get("effective_configuration")).get("configs"))
-    config = _mapping(configs.get(str(row.get("configuration"))))
+    config = _mapping(configs.get(str(row.get("config"))))
     for key in ("source_mode", "sentinel_value"):
         if key in config:
             lines.append(f"{key.replace('_', ' ').capitalize()}: {_value(config[key])}")
@@ -115,7 +115,7 @@ def result_details(row: Mapping[str, Any], history: Sequence[Mapping[str, Any]])
         entry
         for log in logs
         for entry in _records(log.get("entries"))
-        if entry.get("config_name") == row.get("configuration")
+        if entry.get("config_name") == row.get("config")
     ]
     if not entries:
         lines.append("No matching processing log is available.")
@@ -140,7 +140,7 @@ def result_details(row: Mapping[str, Any], history: Sequence[Mapping[str, Any]])
         ):
             lines.append(f"ROI error: {_value(error.get('error'))}")
     for feature in _records(provenance.get("feature_catalog")):
-        if feature.get("config") == row.get("configuration") and feature.get(
+        if feature.get("config") == row.get("config") and feature.get(
             "feature_key"
         ) == row.get("feature_key"):
             lines.extend(["", "FEATURE DICTIONARY"])

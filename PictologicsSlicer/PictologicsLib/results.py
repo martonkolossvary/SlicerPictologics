@@ -13,7 +13,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
-RESULT_PAYLOAD_SCHEMA_VERSION: Final = 1
+RESULT_PAYLOAD_SCHEMA_VERSION: Final = 2
 _RESULT_PAYLOAD_REQUIRED_KEYS: Final = frozenset({"schema_version", "run_id", "rows"})
 _RESULT_PAYLOAD_ALLOWED_KEYS: Final = _RESULT_PAYLOAD_REQUIRED_KEYS | {
     "provenance",
@@ -22,14 +22,11 @@ _RESULT_PAYLOAD_ALLOWED_KEYS: Final = _RESULT_PAYLOAD_REQUIRED_KEYS | {
 
 # This order is the extension's durable table and long-export contract.
 #
-# NOTE: This schema is deliberately richer than Pictologics' own
-# ``format_results()`` output and does not match it column-for-column -- notably
-# this uses ``configuration`` where Pictologics uses ``config``, and adds
-# provenance columns (run_id, timestamp, roi_*, status, versions). The extension
-# owns this layout on purpose so tables carry full provenance. If Pictologics
-# later grows a canonical long/wide result schema we intend to reconcile this
-# with it (and bump RESULT_PAYLOAD_SCHEMA_VERSION); until then treat the two
-# layouts as intentionally distinct.
+# The shared names (config, family, feature_name, feature_key, ibsi_code, and
+# preprocessing_sequence) mean the same as in Pictologics' describe_features():
+# feature_key is the full key with the IBSI code, and feature_name is the name
+# without the code. The other columns add provenance (run, ROI, status, versions).
+# Format 2 renamed "configuration" to "config" and "feature_family" to "family".
 LONG_RESULT_COLUMNS: Final[tuple[str, ...]] = (
     "run_id",
     "timestamp",
@@ -38,8 +35,8 @@ LONG_RESULT_COLUMNS: Final[tuple[str, ...]] = (
     "roi_source",
     "roi_id",
     "roi_name",
-    "configuration",
-    "feature_family",
+    "config",
+    "family",
     "feature_name",
     "feature_key",
     "ibsi_code",
@@ -123,8 +120,8 @@ def normalise_result_row(
         raise ResultPayloadError(f"{location}.timestamp must not be empty")
     if not normalised["roi_id"]:
         raise ResultPayloadError(f"{location}.roi_id must not be empty")
-    if not normalised["configuration"]:
-        raise ResultPayloadError(f"{location}.configuration must not be empty")
+    if not normalised["config"]:
+        raise ResultPayloadError(f"{location}.config must not be empty")
     if not normalised["feature_name"]:
         raise ResultPayloadError(f"{location}.feature_name must not be empty")
     if not normalised["feature_key"]:

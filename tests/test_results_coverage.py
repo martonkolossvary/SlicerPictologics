@@ -37,8 +37,8 @@ def result_row(**changes: object) -> dict[str, object]:
         "roi_source": "segmentation",
         "roi_id": "segment-1",
         "roi_name": "Tumour",
-        "configuration": "standard_fbn_32",
-        "feature_family": "intensity",
+        "config": "standard_fbn_32",
+        "family": "intensity",
         "feature_name": "mean",
         "feature_key": "mean_Q4LE",
         "ibsi_code": "Q4LE",
@@ -57,7 +57,7 @@ def result_row(**changes: object) -> dict[str, object]:
         )
     if "pictologics_feature_name" not in changes:
         row["pictologics_feature_name"] = (
-            f"{row['configuration']}__{row['feature_key']}"
+            f"{row['config']}__{row['feature_key']}"
         )
     return row
 
@@ -116,7 +116,7 @@ class NormaliseResultRowTests(unittest.TestCase):
             "run_id": "run_id must not be empty",
             "timestamp": "timestamp must not be empty",
             "roi_id": "roi_id must not be empty",
-            "configuration": "configuration must not be empty",
+            "config": "config must not be empty",
             "feature_name": "feature_name must not be empty",
             "feature_key": "feature_key must not be empty",
             "pictologics_feature_name": "pictologics_feature_name must not be empty",
@@ -183,7 +183,7 @@ class ValidatePayloadTests(unittest.TestCase):
 
     def test_missing_keys_only(self) -> None:
         with self.assertRaisesRegex(ResultPayloadError, "missing keys"):
-            validate_result_payload({"schema_version": 1})
+            validate_result_payload({"schema_version": 2})
 
     def test_schema_version_bool_is_rejected(self) -> None:
         with self.assertRaisesRegex(ResultPayloadError, "Unsupported schema_version"):
@@ -194,24 +194,24 @@ class ValidatePayloadTests(unittest.TestCase):
     def test_schema_version_wrong_number_is_rejected(self) -> None:
         with self.assertRaisesRegex(ResultPayloadError, "Unsupported schema_version"):
             validate_result_payload(
-                {"schema_version": 2, "run_id": "run-001", "rows": []}
+                {"schema_version": 1, "run_id": "run-001", "rows": []}
             )
 
     def test_run_id_must_be_a_non_empty_string(self) -> None:
         with self.assertRaisesRegex(ResultPayloadError, "run_id must be a non-empty"):
             validate_result_payload(
-                {"schema_version": 1, "run_id": 123, "rows": []}
+                {"schema_version": 2, "run_id": 123, "rows": []}
             )
         with self.assertRaisesRegex(ResultPayloadError, "run_id must be a non-empty"):
             validate_result_payload(
-                {"schema_version": 1, "run_id": "", "rows": []}
+                {"schema_version": 2, "run_id": "", "rows": []}
             )
 
     def test_provenance_must_be_a_mapping(self) -> None:
         with self.assertRaisesRegex(ResultPayloadError, "provenance must be an object"):
             validate_result_payload(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "run_id": "run-001",
                     "rows": [],
                     "provenance": ["not", "a", "mapping"],
@@ -221,7 +221,7 @@ class ValidatePayloadTests(unittest.TestCase):
     def test_provenance_mapping_is_cloned(self) -> None:
         normalised = validate_result_payload(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "run_id": "run-001",
                 "rows": [],
                 "provenance": {"configuration_sha256": "abc"},
@@ -233,7 +233,7 @@ class ValidatePayloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ResultPayloadError, "errors must be an array"):
             validate_result_payload(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "run_id": "run-001",
                     "rows": [],
                     "errors": 123,
@@ -244,7 +244,7 @@ class ValidatePayloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ResultPayloadError, "errors must be an array"):
             validate_result_payload(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "run_id": "run-001",
                     "rows": [],
                     "errors": "boom",
@@ -255,7 +255,7 @@ class ValidatePayloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ResultPayloadError, r"errors\[0\] must be an object"):
             validate_result_payload(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "run_id": "run-001",
                     "rows": [],
                     "errors": [123],
@@ -265,7 +265,7 @@ class ValidatePayloadTests(unittest.TestCase):
     def test_error_mapping_is_cloned(self) -> None:
         normalised = validate_result_payload(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "run_id": "run-001",
                 "rows": [],
                 "errors": [{"message": "empty mask"}],
@@ -314,8 +314,8 @@ class JsonSafeTests(unittest.TestCase):
 class RowsToWideTests(unittest.TestCase):
     def test_grouping_produces_feature_columns(self) -> None:
         rows = [
-            result_row(configuration="std_a", feature_name="mean", value=1.0),
-            result_row(configuration="std_b", feature_name="mean", value=2.0),
+            result_row(config="std_a", feature_name="mean", value=1.0),
+            result_row(config="std_b", feature_name="mean", value=2.0),
         ]
         wide = rows_to_wide(rows)
         self.assertEqual(len(wide), 1)
@@ -334,8 +334,8 @@ class RowsToWideTests(unittest.TestCase):
 
     def test_collision_is_rejected(self) -> None:
         rows = [
-            result_row(configuration="std_a", feature_name="mean", value=1.0),
-            result_row(configuration="std_a", feature_name="mean", value=2.0),
+            result_row(config="std_a", feature_name="mean", value=1.0),
+            result_row(config="std_a", feature_name="mean", value=2.0),
         ]
         with self.assertRaisesRegex(ResultPayloadError, "Wide export collision"):
             rows_to_wide(rows)
@@ -368,8 +368,8 @@ class ExportCsvTests(unittest.TestCase):
 
     def test_wide_export(self) -> None:
         rows = [
-            result_row(configuration="std_a", feature_name="mean", value=1.0),
-            result_row(configuration="std_b", feature_name="glcm", value=2.0),
+            result_row(config="std_a", feature_name="mean", value=1.0),
+            result_row(config="std_b", feature_name="glcm", value=2.0),
         ]
         with tempfile.TemporaryDirectory() as directory:
             destination = export_rows_csv(rows, Path(directory, "wide.csv"), wide=True)
@@ -397,8 +397,8 @@ class ExportJsonTests(unittest.TestCase):
 
     def test_wide_export(self) -> None:
         rows = [
-            result_row(configuration="std_a", feature_name="mean", value=1.0),
-            result_row(configuration="std_b", feature_name="glcm", value=2.0),
+            result_row(config="std_a", feature_name="mean", value=1.0),
+            result_row(config="std_b", feature_name="glcm", value=2.0),
         ]
         with tempfile.TemporaryDirectory() as directory:
             destination = export_rows_json(rows, Path(directory, "wide.json"), wide=True)

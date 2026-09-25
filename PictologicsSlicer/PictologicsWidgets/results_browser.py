@@ -14,8 +14,8 @@ class ResultsBrowser:
         ("Feature", "feature_name"),
         ("Value", "value"),
         ("ROI", "roi_name"),
-        ("Configuration", "configuration"),
-        ("Family", "feature_family"),
+        ("Configuration", "config"),
+        ("Family", "family"),
         ("Status", "status"),
     )
 
@@ -123,8 +123,8 @@ class ResultsBrowser:
                         str(
                             row[
                                 {
-                                    "configuration": "configuration",
-                                    "family": "feature_family",
+                                    "configuration": "config",
+                                    "family": "family",
                                     "status": "status",
                                 }[key]
                             ]

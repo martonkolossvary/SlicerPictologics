@@ -29,7 +29,7 @@ from typing import Any, TextIO, cast
 from xml.sax.saxutils import escape as xml_escape
 
 MANIFEST_SCHEMA_VERSION = 1
-OUTPUT_SCHEMA_VERSION = 1
+OUTPUT_SCHEMA_VERSION = 2
 
 MANIFEST_REQUIRED_KEYS = frozenset(
     {
@@ -75,8 +75,8 @@ LONG_ROW_COLUMNS = (
     "roi_source",
     "roi_id",
     "roi_name",
-    "configuration",
-    "feature_family",
+    "config",
+    "family",
     "feature_name",
     "feature_key",
     "ibsi_code",
@@ -1151,8 +1151,8 @@ def build_long_rows(
                 "roi_source": roi.roi_source,
                 "roi_id": roi.roi_id,
                 "roi_name": roi.roi_name,
-                "configuration": config_name,
-                "feature_family": str(metadata.get("family", "unknown")),
+                "config": config_name,
+                "family": str(metadata.get("family", "unknown")),
                 "feature_name": feature_name,
                 "feature_key": feature_key,
                 "ibsi_code": ibsi_code,
@@ -1199,8 +1199,8 @@ def build_long_rows(
                     "roi_source": roi.roi_source,
                     "roi_id": roi.roi_id,
                     "roi_name": roi.roi_name,
-                    "configuration": config_name,
-                    "feature_family": "unknown",
+                    "config": config_name,
+                    "family": "unknown",
                     "feature_name": feature_name,
                     "feature_key": feature_key,
                     "ibsi_code": ibsi_code,

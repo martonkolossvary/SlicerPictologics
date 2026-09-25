@@ -113,7 +113,7 @@ def worker_values(worker, pictologics_module, root: Path) -> dict[str, float]:
 
     values: dict[str, float] = {}
     for row in payload["rows"]:
-        if row["configuration"] != CONFIG or row["status"] != "ok":
+        if row["config"] != CONFIG or row["status"] != "ok":
             continue
         identity = row["feature_key"]
         if identity in values:

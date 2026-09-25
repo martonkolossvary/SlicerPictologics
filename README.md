@@ -190,7 +190,7 @@ cmake --build ../SlicerPictologics-build --config Release --target package
    the previous table; completed results are committed to the scene together.
 7. Select **Export table as CSV or JSON…** to save the current results table. Enable
    **Export wide layout** for one row per ROI with Pictologics' exact
-   `configuration__feature_key` columns instead of the default long layout. JSON
+   `config__feature_key` columns instead of the default long layout. JSON
    includes the complete per-run provenance
    history and feature data dictionary; CSV writes companion `.provenance.json` and
    `.dictionary.csv` files (the latter is the Slicer-side equivalent of Pictologics'
@@ -202,8 +202,15 @@ The long table keeps the official `ibsi_code` and also reports the exact native
 IBSI code `BC2M` is paired with `BC2M_10` or `BC2M_90`, and a package-wide name such as
 `standard_fbn_32__volume_at_intensity_fraction_0.10_BC2M_10`. The longer identifier is
 Pictologics-specific, not a second official IBSI code. Complete preprocessing
-parameters remain in the feature data dictionary. These columns are part of the
-extension's initial `0.1.0` result contract.
+parameters remain in the feature data dictionary.
+
+The columns `config`, `family`, `feature_name`, `feature_key`, `ibsi_code`, and
+`preprocessing_sequence` mean the same as in Pictologics' `describe_features()`:
+`feature_key` is the full key with the IBSI code (`mean_intensity_Q4LE`), and
+`feature_name` is the name without the code (`mean_intensity`). These columns form
+result format 2 of the extension's initial `0.1.0` release. Tables in format 1, from
+earlier development versions, cannot be appended, browsed, or exported; run the
+extraction again.
 
 ### Refine ROIs without editing a configuration file
 
@@ -317,12 +324,11 @@ new job; a malformed marker is retained conservatively for at most seven days.
 - Each configuration is computed on its own, because Pictologics 0.5.1 can copy wrong
   values between configurations when it reuses shared results. Runs with several
   presets therefore take longer.
-- Exported tables use the extension's own richer long-form schema (provenance and
-  feature-identity columns plus `configuration`) and therefore do **not** match
-  Pictologics' long `format_results` / `save_results` layout (which uses `config` and
-  omits provenance). Wide feature names do match Pictologics exactly. This is
-  intentional so tables carry full provenance; it may be reconciled if Pictologics
-  adopts a canonical result schema.
+- The long table adds provenance columns (run, ROI, status, and versions) to the
+  Pictologics names. The long `format_results` layout of Pictologics 0.5.1 still
+  calls the full key `feature_name`; a planned Pictologics release renames it to
+  `feature_key`, so that all names agree. Wide feature names match Pictologics
+  exactly.
 - Pictologics 0.5.1 has passed private PyPI installation, API and full-JIT probes,
   and the integration suite in the reinstalled Slicer 5.12.4 (CPython 3.12,
   x86_64 under Rosetta on macOS). CI additionally requires real Slicer on Linux and

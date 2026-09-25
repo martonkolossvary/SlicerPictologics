@@ -31,8 +31,8 @@ def result_row(**changes: object) -> dict[str, object]:
         "roi_source": "segmentation",
         "roi_id": "segment-1",
         "roi_name": "Tumour",
-        "configuration": "standard_fbn_32",
-        "feature_family": "intensity",
+        "config": "standard_fbn_32",
+        "family": "intensity",
         "feature_name": "mean",
         "feature_key": "mean_Q4LE",
         "ibsi_code": "Q4LE",
@@ -51,7 +51,7 @@ def result_row(**changes: object) -> dict[str, object]:
         )
     if "pictologics_feature_name" not in changes:
         row["pictologics_feature_name"] = (
-            f"{row['configuration']}__{row['feature_key']}"
+            f"{row['config']}__{row['feature_key']}"
         )
     return row
 
@@ -68,8 +68,8 @@ class ResultValidationTests(unittest.TestCase):
                 "roi_source",
                 "roi_id",
                 "roi_name",
-                "configuration",
-                "feature_family",
+                "config",
+                "family",
                 "feature_name",
                 "feature_key",
                 "ibsi_code",
@@ -93,7 +93,7 @@ class ResultValidationTests(unittest.TestCase):
         )
         source_row["value"] = 99
 
-        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["schema_version"], 2)
         self.assertEqual(payload["rows"][0]["value"], 7)
         self.assertEqual(tuple(payload["rows"][0]), LONG_RESULT_COLUMNS)
 
@@ -116,7 +116,7 @@ class ResultValidationTests(unittest.TestCase):
             build_result_payload(run_id="run-001", rows=[missing])
 
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": "another-run",
             "rows": [result_row()],
         }
@@ -127,7 +127,7 @@ class ResultValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ResultPayloadError, "unknown keys"):
             validate_result_payload(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "run_id": "run-001",
                     "rows": [result_row()],
                     "future": True,
@@ -182,8 +182,8 @@ class ResultExportTests(unittest.TestCase):
         self,
     ) -> None:
         rows = [
-            result_row(configuration="standard_a", feature_name="mean", value=1.0),
-            result_row(configuration="standard_b", feature_name="mean", value=2.0),
+            result_row(config="standard_a", feature_name="mean", value=1.0),
+            result_row(config="standard_b", feature_name="mean", value=2.0),
         ]
 
         wide = rows_to_wide(rows)

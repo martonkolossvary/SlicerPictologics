@@ -19,8 +19,8 @@ def browser_fixture():
         "image_name": "Image",
         "subject_id": "Case",
         "timestamp": "now",
-        "configuration": "test",
-        "feature_family": "ivh",
+        "config": "test",
+        "family": "ivh",
         "feature_name": "Volume fraction",
         "feature_key": "volume_BC2M_10",
         "ibsi_code": "BC2M",
@@ -87,8 +87,8 @@ class ResultBrowserTests(unittest.TestCase):
             dict(
                 row,
                 run_id="run-b",
-                configuration="other",
-                feature_family="intensity",
+                config="other",
+                family="intensity",
                 status="error",
             ),
         ]

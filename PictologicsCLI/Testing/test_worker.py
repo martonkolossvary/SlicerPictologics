@@ -347,12 +347,12 @@ class ExecutionTests(unittest.TestCase):
             progress=worker.ProgressReporter(progress_stream),
         )
 
-        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["schema_version"], 2)
         self.assertEqual(payload["run_id"], "run-123")
         self.assertEqual(len(payload["rows"]), 2)
         first, second = payload["rows"]
         self.assertEqual(tuple(first), worker.LONG_ROW_COLUMNS)
-        self.assertEqual(first["feature_family"], "glcm")
+        self.assertEqual(first["family"], "glcm")
         self.assertEqual(first["feature_name"], "joint_entropy")
         self.assertEqual(first["feature_key"], "joint_entropy_TU9B")
         self.assertEqual(first["ibsi_code"], "TU9B")
