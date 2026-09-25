@@ -42,7 +42,7 @@ treat automated or agent visual checks as approval.
 2. Use the Extension Factory to build/package this Python-only extension as part
    of catalog submission. A local Slicer build tree is not a prerequisite for
    submission. If a matching build tree is available, a local package can also be
-   produced with the [documented CMake commands](../README.md#configure-and-package-the-extension).
+   produced with the [documented CMake commands](development.md#configure-and-package-the-extension).
    Do not substitute a hand-assembled archive for a factory-compatible build.
 3. Inspect the produced archive: both modules, GUI support library, `.ui`, selected
    PNG, CLI XML/script, and the exact requirement file must be present. Branding
