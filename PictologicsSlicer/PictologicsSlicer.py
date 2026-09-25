@@ -42,6 +42,7 @@ from PictologicsLib.inline_config import (
     preset_names,
 )
 from PictologicsLib.jobs import build_job_manifest, sha256_file, write_job_manifest
+from PictologicsLib.memory import BYTES_PER_VOXEL, largest_voxel_count
 from PictologicsLib.profiles import build_profile, validate_profile
 from PictologicsLib.progress import current_roi_index, elapsed_text
 from PictologicsLib.results import (
@@ -78,6 +79,8 @@ STANDARD_CONFIGURATIONS = (
     "standard_fbs_32",
 )
 DEFAULT_CONFIGURATION = "standard_fbn_32"
+# Ask before a run when one copy of the resampled scan needs more memory than this.
+LARGE_IMAGE_BYTES = 1_000_000_000
 
 PARAM_WHOLE_VOLUME = "WholeVolume"
 PARAM_SELECTED_SEGMENTS = "SelectedSegments"
@@ -1113,6 +1116,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         if error:
             slicer.util.errorDisplay(error, windowTitle="Pictologics")
             return
+        if not self._confirmLargeRun():
+            self.ui.statusLabel.setText("The run did not start.")
+            return
         # pip_install and the dependency probes process Qt events while they run.
         # Mark the entire launch path busy before the first processEvents() call so a
         # queued Run/Update click cannot start a second 500+ MB installation.
@@ -1195,6 +1201,40 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             if self._activeJob is None:
                 self._stopRunFeedback()
             self._updateRunState()
+
+    def _confirmLargeRun(self) -> bool:
+        """Ask before a run whose resampled scan needs a lot of memory."""
+
+        volume = self.ui.inputVolumeSelector.currentNode()
+        documents = [
+            preset_configuration_document(name) for name in self._selectedConfigurations()
+        ]
+        source = self._currentAdditionalSource()
+        if source == "inline":
+            documents.append(build_inline_configuration_document(self._inlineStateFromGUI()))
+        elif source == "file":
+            path = Path(str(self.ui.customConfigPathLineEdit.text).strip()).expanduser()
+            try:
+                document = self._parseConfigurationFile(path)
+            except (OSError, ValueError):
+                document = None
+            if isinstance(document, dict):
+                documents.append(document)
+        voxels = largest_voxel_count(
+            volume.GetImageData().GetDimensions(), volume.GetSpacing(), documents
+        )
+        size = voxels * BYTES_PER_VOXEL
+        if size <= LARGE_IMAGE_BYTES:
+            return True
+        return bool(
+            slicer.util.confirmOkCancelDisplay(
+                "Pictologics resamples the whole scan for each region, to about "
+                f"{voxels / 1e6:,.0f} million voxels. One copy of that image needs "
+                f"about {size / 1e9:.1f} GB of memory, and Pictologics keeps several "
+                "copies. The run can be slow or run out of memory.\n\nContinue?",
+                windowTitle="Large Pictologics run",
+            )
+        )
 
     def onCancel(self):
         if self._nodeIsBusy(self._cliNode):

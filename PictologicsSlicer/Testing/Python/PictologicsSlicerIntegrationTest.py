@@ -761,6 +761,25 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(widget.ui.elapsedTimeLabel.text, elapsed)
         self.assertTrue(widget.ui.runButton.enabled)
 
+    def test_large_run_asks_before_anything_starts(self) -> None:
+        widget = self._feedback_widget()
+        with patch.object(gui_module, "LARGE_IMAGE_BYTES", 0), patch.object(
+            slicer.util, "confirmOkCancelDisplay", return_value=False
+        ) as confirm, patch.object(widget.logic, "ensureDependencies") as ensure:
+            widget.onRun()
+        confirm.assert_called_once()
+        self.assertIn("GB of memory", confirm.call_args.args[0])
+        ensure.assert_not_called()
+        self.assertIsNone(widget._activeJob)
+        self.assertEqual(widget.ui.statusLabel.text, "The run did not start.")
+        with patch.object(gui_module, "LARGE_IMAGE_BYTES", 0), patch.object(
+            slicer.util, "confirmOkCancelDisplay", return_value=True
+        ), patch.object(
+            widget.logic, "ensureDependencies", side_effect=DependencyInstallDeclined("declined")
+        ) as ensure:
+            widget.onRun()
+        ensure.assert_called_once()
+
     def test_launch_failure_or_decline_stops_elapsed_feedback(self) -> None:
         widget = self._feedback_widget()
         for error in (DependencyInstallDeclined("declined"), RuntimeError("probe failure")):
