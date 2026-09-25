@@ -31,6 +31,7 @@ from PictologicsLib.dependencies import (
     dependency_paths,
     inspect_target,
     parse_pictologics_requirement,
+    remove_inactive_environments,
 )
 from PictologicsLib.inline_config import (
     MASK_TARGETS,
@@ -51,7 +52,7 @@ from PictologicsLib.results import (
     rows_to_wide,
     validate_result_payload,
 )
-from PictologicsLib.staging import process_is_alive, read_pid_marker
+from PictologicsLib.staging import job_may_be_running, process_is_alive, read_pid_marker
 from PictologicsWidgets.results_browser import ResultsBrowser
 from slicer.ScriptedLoadableModule import (
     ScriptedLoadableModule,
@@ -217,7 +218,9 @@ class PictologicsSlicer(ScriptedLoadableModule):
         self.parent.helpText = (
             "Run Pictologics radiomics on a scalar volume, the whole volume, "
             "and/or independently selected segments. Computation runs in a "
-            "cancellable background CLI process with isolated dependencies."
+            "cancellable background CLI process with isolated dependencies. "
+            'See the <a href="https://github.com/martonkolossvary/SlicerPictologics#readme">'
+            "documentation</a> for a tutorial."
         )
         self.parent.acknowledgementText = (
             "This extension uses the open-source Pictologics radiomics package."
@@ -279,6 +282,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 )
         except Exception:
             LOGGER.exception("Could not purge stale Pictologics staging directories")
+        self.logic.removeRetiredEnvironments()
         self._populateStandardConfigurations()
         self._connectSignals()
 
@@ -313,6 +317,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 LOGGER.exception(
                     "Could not purge stale Pictologics staging directories"
                 )
+            self.logic.removeRetiredEnvironments()
         self.refreshPackageStatus()
         self._updateRunState()
 
@@ -1505,7 +1510,9 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
 
     def setDefaultParameters(self, parameterNode):
         if not parameterNode.GetParameter(PARAM_WHOLE_VOLUME):
-            parameterNode.SetParameter(PARAM_WHOLE_VOLUME, "true")
+            # Off by default: the presets resample the entire scan for a whole-volume
+            # region, which can need several gigabytes of memory for a large CT.
+            parameterNode.SetParameter(PARAM_WHOLE_VOLUME, "false")
         if not parameterNode.GetParameter(PARAM_APPEND_RESULTS):
             parameterNode.SetParameter(PARAM_APPEND_RESULTS, "false")
         if not parameterNode.GetParameter(PARAM_SELECTED_SEGMENTS):
@@ -1650,8 +1657,9 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             environmentBase = dependency_environment_path(
                 paths["cache_root"], expectedVersion
             )
+            # A short suffix keeps the deepest package files within Windows' path limit.
             published = environmentBase.with_name(
-                f"{environmentBase.name}-{uuid.uuid4().hex}"
+                f"{environmentBase.name}-{uuid.uuid4().hex[:8]}"
             )
             staging.rename(published)
             # Run the full JIT probe after relocation but before activation: Numba
@@ -1677,6 +1685,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 f"The isolated installation did not produce one compatible Pictologics "
                 f"distribution. Found: {versions}; required: {requirement}."
             )
+        self.removeRetiredEnvironments()
         return after
 
     @staticmethod
@@ -2054,6 +2063,26 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 LOGGER.exception(
                     "Could not remove stale Pictologics job directory %s", candidate
                 )
+        return removed
+
+    def removeRetiredEnvironments(self) -> list[Path]:
+        """Delete the package versions that the active pointer no longer selects.
+
+        A running job (also in another Slicer instance) may still use an older version,
+        so deletion then waits; module entry and the next installation try again.
+        Cleanup problems are logged and never stop a run.
+        """
+
+        try:
+            paths = self.privatePaths()
+            if job_may_be_running(paths["jobs_root"]):
+                return []
+            removed = remove_inactive_environments(paths["cache_root"])
+        except Exception:
+            LOGGER.exception("Could not remove old Pictologics environments")
+            return []
+        for path in removed:
+            LOGGER.info("Removed old Pictologics environment %s", path)
         return removed
 
     def commitRows(

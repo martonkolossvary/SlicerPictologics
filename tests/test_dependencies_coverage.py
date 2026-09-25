@@ -35,6 +35,7 @@ from PictologicsLib.dependencies import (
     ensure_dependency_paths,
     inspect_target,
     parse_pictologics_requirement,
+    remove_inactive_environments,
 )
 
 
@@ -312,7 +313,7 @@ class CacheLayoutTests(unittest.TestCase):
             root = Path(directory, "cache")
             target = dependency_environment_path(root, "v0.5.0")
             self.assertEqual(
-                target, root.resolve() / "environments" / "pictologics-0.5.0"
+                target, root.resolve() / "environments" / "0.5.0"
             )
             with self.assertRaisesRegex(
                 DependencyConfigurationError, "Invalid Pictologics environment version"
@@ -358,7 +359,7 @@ class ActivationTests(unittest.TestCase):
             self.assertEqual(paths["dependency_target"], target)
             self.assertEqual(
                 paths["active_pointer"].read_text(encoding="utf-8"),
-                "pictologics-0.5.0\n",
+                "0.5.0\n",
             )
             self.assertEqual(
                 list(root.resolve().glob(".active-environment-*.tmp")), []
@@ -516,6 +517,65 @@ class TargetInspectionDataclassTests(unittest.TestCase):
         )
         self.assertTrue(many.installed)
         self.assertTrue(many.ambiguous)
+
+
+class RemoveInactiveEnvironmentsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name, "cache")
+        self.environments = self.root / "environments"
+        self.environments.mkdir(parents=True)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _environment(self, name: str) -> Path:
+        path = self.environments / name
+        (path / "pictologics").mkdir(parents=True)
+        return path
+
+    def test_nothing_is_removed_without_an_active_pointer(self) -> None:
+        old = self._environment("0.5.0-aaaaaaaa")
+        legacy = self.root / "python-packages"
+        legacy.mkdir()
+        self.assertEqual(remove_inactive_environments(self.root), [])
+        self.assertTrue(old.is_dir())
+        self.assertTrue(legacy.is_dir())
+
+    def test_only_the_active_environment_and_protected_entries_remain(self) -> None:
+        old = self._environment("0.5.0-aaaaaaaa")
+        active = self._environment("0.5.1-bbbbbbbb")
+        installing = self._environment(".installing-cccccccc")
+        legacy = self.root / "python-packages"
+        legacy.mkdir()
+        stray = self.environments / "notes.txt"
+        stray.write_text("keep", encoding="utf-8")
+        outside = Path(self._tmp.name, "outside")
+        outside.mkdir()
+        link = self.environments / "linked"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError:  # pragma: no cover - platform permission policy
+            link = None
+        activate_dependency_target(self.root, active)
+
+        removed = remove_inactive_environments(self.root)
+
+        self.assertEqual(sorted(removed), sorted([legacy.resolve(), old.resolve()]))
+        self.assertFalse(old.exists())
+        self.assertFalse(legacy.exists())
+        for kept in (active, installing, stray, outside):
+            self.assertTrue(kept.exists())
+        if link is not None:
+            self.assertTrue(link.is_symlink())
+
+    def test_folder_that_cannot_be_deleted_is_left_for_later(self) -> None:
+        old = self._environment("0.5.0-aaaaaaaa")
+        active = self._environment("0.5.1-bbbbbbbb")
+        activate_dependency_target(self.root, active)
+        with mock.patch.object(dependencies.shutil, "rmtree", side_effect=OSError("in use")):
+            self.assertEqual(remove_inactive_environments(self.root), [])
+        self.assertTrue(old.is_dir())
 
 
 if __name__ == "__main__":

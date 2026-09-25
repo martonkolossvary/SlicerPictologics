@@ -168,6 +168,8 @@ cmake --build ../SlicerPictologics-build --config Release --target package
 1. Load a 3D scalar volume and, for region-based extraction, a segmentation.
 2. Open **Pictologics**, choose the volume, check one or more segments, and decide
    whether to include the whole volume. Overlapping segments remain independent.
+   Whole-volume analysis is off by default: the presets resample the entire scan,
+   which can need several gigabytes of memory for a large CT.
 3. Check one or more standard presets and/or add one more configuration via
    **Additional config**: *Build one in app* (choose feature families, resampling,
    optional ROI refinement, discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
@@ -309,10 +311,12 @@ new job; a malformed marker is retained conservatively for at most seven days.
   largest-component selection), or a different step order, still require a custom YAML/JSON file. The
   in-app **Validate** aid is a structural pre-check only; the worker performs the
   authoritative validation.
-- Retired immutable dependency environments are retained to avoid deleting libraries
-  that another Slicer instance may still be using. They can be removed from the
-  extension's application-data directory when every Slicer instance and worker is
-  closed.
+- After a new Pictologics version is installed, older private versions are deleted
+  automatically. While a Pictologics job runs (also in another Slicer instance), the
+  deletion waits; it runs again at the next installation or module start.
+- Each configuration is computed on its own, because Pictologics 0.5.1 can copy wrong
+  values between configurations when it reuses shared results. Runs with several
+  presets therefore take longer.
 - Exported tables use the extension's own richer long-form schema (provenance and
   feature-identity columns plus `configuration`) and therefore do **not** match
   Pictologics' long `format_results` / `save_results` layout (which uses `config` and

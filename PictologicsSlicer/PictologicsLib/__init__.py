@@ -15,6 +15,7 @@ from .dependencies import (
     ensure_dependency_paths,
     inspect_target,
     parse_pictologics_requirement,
+    remove_inactive_environments,
 )
 from .jobs import (
     JOB_MANIFEST_SCHEMA_VERSION,
@@ -43,7 +44,7 @@ from .results import (
     validate_result_rows,
     write_result_payload,
 )
-from .staging import process_is_alive, read_pid_marker
+from .staging import job_may_be_running, process_is_alive, read_pid_marker
 
 __all__ = [
     "DependencyConfigurationError",
@@ -67,12 +68,14 @@ __all__ = [
     "export_rows_csv",
     "export_rows_json",
     "inspect_target",
+    "job_may_be_running",
     "load_job_manifest",
     "load_result_payload",
     "normalise_result_row",
     "parse_pictologics_requirement",
     "process_is_alive",
     "read_pid_marker",
+    "remove_inactive_environments",
     "rows_to_wide",
     "sha256_file",
     "sha256_payload",

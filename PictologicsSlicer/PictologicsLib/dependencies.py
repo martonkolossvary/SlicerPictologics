@@ -2,13 +2,15 @@
 
 This module deliberately has no dependency on Slicer.  The GUI owns consent and the
 actual pip invocation; the helpers here only parse the extension-owned requirement,
-inspect its private target directory, and construct a constrained argument vector.
+inspect its private target directory, construct a constrained argument vector, and
+remove environments that are no longer active.
 """
 
 from __future__ import annotations
 
 import os
 import re
+import shutil
 import tempfile
 from dataclasses import dataclass
 from importlib import metadata
@@ -407,7 +409,9 @@ def dependency_environment_path(
 
     The caller installs into a staging directory and publishes it at this path only
     after validation.  An existing environment must be reused or left untouched; this
-    helper deliberately never creates, removes, or replaces it.
+    helper deliberately never creates, removes, or replaces it.  The name is only the
+    version, because the deepest package files already come close to Windows'
+    260-character path limit.
     """
 
     try:
@@ -417,7 +421,7 @@ def dependency_environment_path(
             f"Invalid Pictologics environment version: {version!r}"
         ) from exc
     layout = _cache_layout(cache_root)
-    target = layout["environments_root"] / f"pictologics-{parsed_version}"
+    target = layout["environments_root"] / str(parsed_version)
     return _validated_environment_target(
         layout["environments_root"], target, must_exist=False
     )
@@ -490,6 +494,42 @@ def activate_dependency_target(
                 pass
 
     return candidate
+
+
+def remove_inactive_environments(cache_root: str | os.PathLike[str]) -> list[Path]:
+    """Delete every package environment that the active pointer does not select.
+
+    The pre-versioned ``python-packages`` folder goes too. Hidden folders (an
+    installation in progress) and symbolic links are kept. Without an active pointer
+    nothing is deleted, because the legacy folder is then still in use. A folder that
+    cannot be deleted now (for example a file that Windows still has open) is left
+    for the next attempt. The caller must first make sure that no job is running.
+    """
+
+    layout = _cache_layout(cache_root)
+    active = _read_active_dependency_target(
+        layout["active_pointer"], layout["environments_root"]
+    )
+    if active is None:
+        return []
+    candidates = [layout["legacy_dependency_target"]]
+    if layout["environments_root"].is_dir():
+        candidates.extend(sorted(layout["environments_root"].iterdir()))
+    removed: list[Path] = []
+    for candidate in candidates:
+        if (
+            candidate.name.startswith(".")
+            or candidate.is_symlink()
+            or not candidate.is_dir()
+            or candidate.resolve() == active
+        ):
+            continue
+        try:
+            shutil.rmtree(candidate)
+        except OSError:
+            continue
+        removed.append(candidate)
+    return removed
 
 
 def dependency_paths(cache_root: str | os.PathLike[str]) -> dict[str, Path]:

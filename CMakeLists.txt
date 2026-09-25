@@ -7,7 +7,7 @@ project(Pictologics)
 set(EXTENSION_HOMEPAGE "https://github.com/martonkolossvary/SlicerPictologics")
 set(EXTENSION_CONTRIBUTORS "Márton Kolossváry")
 set(EXTENSION_CATEGORY "Informatics")
-set(EXTENSION_DESCRIPTION "Extract quantitative measurements of image intensity, shape, and texture from 3D images and segmented regions using Pictologics. Review and export results with preprocessing and software provenance. For research use only; not for clinical diagnosis or treatment decisions.")
+set(EXTENSION_DESCRIPTION "Extract radiomics features (quantitative measurements of image intensity, shape, and texture) from 3D images and segmented regions with Pictologics, then review and export them with preprocessing and software provenance. For research use only; not for clinical diagnosis or treatment decisions.")
 set(EXTENSION_ICONURL "https://raw.githubusercontent.com/martonkolossvary/SlicerPictologics/main/assets/branding/pictologics/slicer/Pictologics-128.png")
 set(EXTENSION_SCREENSHOTURLS "https://raw.githubusercontent.com/martonkolossvary/SlicerPictologics/main/docs/screenshots/pictologics-workflow.png https://raw.githubusercontent.com/martonkolossvary/SlicerPictologics/main/docs/screenshots/pictologics-results.png")
 set(EXTENSION_DEPENDS "NA") # Specified as a list or "NA" if no dependencies

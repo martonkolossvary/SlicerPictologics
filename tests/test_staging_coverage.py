@@ -18,7 +18,11 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "PictologicsSlicer"))
 
 from PictologicsLib import staging  # noqa: E402
-from PictologicsLib.staging import process_is_alive, read_pid_marker  # noqa: E402
+from PictologicsLib.staging import (  # noqa: E402
+    job_may_be_running,
+    process_is_alive,
+    read_pid_marker,
+)
 
 
 class ReadPidMarkerTests(unittest.TestCase):
@@ -87,6 +91,54 @@ class ProcessIsAliveTests(unittest.TestCase):
     def test_other_os_error_means_dead(self) -> None:
         with mock.patch.object(staging.os, "kill", side_effect=OSError):
             self.assertFalse(process_is_alive(os.getpid() + 1))
+
+
+class JobMayBeRunningTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.jobs = Path(self._tmp.name) / "jobs"
+        self.jobs.mkdir()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _job(self, marker: str | None, content: str = "") -> Path:
+        job = Path(tempfile.mkdtemp(prefix="job-", dir=self.jobs))
+        if marker is not None:
+            (job / marker).write_text(content, encoding="utf-8")
+        return job
+
+    def test_missing_folder_means_no_job(self) -> None:
+        self.assertFalse(job_may_be_running(self.jobs / "missing"))
+
+    def test_unreadable_folder_counts_as_a_running_job(self) -> None:
+        not_a_folder = Path(self._tmp.name) / "file"
+        not_a_folder.write_text("", encoding="utf-8")
+        self.assertTrue(job_may_be_running(not_a_folder))
+
+    def test_only_live_or_unreadable_markers_count(self) -> None:
+        self._job(None)
+        self._job(".worker-active", "pid=1234")
+        (self.jobs / "other").mkdir()
+        (self.jobs / "job-file").write_text("", encoding="utf-8")
+        with mock.patch.object(staging, "process_is_alive", return_value=False):
+            self.assertFalse(job_may_be_running(self.jobs))
+            self._job(".owner-active", "broken")
+            self.assertTrue(job_may_be_running(self.jobs))
+
+    def test_live_process_counts(self) -> None:
+        self._job(".owner-active", f"pid={os.getpid()}")
+        self.assertTrue(job_may_be_running(self.jobs))
+
+    def test_symbolic_link_job_is_ignored(self) -> None:
+        target = self._job(".owner-active", f"pid={os.getpid()}")
+        link = self.jobs / "job-link"
+        target.rename(Path(self._tmp.name) / "outside")
+        try:
+            link.symlink_to(Path(self._tmp.name) / "outside", target_is_directory=True)
+        except OSError as exc:  # pragma: no cover - platform permission policy
+            self.skipTest(f"Symbolic links are unavailable: {exc}")
+        self.assertFalse(job_may_be_running(self.jobs))
 
 
 if __name__ == "__main__":

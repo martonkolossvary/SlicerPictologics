@@ -226,7 +226,7 @@ class PipArgumentTests(unittest.TestCase):
 
         self.assertEqual(
             target,
-            root.resolve() / "environments" / "pictologics-0.5.0",
+            root.resolve() / "environments" / "0.5.0",
         )
 
     def test_environment_path_rejects_invalid_version(self) -> None:
@@ -247,7 +247,7 @@ class PipArgumentTests(unittest.TestCase):
             self.assertEqual(paths["dependency_target"], target)
             self.assertEqual(
                 paths["active_pointer"].read_text(encoding="utf-8"),
-                "pictologics-0.5.0\n",
+                "0.5.0\n",
             )
             self.assertTrue(paths["active_pointer"].is_file())
             self.assertEqual(list(root.resolve().glob(".active-environment-*.tmp")), [])

@@ -25,7 +25,7 @@ import numpy as np
 import qt
 import slicer
 import vtk
-from PictologicsLib.dependencies import inspect_target
+from PictologicsLib.dependencies import activate_dependency_target, inspect_target
 from PictologicsLib.inline_config import (
     ROI_REFINEMENT_DEFAULTS,
     build_inline_configuration_document,
@@ -540,7 +540,32 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         widget.initializeParameterNode()
         self.addCleanup(widget._handoffActiveJobCleanup, cancel=True)
         widget.ui.inputVolumeSelector.setCurrentNode(self.fixture.volume_node)
+        # Whole-volume extraction is off by default; these tests need a runnable region.
+        widget.ui.wholeVolumeCheckBox.setChecked(True)
         return widget
+
+    def test_whole_volume_is_off_by_default(self) -> None:
+        parameter_node = self.logic.getParameterNode()
+        self.logic.setDefaultParameters(parameter_node)
+        self.assertEqual(parameter_node.GetParameter(gui_module.PARAM_WHOLE_VOLUME), "false")
+
+    def test_old_environments_are_removed_once_no_job_runs(self) -> None:
+        paths = self.logic.privatePaths()
+        old = paths["environments_root"] / "0.5.0-aaaaaaaa"
+        active = paths["environments_root"] / "0.5.1-bbbbbbbb"
+        for environment in (old, active):
+            environment.mkdir(parents=True)
+        activate_dependency_target(paths["cache_root"], active)
+        job = paths["jobs_root"] / "job-running"
+        job.mkdir(parents=True)
+        (job / ".owner-active").write_text(f"pid={os.getpid()}\n", encoding="utf-8")
+
+        self.assertEqual(self.logic.removeRetiredEnvironments(), [])
+        self.assertTrue(old.is_dir())
+        shutil.rmtree(job)
+        self.assertEqual(self.logic.removeRetiredEnvironments(), [old.resolve()])
+        self.assertFalse(old.exists())
+        self.assertTrue(active.is_dir())
 
     def test_readiness_recovers_and_preserves_run_outcome(self) -> None:
         widget = self._feedback_widget()

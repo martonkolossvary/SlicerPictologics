@@ -67,3 +67,27 @@ def process_is_alive(pid: int) -> bool:
     except (OSError, OverflowError):
         return False
     return True
+
+
+def job_may_be_running(jobs_root: str | os.PathLike[str]) -> bool:
+    """Return whether a staged job could still be using a dependency environment.
+
+    A job counts while its GUI or worker marker names a live process, or while a
+    marker cannot be read. An unreadable jobs folder also counts, the safe direction.
+    """
+
+    try:
+        jobs = list(Path(jobs_root).iterdir())
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    for job in jobs:
+        if not job.name.startswith("job-") or job.is_symlink() or not job.is_dir():
+            continue
+        for marker in (job / ".owner-active", job / ".worker-active"):
+            if marker.is_file():
+                pid = read_pid_marker(marker)
+                if pid is None or process_is_alive(pid):
+                    return True
+    return False

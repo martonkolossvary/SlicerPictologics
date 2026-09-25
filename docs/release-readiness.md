@@ -192,8 +192,37 @@ new adopted wheel. Startup never silently upgrades dependencies.
   targets and confirmed source arrays were not changed. This gate is used by the
   existing multi-platform release-adoption workflow when these local changes are
   eventually published.
-- This follow-up remains local and uncommitted for maintainer review. It does not
-  change the extension/result version, package pin, or any tutorial/catalog images.
+- This follow-up does not change the extension/result version, package pin, or any
+  tutorial/catalog images.
+
+## Correctness and packaging fixes (2026-09-25)
+
+- **Shared results.** Pictologics 0.5.1 can copy wrong values from one configuration
+  to another when its deduplication reuses results. Example: an in-app configuration
+  that differs from a checked preset only in voxel validity got all 170 preset values.
+  The worker now creates the pipeline with `deduplicate=False`. The in-app values then
+  match an independent run (170 of 170). The package fix is in the sibling Pictologics
+  working tree for a later release; the extension does not depend on it.
+- **Whole volume off by default.** The presets resample the entire scan for a
+  whole-volume region, which can need several gigabytes of memory for a large CT.
+- **FBN bin count.** The in-app builder rejects a decimal bin count. Before, it cut
+  the decimals off without a warning.
+- **Short folder names.** New private environments use `<version>-<8 hex>`. The
+  deepest package file then stays within the Windows 260-character path limit for user
+  names up to about 36 characters. Existing environments keep working through the
+  active pointer.
+- **Old versions removed.** After a new environment becomes active, the extension
+  deletes the older ones. While a job runs, the deletion waits; module start and the
+  next installation try again.
+- **Build-farm tests.** Four test files used pytest-only syntax, which the CTest
+  runner in Slicer cannot import or collect. They now use `unittest`.
+- **Catalog text.** The description names radiomics, and the module help links the
+  documentation.
+- **Validation.** 463 portable tests and 241 subtests passed, with 100% scoped
+  library/worker coverage, Ruff, and Mypy. The worker smoke and geometry-parity
+  scripts passed against the local Pictologics source. All 19 Slicer 5.12.4
+  integration tests passed on macOS, including both real-worker tests with the
+  installed Pictologics 0.5.1 wheel.
 
 ## Reassessment: next priorities
 

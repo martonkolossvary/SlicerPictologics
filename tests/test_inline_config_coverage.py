@@ -77,6 +77,13 @@ class BuildInlineConfigTests(unittest.TestCase):
         params = document["configs"][INLINE_CONFIG_NAME]["steps"][1]["params"]
         self.assertEqual(params, {"method": "FBN", "n_bins": 32})
 
+    def test_discretise_fbn_rejects_a_decimal_bin_count(self) -> None:
+        state = default_inline_state()
+        state["discretise_method"] = "FBN"
+        state["discretise_value"] = 32.5
+        with self.assertRaisesRegex(ValueError, "must be a whole number"):
+            build_inline_configuration_document(state)
+
     def test_discretise_fbs_uses_bin_width(self) -> None:
         state = default_inline_state()
         state["discretise_method"] = "FBS"

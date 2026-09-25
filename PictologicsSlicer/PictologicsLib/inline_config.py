@@ -211,6 +211,8 @@ def build_inline_configuration_document(state: Mapping[str, Any]) -> dict[str, A
             raise ValueError("The discretisation bin count/width must be positive.")
         params: dict[str, Any] = {"method": method}
         if method == "FBN":
+            if not value.is_integer():
+                raise ValueError("The FBN bin count must be a whole number.")
             params["n_bins"] = int(value)
         else:
             params["bin_width"] = value
