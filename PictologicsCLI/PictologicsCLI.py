@@ -888,7 +888,10 @@ def create_pipeline(pictologics: Any, manifest: JobManifest) -> PipelineBundle:
     """Create a standard/custom pipeline and its describe_features lookup."""
 
     try:
-        pipeline = pictologics.RadiomicsPipeline()
+        # Pictologics 0.5.1 and earlier can copy wrong values from one configuration
+        # to another when its reuse shortcut (deduplication) is on. Compute every
+        # configuration on its own until the adopted release contains the fix.
+        pipeline = pictologics.RadiomicsPipeline(deduplicate=False)
     except Exception as exc:
         raise WorkerSetupError(
             f"cannot initialize RadiomicsPipeline: {type(exc).__name__}: {exc}"

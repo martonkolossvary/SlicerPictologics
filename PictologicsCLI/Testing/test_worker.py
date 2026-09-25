@@ -46,7 +46,8 @@ class FakePipeline:
         "preprocessing_sequence": "1:resample > 2:discretise",
     }
 
-    def __init__(self) -> None:
+    def __init__(self, deduplicate: bool = True) -> None:
+        self.deduplicate = deduplicate
         self._log: list[dict[str, object]] = []
         self.run_calls: list[tuple[object, object, str, tuple[str, ...]]] = []
 
