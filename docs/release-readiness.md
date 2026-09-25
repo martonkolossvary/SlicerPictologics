@@ -253,6 +253,34 @@ new adopted wheel. Startup never silently upgrades dependencies.
   the profiles section, the readiness line, and the elapsed time. The Qt capture has
   no macOS title bar.
 
+## Batch scripts, file check, and tested versions (2026-09-25)
+
+- **Batch scripts.** `PictologicsSlicerLogic.process()` runs one case to the end
+  through the same worker path as **Run radiomics** and returns the table. Each call
+  adds its rows and one provenance record. The README example ran unchanged on two
+  synthetic cases with three regions: 510 rows, all `ok`, the CSV with its
+  provenance and dictionary files, two provenance records, and no image or
+  segmentation nodes left in the scene.
+- **File check.** **Validate** now runs the worker with `--check-configuration`. The
+  worker loads the file as a run does, so YAML and JSON files get the Pictologics
+  checks. One check takes about 2 seconds. For a YAML file, the memory estimate uses
+  the effective configuration from the check. Before Pictologics is installed,
+  **Validate** does the structural lint only.
+- **Tested versions.** Two private installs of Pictologics 0.5.1 on the same Mac had
+  different fonttools (4.65.0, 4.66.0) and pyparsing (3.3.2, 3.3.3) versions.
+  `constraints-pictologics.txt` now pins all 25 distributions to the versions that
+  the integration suite used. The installer and the CI gates give the file to pip
+  with `--constraint`. For each candidate release, the adoption workflow resolves a
+  new file once, runs every gate with it, and publishes it with the pin. A real
+  install through the module's installer, into an empty temporary folder, got
+  exactly the 25 pinned versions and passed both environment probes.
+- **Validation.** 478 portable tests and 248 subtests passed, with 100% scoped
+  library/worker coverage, Ruff, and Mypy. actionlint 1.7.12 with ShellCheck 0.10.0
+  passed on the workflows; it caught a planted shell mistake. The API check, the
+  worker smoke (170 rows), and the geometry parity (170 features) passed on the
+  released 0.5.1 wheel. All 23 Slicer 5.12.4 integration tests passed on macOS,
+  including the four tests that use the installed Pictologics 0.5.1 wheel.
+
 ## Reassessment: next priorities
 
 The maintainer has explicitly deferred catalog submission and broader release
