@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <executable>
   <category>Informatics</category>
-  <title>Pictologics CLI Worker</title>
+  <title>Pictologics Worker (internal)</title>
   <description>Internal background worker for Pictologics radiomic feature extraction.</description>
   <version>0.1.0</version>
   <documentation-url>https://github.com/martonkolossvary/SlicerPictologics</documentation-url>
