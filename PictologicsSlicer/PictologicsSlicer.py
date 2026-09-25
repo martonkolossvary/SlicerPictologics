@@ -1580,6 +1580,10 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
     def requirementsPath() -> Path:
         return Path(__file__).resolve().with_name("requirements-pictologics.txt")
 
+    @staticmethod
+    def constraintsPath() -> Path:
+        return Path(__file__).resolve().with_name("constraints-pictologics.txt")
+
     def pictologicsRequirement(self):
         return parse_pictologics_requirement(self.requirementsPath())
 
@@ -1680,6 +1684,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 staging,
                 dev_source=developmentSource or None,
                 force_upgrade=False,
+                constraints=self.constraintsPath(),
             )
             packaging.pip_install(
                 arguments, show_progress=True, requester="Pictologics"

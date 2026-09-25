@@ -11,6 +11,10 @@ on:
         description: Exact wrapper revision to qualify
         type: string
         default: ""
+      constraints:
+        description: Tested-version constraints resolved for the candidate version
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -32,7 +36,10 @@ jobs:
         if: inputs.version != ''
         env:
           VERSION: ${{ inputs.version }}
-        run: python scripts/bump_pictologics_requirement.py "$VERSION"
+          CONSTRAINTS: ${{ inputs.constraints }}
+        run: |
+          python scripts/bump_pictologics_requirement.py "$VERSION"
+          printf '%s\n' "$CONSTRAINTS" > PictologicsSlicer/constraints-pictologics.txt
       - name: Install tooling
         run: python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml
       - name: Validate GitHub Actions expressions and shell scripts
@@ -76,11 +83,14 @@ jobs:
         if: inputs.version != ''
         env:
           VERSION: ${{ inputs.version }}
-        run: python scripts/bump_pictologics_requirement.py "$VERSION"
+          CONSTRAINTS: ${{ inputs.constraints }}
+        run: |
+          python scripts/bump_pictologics_requirement.py "$VERSION"
+          printf '%s\n' "$CONSTRAINTS" > PictologicsSlicer/constraints-pictologics.txt
       - name: Install wheel into an isolated target
         run: >-
           python -m pip install --only-binary=:all: --target "$RUNNER_TEMP/pictologics-target"
-          -r PictologicsSlicer/requirements-pictologics.txt
+          -r PictologicsSlicer/requirements-pictologics.txt -c PictologicsSlicer/constraints-pictologics.txt
       - name: Verify API, metadata, and configuration round trips
         env:
           PYTHONPATH: ${{ runner.temp }}/pictologics-target
@@ -113,7 +123,10 @@ jobs:
         if: inputs.version != ''
         env:
           VERSION: ${{ inputs.version }}
-        run: python scripts/bump_pictologics_requirement.py "$VERSION"
+          CONSTRAINTS: ${{ inputs.constraints }}
+        run: |
+          python scripts/bump_pictologics_requirement.py "$VERSION"
+          printf '%s\n' "$CONSTRAINTS" > PictologicsSlicer/constraints-pictologics.txt
       - name: Install headless Slicer system libraries
         run: |
           sudo apt-get update
@@ -129,7 +142,8 @@ jobs:
           SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH: ${{ runner.temp }}/slicer-pictologics-target
         run: |
           "$RUNNER_TEMP/slicer/bin/PythonSlicer" -m pip install --only-binary=:all: \
-            --target "$SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH" -r PictologicsSlicer/requirements-pictologics.txt
+            --target "$SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH" -r PictologicsSlicer/requirements-pictologics.txt \
+            -c PictologicsSlicer/constraints-pictologics.txt
       - name: Require real module discovery, transformed MRML, async CLI, and table commit
         env:
           SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH: ${{ runner.temp }}/slicer-pictologics-target

@@ -26,6 +26,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       changed: ${{ steps.release.outputs.changed }}
       revision: ${{ steps.base.outputs.revision }}
+      constraints: ${{ steps.constraints.outputs.constraints }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,6 +48,21 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           CHANGED: ${{ steps.release.outputs.changed }}
         run: echo "PyPI release $VERSION; adoption needed=$CHANGED" >> "$GITHUB_STEP_SUMMARY"
+      - name: Resolve the dependency versions to qualify with the candidate
+        id: constraints
+        if: steps.release.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          python scripts/bump_pictologics_requirement.py "$VERSION"
+          python -m pip install --only-binary=:all: --target "$RUNNER_TEMP/resolve" \
+            -r PictologicsSlicer/requirements-pictologics.txt
+          {
+            echo "constraints<<CONSTRAINTS_END"
+            grep '^#' PictologicsSlicer/constraints-pictologics.txt
+            python -m pip freeze --path "$RUNNER_TEMP/resolve"
+            echo "CONSTRAINTS_END"
+          } >> "$GITHUB_OUTPUT"
 
   qualify:
     needs: discover
@@ -55,6 +71,7 @@ jobs:
     with:
       version: ${{ needs.discover.outputs.version }}
       revision: ${{ needs.discover.outputs.revision }}
+      constraints: ${{ needs.discover.outputs.constraints }}
 
   publish:
     needs: [discover, qualify]
@@ -68,17 +85,19 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Publish only the qualified pin, without force-pushing
+      - name: Publish only the qualified pin and tested versions, without force-pushing
         env:
           VERSION: ${{ needs.discover.outputs.version }}
+          CONSTRAINTS: ${{ needs.discover.outputs.constraints }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           # Recheck publication/yank status after the potentially lengthy gates.
           python scripts/resolve_pictologics_release.py --version "$VERSION"
           python scripts/bump_pictologics_requirement.py "$VERSION"
+          printf '%s\n' "$CONSTRAINTS" > PictologicsSlicer/constraints-pictologics.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- PictologicsSlicer/requirements-pictologics.txt
+          git add -- PictologicsSlicer/requirements-pictologics.txt PictologicsSlicer/constraints-pictologics.txt
           git commit -m "ENH: Adopt compatibility-qualified Pictologics $VERSION"
           # If main changed after qualification, the fast-forward-only push fails.
           # The next scheduled run qualifies the candidate against the new HEAD.

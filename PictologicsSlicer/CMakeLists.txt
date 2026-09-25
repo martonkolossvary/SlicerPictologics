@@ -21,6 +21,7 @@ set(MODULE_PYTHON_RESOURCES
   Resources/Icons/${MODULE_NAME}.png
   Resources/UI/${MODULE_NAME}.ui
   requirements-pictologics.txt
+  constraints-pictologics.txt
   )
 
 slicerMacroBuildScriptedModule(

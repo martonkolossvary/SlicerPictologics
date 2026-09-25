@@ -67,8 +67,9 @@ install it, and restart Slicer.
 ### First run
 
 The first run needs an internet connection. The module asks before it installs
-Pictologics and its dependencies (about 500 MB) into a private folder. Slicer's own
-Python packages do not change. After a newer Pictologics version is installed, the
+Pictologics and its dependencies (about 500 MB) into a private folder. It installs the
+dependency versions that were tested with the adopted Pictologics release. Slicer's
+own Python packages do not change. After a newer Pictologics version is installed, the
 old version is deleted automatically.
 
 ## Use

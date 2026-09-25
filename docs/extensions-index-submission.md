@@ -45,9 +45,9 @@ treat automated or agent visual checks as approval.
    produced with the [documented CMake commands](development.md#configure-and-package-the-extension).
    Do not substitute a hand-assembled archive for a factory-compatible build.
 3. Inspect the produced archive: both modules, GUI support library, `.ui`, selected
-   PNG, CLI XML/script, and the exact requirement file must be present. Branding
-   masters, screenshots, tests, and private dependency environments must not leak
-   into runtime resources.
+   PNG, CLI XML/script, the exact requirement file, and the tested-version constraints
+   file must be present. Branding masters, screenshots, tests, and private dependency
+   environments must not leak into runtime resources.
 4. Install the actual package into a clean Slicer profile with no source module
    paths. Check module discovery, dependency installation/reuse after restart,
    real extraction, result display, CSV/JSON export, and upgrade/restart behavior.

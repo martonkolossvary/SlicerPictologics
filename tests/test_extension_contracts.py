@@ -14,6 +14,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "PictologicsSlicer"))
 
+from PictologicsLib.dependencies import (  # noqa: E402
+    check_dependency_constraints,
+    parse_pictologics_requirement,
+)
 from PictologicsLib.jobs import build_job_manifest  # noqa: E402
 
 GUI_SOURCE = ROOT / "PictologicsSlicer/PictologicsSlicer.py"
@@ -169,6 +173,18 @@ class ExtensionScaffoldTests(unittest.TestCase):
             relative = module.relative_to(ROOT / "PictologicsSlicer").as_posix()
             with self.subTest(module=relative):
                 self.assertIn(relative, scripts)
+
+    def test_packaged_tested_versions_match_the_adopted_release(self) -> None:
+        requirement = parse_pictologics_requirement(
+            ROOT / "PictologicsSlicer/requirements-pictologics.txt"
+        )
+        check_dependency_constraints(
+            ROOT / "PictologicsSlicer/constraints-pictologics.txt", requirement
+        )
+        cmake = GUI_CMAKE.read_text(encoding="utf-8")
+        resources = cmake.split("set(MODULE_PYTHON_RESOURCES", 1)[1].split(")", 1)[0]
+        self.assertIn("requirements-pictologics.txt", resources)
+        self.assertIn("constraints-pictologics.txt", resources)
 
     def test_slicer_only_integration_fixture_is_registered_with_ctest(self) -> None:
         cmake = GUI_TEST_CMAKE.read_text(encoding="utf-8")

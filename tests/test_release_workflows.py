@@ -5,6 +5,9 @@ from pathlib import Path
 import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+WRITE_CONSTRAINTS = (
+    "printf '%s\\n' \"$CONSTRAINTS\" > PictologicsSlicer/constraints-pictologics.txt"
+)
 
 
 def load_workflow(name):
@@ -30,7 +33,27 @@ def test_ci_and_adoption_share_qualification():
     publication = adoption["jobs"]["publish"]["steps"][-1]["run"]
     assert "--force" not in publication
     assert 'git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"' in publication
-    assert "git add -- PictologicsSlicer/requirements-pictologics.txt" in publication
+    assert (
+        "git add -- PictologicsSlicer/requirements-pictologics.txt "
+        "PictologicsSlicer/constraints-pictologics.txt"
+    ) in publication
+    assert WRITE_CONSTRAINTS in publication
+    assert adoption["jobs"]["publish"]["steps"][-1]["env"]["CONSTRAINTS"] == (
+        "${{ needs.discover.outputs.constraints }}"
+    )
+
+
+def test_adoption_resolves_tested_versions_once_for_every_gate():
+    adoption = load_workflow("adopt-pictologics-release.yml")
+    discover = adoption["jobs"]["discover"]
+    resolve = next(step for step in discover["steps"] if step.get("id") == "constraints")
+    assert resolve["if"] == "steps.release.outputs.changed == 'true'"
+    assert '--only-binary=:all: --target "$RUNNER_TEMP/resolve"' in resolve["run"]
+    assert 'pip freeze --path "$RUNNER_TEMP/resolve"' in resolve["run"]
+    assert discover["outputs"]["constraints"] == "${{ steps.constraints.outputs.constraints }}"
+    assert adoption["jobs"]["qualify"]["with"]["constraints"] == (
+        "${{ needs.discover.outputs.constraints }}"
+    )
 
 
 def test_all_candidate_gates_use_the_validated_revision_and_pin():
@@ -41,8 +64,18 @@ def test_all_candidate_gates_use_the_validated_revision_and_pin():
         checkout = job["steps"][0]
         assert checkout["with"]["ref"] == "${{ inputs.revision }}"
         assert checkout["with"]["persist-credentials"] == "false"
-        assert any("bump_pictologics_requirement.py" in step.get("run", "") for step in job["steps"])
+        apply = next(step for step in job["steps"] if step.get("name") == "Apply candidate locally")
+        assert "bump_pictologics_requirement.py" in apply["run"]
+        assert WRITE_CONSTRAINTS in apply["run"]
+        assert apply["env"]["CONSTRAINTS"] == "${{ inputs.constraints }}"
         assert "continue-on-error" not in job
+    for name in ("wheel", "slicer"):
+        installs = [
+            step["run"] for step in qualification["jobs"][name]["steps"]
+            if "--only-binary=:all:" in step.get("run", "")
+        ]
+        assert len(installs) == 1
+        assert "-c PictologicsSlicer/constraints-pictologics.txt" in installs[0]
     slicer = qualification["jobs"]["slicer"]
     assert slicer["env"]["SLICERPICTOLOGICS_RUN_REAL_CLI_TEST"] == "1"
     assert "run_slicer_integration.py" in slicer["steps"][-1]["run"]

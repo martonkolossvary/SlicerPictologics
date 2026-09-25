@@ -1,9 +1,9 @@
 """Dependency management primitives for the Pictologics Slicer extension.
 
 This module deliberately has no dependency on Slicer.  The GUI owns consent and the
-actual pip invocation; the helpers here only parse the extension-owned requirement,
-inspect its private target directory, construct a constrained argument vector, and
-remove environments that are no longer active.
+actual pip invocation; the helpers here only parse the extension-owned requirement
+and its tested-version constraints, inspect its private target directory, construct a
+constrained argument vector, and remove environments that are no longer active.
 """
 
 from __future__ import annotations
@@ -226,6 +226,42 @@ def inspect_target(
     )
 
 
+def check_dependency_constraints(
+    path: str | os.PathLike[str], requirement: Requirement
+) -> Path:
+    """Return the tested-version constraints file after checking that it only pins.
+
+    Each line must pin one distribution with ``==``. The Pictologics pin must satisfy
+    ``requirement``, so the file belongs to the adopted release.
+    """
+
+    constraints_path = Path(path)
+    pictologics_version = None
+    for line_number, text in _requirement_lines(constraints_path):
+        try:
+            pin = Requirement(text)
+        except InvalidRequirement as exc:
+            raise DependencyConfigurationError(
+                f"Invalid constraint at {constraints_path}:{line_number}: {exc}"
+            ) from exc
+        specifiers = list(pin.specifier)
+        if len(specifiers) != 1 or specifiers[0].operator != "==":
+            raise DependencyConfigurationError(
+                f"The constraint at {constraints_path}:{line_number} must pin one "
+                "version with =="
+            )
+        if canonicalize_name(pin.name) == PICTOLOGICS_DISTRIBUTION:
+            pictologics_version = specifiers[0].version
+    if pictologics_version is None or not _version_satisfies(
+        requirement, pictologics_version
+    ):
+        raise DependencyConfigurationError(
+            f"{constraints_path} pins Pictologics {pictologics_version}, not {requirement}; "
+            "write the tested versions again for the adopted release"
+        )
+    return constraints_path
+
+
 def _local_development_source(value: str | os.PathLike[str]) -> Path:
     source_text = os.fspath(value).strip()
     if not source_text:
@@ -261,13 +297,15 @@ def build_pip_install_args(
     target: str | os.PathLike[str],
     dev_source: str | os.PathLike[str] | None = None,
     force_upgrade: bool = False,
+    constraints: str | os.PathLike[str] | None = None,
 ) -> list[str]:
     """Build a safe argument vector for installing into an isolated target.
 
-    PyPI installs are wheel-only to avoid compiling native dependencies inside Slicer.
-    A local development checkout may be selected explicitly with ``dev_source`` or the
+    PyPI installs are wheel-only to avoid compiling native dependencies inside Slicer,
+    and use the tested dependency versions in ``constraints``. A local development
+    checkout may be selected explicitly with ``dev_source`` or the
     ``PICTOLOGICS_DEV_SOURCE`` environment variable; local sources necessarily omit the
-    wheel-only constraint.  The function never invokes pip.
+    wheel-only and tested-version constraints.  The function never invokes pip.
 
     Scope of the "no remote sources" guarantee: this rejects VCS/URL *requirements* and
     dev sources, but does not pin ``--index-url``/``--no-index``. The effective package
@@ -304,7 +342,11 @@ def build_pip_install_args(
     if configured_source is not None:
         args.append(str(_local_development_source(configured_source)))
     else:
-        args.extend(["--only-binary=:all:", str(requirement)])
+        args.append("--only-binary=:all:")
+        if constraints is not None:
+            checked = check_dependency_constraints(constraints, requirement)
+            args.extend(["--constraint", str(checked.resolve())])
+        args.append(str(requirement))
     return args
 
 

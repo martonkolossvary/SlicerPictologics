@@ -30,6 +30,7 @@ from PictologicsLib.dependencies import (
     _validated_environment_target,
     activate_dependency_target,
     build_pip_install_args,
+    check_dependency_constraints,
     dependency_environment_path,
     dependency_paths,
     ensure_dependency_paths,
@@ -275,6 +276,50 @@ class PipArgumentTests(unittest.TestCase):
                 build_pip_install_args(
                     Requirement("pictologics @ file:///tmp/pictologics"), target
                 )
+
+
+class ConstraintTests(unittest.TestCase):
+    @staticmethod
+    def _write(directory: str, text: str) -> Path:
+        path = Path(directory, "constraints.txt")
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_pypi_install_uses_the_checked_tested_versions(self) -> None:
+        requirement = Requirement("pictologics==0.5.1")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.dict(os.environ, {}, clear=True),
+        ):
+            constraints = self._write(directory, "# tested\nnumpy==2.3.5\npictologics==0.5.1\n")
+            target = Path(directory, "target")
+            args = build_pip_install_args(requirement, target, constraints=constraints)
+            self.assertEqual(
+                args[-4:],
+                ["--only-binary=:all:", "--constraint", str(constraints.resolve()), str(requirement)],
+            )
+            source = Path(directory, "checkout")
+            source.mkdir()
+            args = build_pip_install_args(
+                requirement, target, dev_source=source, constraints=constraints
+            )
+        self.assertNotIn("--constraint", args)
+
+    def test_constraints_must_only_pin_and_match_the_requirement(self) -> None:
+        cases = {
+            "numpy>=2\npictologics==0.5.1\n": "must pin one version",
+            "numpy\npictologics==0.5.1\n": "must pin one version",
+            "not a requirement!\n": "Invalid constraint",
+            "--index-url https://example.invalid\n": "not allowed",
+            "numpy==2.3.5\n": "pins Pictologics None, not pictologics==0.5.1",
+            "Pictologics==0.5.0\n": "pins Pictologics 0.5.0, not pictologics==0.5.1",
+        }
+        for text, message in cases.items():
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(DependencyConfigurationError, message):
+                    check_dependency_constraints(
+                        self._write(directory, text), Requirement("pictologics==0.5.1")
+                    )
 
 
 class CacheLayoutTests(unittest.TestCase):

@@ -24,6 +24,15 @@ The exact pin records the newest release accepted by the compatibility process.
 The actual imported version is recorded in result provenance. The extension never
 imports or upgrades Pictologics during Slicer startup.
 
+[`constraints-pictologics.txt`](../PictologicsSlicer/constraints-pictologics.txt) pins
+Pictologics and every dependency to the tested versions. The installer and the CI
+gates give this file to pip with `--constraint`, so a user gets the versions that CI
+tested. A development source (`PICTOLOGICS_DEV_SOURCE`) does not use it. The file must
+pin the same Pictologics version as the requirement; a contract test and the
+installer check this. After a manual change of the pin, write the file again with the
+commands of the adoption workflow's resolve step: install the requirement into an
+empty folder, then keep the comment lines and add `python -m pip freeze --path <folder>`.
+
 Every push, pull request, and candidate release uses the same reusable
 [`compatibility.yml`](../.github/workflows/compatibility.yml) gates:
 
@@ -39,9 +48,11 @@ every six hours. It can also be run manually (empty version means latest) or rec
 an optional `pictologics-release` repository dispatch. Scheduled discovery needs no
 cross-repository secret or upstream sender. Prereleases, entirely yanked releases,
 sdist-only candidates, invalid version strings, and downgrades are never adopted.
-All gates run against one exact wrapper revision. A separate write-enabled job
-rechecks publication status and automatically publishes only the requirement change
-to the default branch. Failed checks leave the last qualified pin unchanged.
+All gates run against one exact wrapper revision. The discovery job resolves the
+tested versions for the candidate once, and every gate installs with them. A separate
+write-enabled job rechecks publication status and automatically publishes only the
+requirement and tested-version changes to the default branch. Failed checks leave the
+last qualified pin unchanged.
 It never force-pushes: a concurrent wrapper change requires fresh qualification.
 The bot commit does not trigger another CI run; it already passed the shared gates.
 Repository rules must permit the workflow's `GITHUB_TOKEN` to push that pin change.
