@@ -41,7 +41,7 @@ jobs:
           python scripts/bump_pictologics_requirement.py "$VERSION"
           printf '%s\n' "$CONSTRAINTS" > PictologicsSlicer/constraints-pictologics.txt
       - name: Install tooling
-        run: python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml
+        run: python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml numpy
       - name: Validate GitHub Actions expressions and shell scripts
         run: |
           curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"

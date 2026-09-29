@@ -232,15 +232,16 @@ local gate and CI:
   over `PictologicsSlicer/PictologicsLib` and `PictologicsCLI`. The GUI is exercised by
   the in-Slicer `ScriptedLoadableModuleTest`.
 
-The support tests use only `unittest`, because CTest also runs them in Slicer's
-Python, which does not include pytest.
+The CTest-compatible support tests use `unittest`, because Slicer's Python does not
+include pytest. Numerical crop tests also need NumPy, which Slicer already supplies;
+the standalone quality environment must install it explicitly.
 
 From the repository root, use Python 3.12+ in a development environment (not Slicer's
 shared Python). These commands use only tracked repository files and match the
 portable quality checks in CI:
 
 ```sh
-python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml
+python -m pip install pytest pytest-cov coverage packaging ruff mypy pyyaml numpy
 python -m compileall -q PictologicsSlicer PictologicsCLI scripts
 python -m ruff check PictologicsSlicer PictologicsCLI/PictologicsCLI.py scripts conftest.py tests
 python -m mypy

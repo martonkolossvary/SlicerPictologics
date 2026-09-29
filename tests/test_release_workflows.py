@@ -1,5 +1,6 @@
 """Keep unattended publication gated on the same checks as ordinary CI."""
 
+import shlex
 from pathlib import Path
 
 import yaml
@@ -13,6 +14,16 @@ WRITE_CONSTRAINTS = (
 def load_workflow(name):
     # BaseLoader uses string keys, avoiding YAML 1.1's interpretation of 'on' as True.
     return yaml.load((WORKFLOWS / name).read_text(), Loader=yaml.BaseLoader)
+
+
+def test_quality_setup_declares_dependencies_and_matches_documentation():
+    quality = load_workflow("compatibility.yml")["jobs"]["quality"]
+    command = next(step["run"] for step in quality["steps"] if step.get("name") == "Install tooling")
+    arguments = shlex.split(command)
+    assert arguments[:4] == ["python", "-m", "pip", "install"]
+    assert {"pytest", "pytest-cov", "coverage", "packaging", "ruff", "mypy", "pyyaml", "numpy"} <= set(arguments[4:])
+    documentation = (WORKFLOWS.parents[1] / "docs/development.md").read_text()
+    assert command in documentation
 
 
 def test_ci_and_adoption_share_qualification():
