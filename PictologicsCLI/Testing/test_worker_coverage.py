@@ -8,6 +8,7 @@ This module is self-contained: run alone it brings ``PictologicsCLI.py`` to
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import importlib.util
 import io
 import json
@@ -476,6 +477,12 @@ class ValidateManifestTests(unittest.TestCase):
         payload["configuration_document"]["warmup"] = "yes"
         finalize(payload)
         self._err(payload, "warmup' must be a boolean")
+
+    def test_crop_to_roi_not_bool(self):
+        payload = make_payload(self.root)
+        payload["configuration_document"]["crop_to_roi"] = "yes"
+        finalize(payload)
+        self._err(payload, "crop_to_roi' must be a boolean")
 
     def test_output_not_object(self):
         payload = make_payload(self.root)
@@ -1204,6 +1211,143 @@ class ConfigurationCheckTests(unittest.TestCase):
         self.assertIn("collide", result["error"])
 
 
+class ResultColumnManifestTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "image.nii.gz").touch()
+        (self.root / "mask.nii.gz").touch()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_columns_round_trip_and_are_added_to_every_row(self):
+        payload = make_payload(self.root)
+        payload["result_columns"] = [["reader", "R1"], ["center", "A"]]
+        manifest = worker.validate_manifest(payload, base_dir=self.root)
+        self.assertEqual(manifest.result_columns, (("reader", "R1"), ("center", "A")))
+        self.assertEqual(manifest.to_dict()["result_columns"], payload["result_columns"])
+        bundle = worker.create_pipeline(FakePictologics, manifest)
+        rows = worker.build_long_rows(
+            manifest, manifest.rois[0], bundle, {"standard_fbn_32": {"joint_entropy_TU9B": 1.0}},
+            [], pictologics_version="9.8.7",
+        )
+        self.assertEqual(list(rows[0])[-2:], ["reader", "center"])
+        self.assertEqual((rows[0]["reader"], rows[0]["center"]), ("R1", "A"))
+
+    def test_bad_columns_are_refused(self):
+        for bad in ({"reader": "R1"}, [["reader"]], [["reader", 1]], [["two__parts", "x"]],
+                    [["value", "x"]], [["a" * 65, "x"]], [["a", "x"], ["a", "y"]]):
+            payload = make_payload(self.root)
+            payload["result_columns"] = bad
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                worker.ManifestValidationError, "result_columns"
+            ):
+                worker.validate_manifest(payload, base_dir=self.root)
+
+
+class CropTests(unittest.TestCase):
+    def test_wavelet_taps(self):
+        names = ("haar", "db3", "sym2", "coif1", "bior1.3")
+        self.assertEqual([worker._wavelet_taps(name) for name in names], [2, 6, 4, 6, None])
+
+    def test_margin_covers_interpolation_filters_and_local_intensity(self):
+        def document(*steps, source_mode="full_image"):
+            return {"configs": {"a": {"source_mode": source_mode, "steps": list(steps)}}}
+
+        def filter_step(**params):
+            return {"step": "filter", "params": params}
+
+        resample = {"step": "resample", "params": {"new_spacing": [0.5, 0.5, 0.5]}}
+        features = {"step": "extract_features", "params": {"families": ["intensity"]}}
+        cubic = {"step": "resample", "params": {"new_spacing": [1, 1, 1], "interpolation": "cubic"}}
+        laws = {"type": "laws", "kernel": "L5E5E5", "compute_energy": True, "energy_distance": 7}
+        cases = [
+            (document(features), 0.0),
+            (document(resample, features), 4.0),
+            (document(resample, filter_step(type="log", sigma_mm=1.5)), 10.5),
+            (document(filter_step(type="mean", support=5)), 6.0),
+            (document(filter_step(type="gabor", sigma_mm=2.0)), 14.0),
+            (document(filter_step(**laws)), 20.0),
+            (document(filter_step(type="laws", kernel="L3E3S3")), 4.0),
+            (document(filter_step(type="wavelet", wavelet="db2", level=1)), 18.0),
+            (document({"step": "extract_features", "params": {"families": ["local_intensity"]}}), 8.2035),
+            (document({"step": "extract_features", "params": {"include_local_intensity": True}}), 8.2035),
+            ({"configs": {**document(resample)["configs"], "b": {"steps": [filter_step(type="gabor", sigma_mm=2.0)]}}}, 14.0),
+            ({"configs": ["not", "a", "mapping"]}, 0.0),
+        ]
+        for configuration, expected in cases:
+            with self.subTest(configuration=configuration):
+                self.assertAlmostEqual(worker.crop_margin_mm(configuration, (1.0, 1.0, 2.0)), expected)
+        for configuration in (
+            document(cubic),
+            document(resample, resample),
+            document(filter_step(type="mean", support=5), resample),
+            document(filter_step(type="mean", support=5, boundary="periodic")),
+            document(filter_step(type="log", sigma_mm=1.5, spacing_mm=[0.1, 0.1, 0.1])),
+            document(features, source_mode="auto"),
+            document(filter_step(type="simoncelli", level=1)),
+            document(filter_step(type="wavelet", wavelet="bior1.3")),
+        ):
+            with self.subTest(configuration=configuration):
+                self.assertIsNone(worker.crop_margin_mm(configuration, (1.0, 1.0, 2.0)))
+
+    def test_resample_targets_and_grid_alignment(self):
+        document = {"configs": {
+            "a": {"steps": [{"step": "resample", "params": {"new_spacing": [0.5, 0.5, 1]}}]},
+            "b": {"steps": [{"step": "discretise", "params": {}}]},
+        }}
+        self.assertEqual(worker.resample_targets(document), [(0.5, 0.5, 1.0)])
+        self.assertEqual(worker.resample_targets({"configs": []}), [])
+        # A whole number of new voxels in each old voxel: every range keeps the grid.
+        self.assertEqual(worker.aligned_range(62, 85, 130, 1.0, [0.5]), (62, 85))
+        self.assertEqual(worker._grid_error(62, 85, 130, 1.0, 0.5), 0.0)
+        # Centering the crop alone is insufficient when output grid sizes have
+        # opposite parity: 10 / 1.5 -> 7 voxels, but 8 / 1.5 -> 6 voxels.
+        self.assertEqual(worker._grid_error(1, 9, 10, 1.0, 1.5), 0.5)
+        # Otherwise the range grows until its grid lies on the whole-axis grid.
+        start, stop = worker.aligned_range(62, 85, 130, 1.2999954223632812, [0.5])
+        self.assertLessEqual(start, 62)
+        self.assertGreaterEqual(stop, 85)
+        self.assertLess(worker._grid_error(start, stop, 130, 1.2999954223632812, 0.5), 1e-9)
+        self.assertGreater(worker._grid_error(62, 85, 130, 1.2999954223632812, 0.5), 1e-9)
+        # No such range near the region: keep the whole axis.
+        self.assertEqual(worker.aligned_range(0, 3, 400, 0.683594, [0.5, 0.7]), (0, 400))
+
+    def test_crop_keeps_the_region_and_moves_the_origin(self):
+        import numpy as np
+
+        fake = types.SimpleNamespace(Image=types.SimpleNamespace)
+        rotation = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+        def image(values, *, direction=rotation, source_mask=None):
+            return types.SimpleNamespace(array=values, spacing=(1.0, 2.0, 1.0), origin=(10.0, 20.0, 30.0),
+                                         direction=direction, modality="CT", source_mask=source_mask)
+
+        array = np.arange(8000, dtype=float).reshape(20, 20, 20)
+        region = np.zeros((20, 20, 20), dtype=np.uint8)
+        region[8:12, 5:7, 10] = 1
+        valid = np.ones((20, 20, 20), dtype=bool)
+        cropped_image, cropped_mask, box = worker.crop_to_region(
+            fake, image(array, source_mask=valid), image(region), 2.0
+        )
+        self.assertEqual(box, [[6, 4, 8], [14, 8, 13]])
+        np.testing.assert_array_equal(cropped_image.array, array[6:14, 4:8, 8:13])
+        self.assertEqual(cropped_mask.array.sum(), region.sum())
+        np.testing.assert_allclose(cropped_image.origin, np.array([10.0, 20.0, 30.0]) + rotation @ [6.0, 8.0, 8.0])
+        self.assertEqual(cropped_image.source_mask.shape, (8, 4, 5))
+        self.assertIsNone(cropped_mask.source_mask)
+        plain = worker.crop_to_region(fake, image(array, direction=None), image(region), 2.0)[0]
+        np.testing.assert_allclose(plain.origin, [16.0, 28.0, 38.0])
+        # Along y, 2 mm voxels resampled to 0.75 mm need one more slice to keep the grid.
+        grown = worker.crop_to_region(fake, image(array), image(region), 2.0, [(0.5, 0.75, 1.0)])[2]
+        self.assertEqual(grown, [[6, 3, 8], [14, 8, 13]])
+        self.assertLess(worker._grid_error(3, 8, 20, 2.0, 0.75), 1e-9)
+        whole = image(np.ones((20, 20, 20)))
+        self.assertIs(worker.crop_to_region(fake, whole, whole, 50.0)[0], whole)
+        self.assertIsNone(worker.crop_to_region(fake, whole, image(np.zeros((20, 20, 20))), 2.0)[2])
+
+
 class ExecuteJobTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1266,6 +1410,26 @@ class ExecuteJobTests(unittest.TestCase):
         self.assertIn("broken mask", payload["errors"][0]["error"])
         self.assertIn("<filter-progress>0.500000</filter-progress>", stream.getvalue())
         self.assertIn("<filter-progress>1.000000</filter-progress>", stream.getvalue())
+
+    def test_crop_is_used_and_recorded_when_asked(self):
+        manifest = dataclasses.replace(self._manifest(None), crop_to_roi=True)
+
+        class ImagePictologics(FakePictologics):
+            @classmethod
+            def load_image(cls, path, reference_image=None):
+                return types.SimpleNamespace(path=path, spacing=(1.0, 1.0, 1.0))
+
+        margins = []
+
+        def crop(pictologics, image, mask, margin, targets):
+            margins.append((margin, targets))
+            return image, mask, [[0, 0, 0], [1, 1, 1]]
+
+        with mock.patch.object(worker, "crop_to_region", side_effect=crop):
+            payload = worker.execute_job(manifest, ImagePictologics, self.root / "private")
+        self.assertEqual(margins, [(0.0, [])])
+        self.assertEqual(payload["provenance"]["crop_margin_mm"], 0.0)
+        self.assertEqual(payload["provenance"]["processing_logs"][0]["crop_box"], [[0, 0, 0], [1, 1, 1]])
 
     def test_run_returns_non_mapping(self):
         class NonMapping(FakePipeline):

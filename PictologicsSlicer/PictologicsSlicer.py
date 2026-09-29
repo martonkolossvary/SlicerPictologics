@@ -24,6 +24,7 @@ from typing import Any, Iterable, Sequence
 import qt
 import slicer
 import vtk
+from PictologicsLib.batch import find_cases
 from PictologicsLib.dependencies import (
     activate_dependency_target,
     build_pip_install_args,
@@ -34,9 +35,12 @@ from PictologicsLib.dependencies import (
     remove_inactive_environments,
 )
 from PictologicsLib.inline_config import (
+    FILTER_BOUNDARIES,
+    FILTER_PARAMETERS,
     MASK_TARGETS,
     build_inline_configuration_document,
     default_inline_state,
+    filter_defaults,
     lint_configuration_document,
     parse_configuration_check,
     preset_configuration_document,
@@ -46,11 +50,21 @@ from PictologicsLib.jobs import build_job_manifest, sha256_file, write_job_manif
 from PictologicsLib.memory import BYTES_PER_VOXEL, largest_voxel_count
 from PictologicsLib.profiles import build_profile, validate_profile
 from PictologicsLib.progress import current_roi_index, elapsed_text
+from PictologicsLib.result_columns import (
+    SCANNER_COLUMNS,
+    build_result_columns,
+    parse_extra_columns,
+    scanner_details_from_sidecar,
+    scanner_value,
+    sidecar_path,
+)
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     RESULT_PAYLOAD_SCHEMA_VERSION,
     configuration_conflicts,
     export_rows,
+    extra_columns,
+    is_result_table_columns,
     load_result_payload,
     rows_to_wide,
     validate_result_payload,
@@ -89,6 +103,9 @@ PARAM_SELECTED_SEGMENTS = "SelectedSegments"
 PARAM_STANDARD_CONFIGURATIONS = "StandardConfigurations"
 PARAM_CUSTOM_CONFIGURATION = "CustomConfigurationPath"
 PARAM_SUBJECT_ID = "SubjectID"
+PARAM_READER = "Reader"
+PARAM_EXTRA_COLUMNS = "ExtraColumns"
+PARAM_CROP = "CropToRegion"
 PARAM_APPEND_RESULTS = "AppendResults"
 PARAM_ADDITIONAL_SOURCE = "AdditionalConfigSource"
 PARAM_INLINE_CONFIG = "InlineConfigState"
@@ -106,6 +123,15 @@ FAMILY_CHECKBOXES = (
     ("spatial_intensity", "familySpatialIntensityCheckBox"),
     ("local_intensity", "familyLocalIntensityCheckBox"),
 )
+
+FILTER_LABELS = {
+    "mean": "Mean",
+    "log": "Laplacian of Gaussian (LoG)",
+    "laws": "Laws texture energy",
+    "gabor": "Gabor",
+    "wavelet": "Separable wavelet",
+    "simoncelli": "Simoncelli wavelet",
+}
 
 REF_INPUT_VOLUME = "InputVolume"
 REF_SEGMENTATION = "Segmentation"
@@ -241,6 +267,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.logic: PictologicsSlicerLogic | None = None
         self._parameterNode = None
         self._updatingGUIFromParameterNode = False
+        self._updatingParameterNodeFromGUI = False
         self._activeJob: dict[str, Any] | None = None
         self._cliNode = None
         self._cliObserverTag = None
@@ -255,6 +282,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._resultsBrowser = None
         self._profilePath: Path | None = None
         self._profileName = "Radiomics profile"
+        self._filterParameterWidgets: dict[str, Any] = {}
+        # A running batch: its cases, the current index, the loaded nodes, and failures.
+        self._batch: dict[str, Any] | None = None
 
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
@@ -263,7 +293,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
         # Names from user data must remain plain text, including strings with < >.
-        for label in (self.ui.readinessLabel, self.ui.statusLabel):
+        for label in (self.ui.readinessLabel, self.ui.statusLabel, self.ui.scannerDetailsLabel):
             label.setTextFormat(qt.Qt.PlainText)
         self.ui.elapsedTimeLabel.hide()
         self._runFeedbackTimer = qt.QTimer(uiWidget)
@@ -289,6 +319,14 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             LOGGER.exception("Could not purge stale Pictologics staging directories")
         self.logic.removeRetiredEnvironments()
         self._populateStandardConfigurations()
+        for filterType in FILTER_PARAMETERS:
+            self.ui.filterTypeCombo.addItem(FILTER_LABELS[filterType], filterType)
+        for boundary in FILTER_BOUNDARIES:
+            self.ui.filterBoundaryCombo.addItem(boundary)
+        self._filterParametersLayout = qt.QFormLayout(self.ui.filterParametersWidget)
+        self._filterParametersLayout.setContentsMargins(0, 0, 0, 0)
+        self.ui.filterTypeCombo.setCurrentIndex(self.ui.filterTypeCombo.findData("log"))
+        self._buildFilterParameters("log", {})
         self._connectSignals()
 
         self.addObserver(
@@ -333,6 +371,11 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.inputVolumeSelector.connect(
             "currentNodeChanged(vtkMRMLNode*)", self.onControlsChanged
         )
+        self.ui.inputVolumeSelector.connect(
+            "currentNodeChanged(vtkMRMLNode*)", self._updateScannerDetails
+        )
+        self.ui.readerLineEdit.connect("textChanged(QString)", self.onControlsChanged)
+        self.ui.extraColumnsTextEdit.connect("textChanged()", self.onControlsChanged)
         self.ui.segmentationSelector.connect(
             "currentNodeChanged(vtkMRMLNode*)", self.onSegmentationChanged
         )
@@ -340,6 +383,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             "currentNodeChanged(vtkMRMLNode*)", self.onControlsChanged
         )
         self.ui.wholeVolumeCheckBox.connect("toggled(bool)", self.onControlsChanged)
+        self.ui.cropCheckBox.connect("toggled(bool)", self.onControlsChanged)
         self.ui.appendResultsCheckBox.connect("toggled(bool)", self.onControlsChanged)
         self.ui.segmentListWidget.connect(
             "itemChanged(QListWidgetItem*)", self.onControlsChanged
@@ -360,6 +404,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             getattr(self.ui, attribute).connect("toggled(bool)", self.onControlsChanged)
         self.ui.resampleCheckBox.connect("toggled(bool)", self.onControlsChanged)
         self.ui.resegmentGroup.connect("toggled(bool)", self.onControlsChanged)
+        self.ui.filterGroup.connect("toggled(bool)", self.onControlsChanged)
+        self.ui.filterTypeCombo.connect("currentIndexChanged(int)", self.onFilterTypeChanged)
+        self.ui.filterBoundaryCombo.connect("currentIndexChanged(int)", self.onControlsChanged)
         self.ui.outlierGroup.connect("toggled(bool)", self.onControlsChanged)
         for control in (self.ui.rangeMinLineEdit, self.ui.rangeMaxLineEdit):
             control.connect("textChanged(QString)", self.onControlsChanged)
@@ -391,6 +438,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.browseConfigButton.connect("clicked()", self.onBrowseConfiguration)
         self.ui.updatePackageButton.connect("clicked()", self.onUpdatePackage)
         self.ui.runButton.connect("clicked()", self.onRun)
+        self.ui.batchBrowseButton.connect("clicked()", self.onBrowseBatchFolder)
+        self.ui.runBatchButton.connect("clicked()", self.onRunBatch)
         self.ui.cancelButton.connect("clicked()", self.onCancel)
         self.ui.exportButton.connect("clicked()", self.onExport)
         self.ui.browseResultsButton.connect("clicked()", self.onBrowseResults)
@@ -445,6 +494,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._profileName = "Radiomics profile"
         self.ui.profileStatusLabel.setText("Profiles contain settings only; no patient data.")
         self._stopRunFeedback()
+        if self._batch is not None:
+            self._batch["stopped"] = True
+            self._batch["nodes"] = []
+            self._batch["restore"] = None
         if self._activeJob is not None:
             # A CLI result belongs to the scene in which it was submitted. Never
             # let a late completion write patient A's rows into a newly loaded scene.
@@ -485,7 +538,11 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         return [str(item) for item in parsed] if isinstance(parsed, list) else []
 
     def updateGUIFromParameterNode(self, caller=None, event=None):
-        if self._parameterNode is None or not hasattr(self, "ui"):
+        if (
+            self._parameterNode is None
+            or not hasattr(self, "ui")
+            or self._updatingParameterNodeFromGUI
+        ):
             return
         self._updatingGUIFromParameterNode = True
         try:
@@ -504,12 +561,18 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.appendResultsCheckBox.setChecked(
                 self._parameterNode.GetParameter(PARAM_APPEND_RESULTS) == "true"
             )
+            self.ui.cropCheckBox.setChecked(self._parameterNode.GetParameter(PARAM_CROP) == "true")
             self.ui.customConfigPathLineEdit.setText(
                 self._parameterNode.GetParameter(PARAM_CUSTOM_CONFIGURATION)
             )
             self.ui.subjectIdLineEdit.setText(
                 self._parameterNode.GetParameter(PARAM_SUBJECT_ID)
             )
+            self.ui.readerLineEdit.setText(self._parameterNode.GetParameter(PARAM_READER))
+            extraText = self._parameterNode.GetParameter(PARAM_EXTRA_COLUMNS)
+            # Setting the same text again would move the cursor while the user types.
+            if str(self.ui.extraColumnsTextEdit.toPlainText()) != extraText:
+                self.ui.extraColumnsTextEdit.setPlainText(extraText)
 
             selectedConfigurations = set(
                 self._jsonList(
@@ -543,12 +606,21 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self._updateConfigVisibility()
         finally:
             self._updatingGUIFromParameterNode = False
+        self._updateScannerDetails()
         self._updateRunState()
 
     def updateParameterNodeFromGUI(self):
-        if self._parameterNode is None or self._updatingGUIFromParameterNode:
+        if (
+            self._parameterNode is None
+            or self._updatingGUIFromParameterNode
+            or self._updatingParameterNodeFromGUI
+        ):
             return
         wasModified = self._parameterNode.StartModify()
+        # Keep the live editor intact while persisting its own changes. Replaying
+        # them through updateGUIFromParameterNode reformats a partially typed
+        # decimal and rebuilds dynamic filter widgets beneath the user's cursor.
+        self._updatingParameterNodeFromGUI = True
         try:
             self._parameterNode.SetNodeReferenceID(
                 REF_INPUT_VOLUME,
@@ -571,11 +643,18 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 "true" if self.ui.appendResultsCheckBox.checked else "false",
             )
             self._parameterNode.SetParameter(
+                PARAM_CROP, "true" if self.ui.cropCheckBox.checked else "false"
+            )
+            self._parameterNode.SetParameter(
                 PARAM_CUSTOM_CONFIGURATION,
                 str(self.ui.customConfigPathLineEdit.text).strip(),
             )
             self._parameterNode.SetParameter(
                 PARAM_SUBJECT_ID, str(self.ui.subjectIdLineEdit.text).strip()
+            )
+            self._parameterNode.SetParameter(PARAM_READER, str(self.ui.readerLineEdit.text))
+            self._parameterNode.SetParameter(
+                PARAM_EXTRA_COLUMNS, str(self.ui.extraColumnsTextEdit.toPlainText())
             )
             self._parameterNode.SetParameter(
                 PARAM_SELECTED_SEGMENTS,
@@ -593,7 +672,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 json.dumps(self._inlineStateFromGUI(), separators=(",", ":")),
             )
         finally:
-            self._parameterNode.EndModify(wasModified)
+            try:
+                self._parameterNode.EndModify(wasModified)
+            finally:
+                self._updatingParameterNodeFromGUI = False
 
     @staticmethod
     def _nodeID(node) -> str | None:
@@ -671,7 +753,74 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             "filter_outliers": bool(self.ui.outlierGroup.checked),
             "outlier_sigma": float(self.ui.outlierSigmaSpinBox.value),
             "outlier_apply_to": MASK_TARGETS[self.ui.outlierTargetCombo.currentIndex],
+            "filter": bool(self.ui.filterGroup.checked),
+            "filter_type": self._currentFilterType(),
+            "filter_boundary": str(self.ui.filterBoundaryCombo.currentText),
+            "filter_params": self._filterParametersFromGUI(),
         }
+
+    def _currentFilterType(self) -> str:
+        return str(self.ui.filterTypeCombo.itemData(self.ui.filterTypeCombo.currentIndex))
+
+    def _filterParametersFromGUI(self) -> dict[str, Any]:
+        values: dict[str, Any] = {}
+        for name, kind, _, _ in FILTER_PARAMETERS[self._currentFilterType()]:
+            widget = self._filterParameterWidgets[name]
+            if kind == "int":
+                values[name] = int(widget.value)
+            elif kind == "float":
+                values[name] = float(widget.value)
+            elif kind == "bool":
+                values[name] = bool(widget.checked)
+            elif kind == "choice":
+                values[name] = str(widget.currentText)
+            else:
+                values[name] = str(widget.text).strip()
+        return values
+
+    def _buildFilterParameters(self, filterType: str, values: dict[str, Any]):
+        """Show one control for each parameter of *filterType*, set to *values*."""
+
+        layout = self._filterParametersLayout
+        while layout.count():
+            widget = layout.takeAt(0).widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._filterParameterWidgets = {}
+        for name, kind, default, limits in FILTER_PARAMETERS[filterType]:
+            value = values.get(name, default)
+            if kind in ("int", "float"):
+                widget = qt.QSpinBox() if kind == "int" else qt.QDoubleSpinBox()
+                if kind == "float":
+                    widget.setDecimals(4)
+                widget.setRange(limits[0], limits[1])
+                widget.setValue(value)
+                widget.connect("valueChanged(double)" if kind == "float" else "valueChanged(int)",
+                               self.onControlsChanged)
+            elif kind == "bool":
+                widget = qt.QCheckBox()
+                widget.setChecked(bool(value))
+                widget.connect("toggled(bool)", self.onControlsChanged)
+            elif kind == "choice":
+                widget = qt.QComboBox()
+                widget.addItems(list(limits))
+                widget.setCurrentIndex(max(widget.findText(str(value)), 0))
+                widget.connect("currentIndexChanged(int)", self.onControlsChanged)
+            else:
+                widget = qt.QLineEdit(str(value))
+                widget.connect("textChanged(QString)", self.onControlsChanged)
+            label = name.replace("_mm", " (mm)").replace("_", " ").capitalize()
+            if name in ("theta", "delta_theta"):
+                label += " (radians)"
+            layout.addRow(f"{label}:", widget)
+            self._filterParameterWidgets[name] = widget
+
+    def onFilterTypeChanged(self, *args):
+        if self._updatingGUIFromParameterNode:
+            return
+        filterType = self._currentFilterType()
+        self._buildFilterParameters(filterType, filter_defaults(filterType))
+        self.onControlsChanged()
 
     def _applyInlineState(self, state: dict[str, Any]):
         families = set(state.get("families", []))
@@ -706,6 +855,15 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                            ("outlier_apply_to", self.ui.outlierTargetCombo)):
             target = state.get(key, "both")
             combo.setCurrentIndex(MASK_TARGETS.index(target) if target in MASK_TARGETS else 0)
+        self.ui.filterGroup.setChecked(bool(state.get("filter", False)))
+        filterType = state.get("filter_type")
+        filterType = filterType if filterType in FILTER_PARAMETERS else "log"
+        wasBlocked = self.ui.filterTypeCombo.blockSignals(True)
+        self.ui.filterTypeCombo.setCurrentIndex(self.ui.filterTypeCombo.findData(filterType))
+        self.ui.filterTypeCombo.blockSignals(wasBlocked)
+        self._setComboText(self.ui.filterBoundaryCombo, state.get("filter_boundary", "default"))
+        params = state.get("filter_params")
+        self._buildFilterParameters(filterType, params if isinstance(params, dict) else {})
 
     def onSegmentationChanged(self, node=None):
         if self._updatingGUIFromParameterNode:
@@ -751,12 +909,36 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
     def _selectedConfigurations(self) -> list[str]:
         return self._checkedValues(self.ui.standardConfigListWidget)
 
+    def _updateScannerDetails(self, *args):
+        volume = self.ui.inputVolumeSelector.currentNode()
+        details = self.logic.scannerDetails(volume) if volume is not None and self.logic else {}
+        found = [f"{name.replace('_', ' ')}: {value}" for name, value in details.items() if value]
+        self.ui.scannerDetailsLabel.setText(
+            "; ".join(found)
+            if found
+            else "None found. They come from DICOM, or from a dcm2niix JSON file next to a "
+            "NIfTI image. You can add them as extra columns."
+        )
+
     def _validationError(self) -> str | None:
         inputVolume = self.ui.inputVolumeSelector.currentNode()
         if inputVolume is None:
             return "Select an input scalar volume."
         if inputVolume.GetImageData() is None:
             return "The selected input volume has no image data."
+        error = self._settingsError()
+        if error:
+            return error
+
+        hasSegments = bool(self._selectedSegmentIDs())
+        if not self.ui.wholeVolumeCheckBox.checked and not hasSegments:
+            return "Analyze the whole volume or select at least one segment."
+        if hasSegments and self.ui.segmentationSelector.currentNode() is None:
+            return "Select a segmentation for the checked segments."
+        return None
+
+    def _settingsError(self) -> str | None:
+        """Return a problem of the configuration or column settings, for runs and batches."""
 
         source = self._currentAdditionalSource()
         if source == "file":
@@ -776,18 +958,22 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         if not self._selectedConfigurations() and source == "none":
             return "Select at least one preset, or add an in-app or file configuration."
 
-        hasSegments = bool(self._selectedSegmentIDs())
-        if not self.ui.wholeVolumeCheckBox.checked and not hasSegments:
-            return "Analyze the whole volume or select at least one segment."
-        if hasSegments and self.ui.segmentationSelector.currentNode() is None:
-            return "Select a segmentation for the checked segments."
+        try:
+            parse_extra_columns(str(self.ui.extraColumnsTextEdit.toPlainText()))
+        except ValueError as exc:
+            return str(exc)
         return None
 
     def _updateRunState(self):
         if not hasattr(self, "ui"):
             return
         cliBusy = self._nodeIsBusy(self._cliNode)
-        busy = cliBusy or self._activeJob is not None or self._dependencyOperationInProgress
+        busy = (
+            cliBusy
+            or self._activeJob is not None
+            or self._dependencyOperationInProgress
+            or self._batch is not None
+        )
         error = self._validationError()
         for control in (
             self.ui.inputVolumeSelector,
@@ -803,6 +989,14 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.appendResultsCheckBox,
             self.ui.exportWideCheckBox,
             self.ui.loadProfileButton,
+            self.ui.readerLineEdit,
+            self.ui.extraColumnsTextEdit,
+            self.ui.cropCheckBox,
+            self.ui.batchFolderLineEdit,
+            self.ui.batchBrowseButton,
+            self.ui.batchImagePatternLineEdit,
+            self.ui.batchSegmentationPatternLineEdit,
+            self.ui.runBatchButton,
         ):
             control.setEnabled(not busy)
         self.ui.runButton.setEnabled(not busy and error is None)
@@ -1138,10 +1332,12 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             return
         error = self._validationError()
         if error:
-            slicer.util.errorDisplay(error, windowTitle="Pictologics")
+            self._reportRunError(error, "Pictologics")
             return
         if not self._confirmLargeRun():
             self.ui.statusLabel.setText("The run did not start.")
+            if self._batch is not None:
+                self._batch["stopped"] = True
             return
         # pip_install and the dependency probes process Qt events while they run.
         # Mark the entire launch path busy before the first processEvents() call so a
@@ -1184,6 +1380,12 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 subjectID=str(self.ui.subjectIdLineEdit.text).strip(),
                 installedVersion=inspection.installed_version or "",
                 dependencyPath=inspection.target,
+                cropToRegion=bool(self.ui.cropCheckBox.checked),
+                resultColumns=self.logic.resultColumns(
+                    self.ui.inputVolumeSelector.currentNode(),
+                    str(self.ui.readerLineEdit.text),
+                    parse_extra_columns(str(self.ui.extraColumnsTextEdit.toPlainText())),
+                ),
             )
             outputTable = self.ui.outputTableSelector.currentNode()
             self._activeJob.update(
@@ -1210,15 +1412,15 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.statusLabel.setText(
                 "Pictologics installation was cancelled; the run did not start."
             )
+            if self._batch is not None:
+                self._batch["stopped"] = True
         except Exception as exc:
             LOGGER.exception("Could not start Pictologics")
             if self._activeJob:
                 self.logic.cleanupJob(self._activeJob)
             self._activeJob = None
             self._detachCliObserver(removeNode=True)
-            slicer.util.errorDisplay(
-                str(exc), windowTitle="Could not start Pictologics"
-            )
+            self._reportRunError(str(exc), "Could not start Pictologics")
             self.ui.statusLabel.setText("The run did not start.")
         finally:
             self._dependencyOperationInProgress = False
@@ -1251,21 +1453,173 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 document = None
             if isinstance(document, dict):
                 documents.append(document)
-        voxels = largest_voxel_count(
-            volume.GetImageData().GetDimensions(), volume.GetSpacing(), documents
-        )
+        cropped = bool(self.ui.cropCheckBox.checked) and not self.ui.wholeVolumeCheckBox.checked
+        # Cropping can fall back to a whole image/axis, and filter margins may be
+        # large. Do not suppress a safety warning using an optimistic ROI box.
+        dimensions = volume.GetImageData().GetDimensions()
+        voxels = largest_voxel_count(dimensions, volume.GetSpacing(), documents)
         size = voxels * BYTES_PER_VOXEL
-        if size <= LARGE_IMAGE_BYTES:
+        if size <= LARGE_IMAGE_BYTES or (
+            self._batch is not None and size <= self._batch["approvedImageBytes"]
+        ):
             return True
-        return bool(
+        advice = (
+            " Cropping may reduce memory, but some configurations or axes require the whole scan."
+            if cropped else " Cropping around each region may reduce memory."
+        )
+        accepted = bool(
             slicer.util.confirmOkCancelDisplay(
-                "Pictologics resamples the whole scan for each region, to about "
+                "Without an effective crop, Pictologics resamples the whole scan for each region, to about "
                 f"{voxels / 1e6:,.0f} million voxels. One copy of that image needs "
                 f"about {size / 1e9:.1f} GB of memory, and Pictologics keeps several "
-                "copies. The run can be slow or run out of memory.\n\nContinue?",
+                f"copies. The run can be slow or run out of memory.{advice}\n\nContinue?",
                 windowTitle="Large Pictologics run",
             )
         )
+        if accepted and self._batch is not None:
+            self._batch["approvedImageBytes"] = size
+        return accepted
+
+    def onBrowseBatchFolder(self):
+        folder = qt.QFileDialog.getExistingDirectory(
+            slicer.util.mainWindow(),
+            "Select the study folder",
+            str(self.ui.batchFolderLineEdit.text).strip(),
+        )
+        if folder:
+            self.ui.batchFolderLineEdit.setText(str(folder))
+
+    def onRunBatch(self):
+        """Run every case folder of the study folder, one after the other."""
+
+        if self._batch is not None or self._activeJob is not None:
+            return
+        segmentationPattern = str(self.ui.batchSegmentationPatternLineEdit.text).strip()
+        error = self._settingsError()
+        if not error and not segmentationPattern and not self.ui.wholeVolumeCheckBox.checked:
+            error = "Give a segmentation file name, or analyze the whole volume."
+        folderText = str(self.ui.batchFolderLineEdit.text).strip()
+        folder = Path(folderText).expanduser()
+        if not error and (not folderText or not folder.is_dir()):
+            error = "Choose a study folder that exists."
+        if not error:
+            try:
+                cases, skipped = find_cases(
+                    folder, str(self.ui.batchImagePatternLineEdit.text).strip(), segmentationPattern
+                )
+                if not cases:
+                    error = "No case folder has the image and segmentation files."
+            except OSError as exc:
+                error = f"Could not read the study folder: {exc}"
+        if error:
+            slicer.util.errorDisplay(error, windowTitle="Pictologics batch")
+            return
+        message = (
+            f"Run {len(cases)} case(s) from {folder}? The rows of every case go into the "
+            "results table."
+        )
+        if skipped:
+            message += f"\n\n{len(skipped)} folder(s) are skipped:\n" + "\n".join(skipped[:10])
+        if not slicer.util.confirmOkCancelDisplay(message, windowTitle="Pictologics batch"):
+            return
+        self._batch = {
+            "cases": cases,
+            "index": -1,
+            "nodes": [],
+            "completed": 0,
+            "failed": [],
+            "stopped": False,
+            "approvedImageBytes": 0,
+            "pending": False,
+            "restore": {
+                "subject": str(self.ui.subjectIdLineEdit.text),
+                "append": bool(self.ui.appendResultsCheckBox.checked),
+                "volume": self.ui.inputVolumeSelector.currentNodeID,
+                "segmentation": self.ui.segmentationSelector.currentNodeID,
+                "segments": self._selectedSegmentIDs(),
+            },
+        }
+        self.ui.appendResultsCheckBox.setChecked(True)
+        self._startNextBatchCase()
+
+    def _batchCaseText(self) -> str:
+        if self._batch is None or not 0 <= self._batch["index"] < len(self._batch["cases"]):
+            return ""
+        case = self._batch["cases"][self._batch["index"]]
+        return f"Case {self._batch['index'] + 1} of {len(self._batch['cases'])} ({case.name}). "
+
+    def _reportRunError(self, message: str, title: str):
+        """Show a run error, or keep it for the summary at the end of a batch."""
+
+        if self._batch is None:
+            slicer.util.errorDisplay(message, windowTitle=title)
+            return
+        case = self._batch["cases"][self._batch["index"]]
+        LOGGER.error("Batch case %s: %s", case.name, message)
+        self._batch["failed"].append(f"{case.name}: {message}")
+
+    def _removeBatchNodes(self):
+        for node in self._batch["nodes"] if self._batch is not None else []:
+            if node.GetScene() == slicer.mrmlScene:
+                slicer.mrmlScene.RemoveNode(node)
+        if self._batch is not None:
+            self._batch["nodes"] = []
+
+    def _scheduleNextBatchCase(self):
+        if self._batch is not None and not self._batch["pending"]:
+            self._batch["pending"] = True
+            qt.QTimer.singleShot(0, self._startNextBatchCase)
+
+    def _startNextBatchCase(self):
+        batch = self._batch
+        if batch is None or self._activeJob is not None:
+            return
+        batch["pending"] = False
+        self._removeBatchNodes()
+        batch["index"] += 1
+        if batch["stopped"] or batch["index"] >= len(batch["cases"]):
+            self._finishBatch()
+            return
+        case = batch["cases"][batch["index"]]
+        try:
+            volume = slicer.util.loadVolume(str(case.image), {"show": False})
+            batch["nodes"].append(volume)
+            segmentation = None
+            if case.segmentation is not None:
+                segmentation = slicer.util.loadSegmentation(str(case.segmentation))
+                batch["nodes"].append(segmentation)
+        except Exception as exc:
+            self._reportRunError(f"Could not load the case files: {exc}", "Pictologics batch")
+            self._scheduleNextBatchCase()
+            return
+        self.ui.inputVolumeSelector.setCurrentNode(volume)
+        # Selecting the segmentation checks every one of its segments.
+        self.ui.segmentationSelector.setCurrentNode(segmentation)
+        self.ui.subjectIdLineEdit.setText(case.name)
+        self.onRun()
+        if self._activeJob is None:
+            self._scheduleNextBatchCase()
+
+    def _finishBatch(self):
+        batch, self._batch = self._batch, None
+        restore = batch["restore"]
+        if restore is not None:
+            self.ui.inputVolumeSelector.setCurrentNode(slicer.mrmlScene.GetNodeByID(restore["volume"]))
+            self.ui.segmentationSelector.setCurrentNode(slicer.mrmlScene.GetNodeByID(restore["segmentation"]))
+            self._rebuildSegmentList(set(restore["segments"]))
+            self.ui.subjectIdLineEdit.setText(restore["subject"])
+            self.ui.appendResultsCheckBox.setChecked(restore["append"])
+            self.updateParameterNodeFromGUI()
+        summary = f"Batch finished: {batch['completed']} of {len(batch['cases'])} case(s) added rows."
+        if batch["stopped"]:
+            summary = f"Batch stopped after {batch['index']} of {len(batch['cases'])} case(s). " + summary
+        if batch["failed"]:
+            summary += f" {len(batch['failed'])} case(s) failed."
+            slicer.util.warningDisplay(
+                "\n".join(batch["failed"][:20]), windowTitle="Pictologics batch problems"
+            )
+        self.ui.statusLabel.setText(summary)
+        self._updateRunState()
 
     def onCancel(self):
         if self._nodeIsBusy(self._cliNode):
@@ -1312,7 +1666,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         index = current_roi_index(str(self._cliNode.GetOutputText() or ""), len(rois))
         if index is not None:
             self.ui.statusLabel.setText(
-                f"Processing ROI {index + 1} of {len(rois)}: {rois[index]['roi_name']}"
+                f"{self._batchCaseText()}Processing ROI {index + 1} of {len(rois)}: "
+                f"{rois[index]['roi_name']}"
             )
 
     def _beginCliProgress(self, roiCount: int):
@@ -1382,7 +1737,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                         errorText or f"Pictologics CLI ended with status: {statusText}"
                     )
                     LOGGER.error("Pictologics CLI failed: %s", message)
-                    slicer.util.errorDisplay(message, windowTitle="Pictologics failed")
+                    self._reportRunError(message, "Pictologics failed")
                     self.ui.statusLabel.setText(
                         "Pictologics failed; the output table was not changed."
                     )
@@ -1391,9 +1746,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 self._acceptCompletedJob()
         except Exception as exc:
             LOGGER.exception("Could not commit Pictologics results")
-            slicer.util.errorDisplay(
-                str(exc), windowTitle="Could not load Pictologics results"
-            )
+            self._reportRunError(str(exc), "Could not load Pictologics results")
             self.ui.statusLabel.setText(
                 "Results were not committed; the previous table is unchanged."
             )
@@ -1405,6 +1758,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self._detachCliObserver(removeNode=True)
             self._finishingJob = False
             self._updateRunState()
+            if self._batch is not None:
+                if cancelled:
+                    self._batch["stopped"] = True
+                self._scheduleNextBatchCase()
 
     def _acceptCompletedJob(self):
         if not self._activeJob:
@@ -1458,6 +1815,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 "results went to a new table."
             )
         self._lastPayload = payload
+        if self._batch is not None:
+            self._batch["completed"] += 1
         self.ui.outputTableSelector.setCurrentNode(tableNode)
         self.updateParameterNodeFromGUI()
         self._restoreCliProgress(100)
@@ -1834,6 +2193,43 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 "import/API/JIT probe; the previous environment remains active."
             ) from exc
 
+    @staticmethod
+    def scannerDetails(volumeNode) -> dict[str, str]:
+        """Read the scanner details of a volume from DICOM or a dcm2niix JSON file.
+
+        Return an empty dictionary when neither source is available.
+        """
+
+        instanceUIDs = str(volumeNode.GetAttribute("DICOM.instanceUIDs") or "").split()
+        database = getattr(slicer, "dicomDatabase", None)
+        filePath = (
+            database.fileForInstance(instanceUIDs[0])
+            if instanceUIDs and database is not None and database.isOpen
+            else ""
+        )
+        if filePath:
+            return {
+                column: scanner_value(database.fileValue(filePath, tag))
+                for column, tag, _ in SCANNER_COLUMNS
+            }
+        storage = volumeNode.GetStorageNode()
+        sidecar = sidecar_path(str(storage.GetFileName() or "")) if storage else None
+        if sidecar is None or not sidecar.is_file():
+            return {}
+        try:
+            data = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            LOGGER.warning("Could not read the scanner details in %s", sidecar)
+            return {}
+        return scanner_details_from_sidecar(data) if isinstance(data, dict) else {}
+
+    def resultColumns(
+        self, volumeNode, reader: str, extraColumns: Sequence[tuple[str, str]]
+    ) -> list[tuple[str, str]]:
+        """Return the reader, scanner, and user columns that every row of a run gets."""
+
+        return build_result_columns(reader, self.scannerDetails(volumeNode), extraColumns)
+
     def prepareJob(
         self,
         *,
@@ -1847,6 +2243,8 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         installedVersion: str,
         dependencyPath: Path,
         inlineConfigurationDocument: dict[str, Any] | None = None,
+        resultColumns: Sequence[tuple[str, str]] | None = None,
+        cropToRegion: bool = False,
     ) -> dict[str, Any]:
         self.purgeStaleJobs()
         jobsRoot = self.jobsRoot()
@@ -1977,6 +2375,8 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 "custom_configuration_sha256": customDigest,
                 "warmup": True,
             }
+            if cropToRegion:
+                configurationDocument["crop_to_roi"] = True
             outputPath = workDir / "results.json"
             provenancePath = workDir / "provenance.json"
             paths = self.privatePaths()
@@ -1989,6 +2389,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 results_path=str(outputPath),
                 provenance_path=str(provenancePath),
                 subject_id=subjectID,
+                result_columns=resultColumns,
                 extension_version=EXTENSION_VERSION,
                 pictologics_requirement=str(requirement),
                 metadata={
@@ -2108,13 +2509,17 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         standardConfigurations: Sequence[str] = (DEFAULT_CONFIGURATION,),
         customConfigurationPath: str | None = None,
         subjectID: str = "",
+        reader: str = "",
+        extraColumns: dict[str, str] | None = None,
+        cropToRegion: bool = False,
         outputTable=None,
     ):
         """Run Pictologics to the end and return the results table (for scripts).
 
         Slicer waits until the worker stops. The new rows go after the rows that are
         in ``outputTable``; with no table, a new table is made. By default, every
-        segment of the segmentation is a region.
+        segment of the segmentation is a region. ``reader`` and ``extraColumns``
+        become text columns of every row, after the scanner details.
         """
 
         inspection = self.ensureDependencies(forceUpgrade=False)
@@ -2130,6 +2535,10 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             subjectID=subjectID,
             installedVersion=inspection.installed_version or "",
             dependencyPath=inspection.target,
+            resultColumns=self.resultColumns(
+                inputVolumeNode, reader, list((extraColumns or {}).items())
+            ),
+            cropToRegion=cropToRegion,
         )
         cliNode = None
         try:
@@ -2274,7 +2683,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 str(existing.GetColumnName(index))
                 for index in range(existing.GetNumberOfColumns())
             )
-            if existingNames != tuple(LONG_RESULT_COLUMNS):
+            if not is_result_table_columns(existingNames):
                 raise ValueError(
                     "Append was requested, but the selected table does not have the "
                     "Pictologics long-form schema."
@@ -2308,11 +2717,22 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 )
                 column.SetName(columnName)
                 candidate.AddColumn(column)
+        # A new extra column gets empty text in the rows that are already there.
+        for columnName in extra_columns(normalized["rows"]):
+            if candidate.GetColumnByName(columnName) is None:
+                column = vtk.vtkStringArray()
+                column.SetName(columnName)
+                column.SetNumberOfValues(candidate.GetNumberOfRows())
+                candidate.AddColumn(column)
 
+        columnNames = [
+            str(candidate.GetColumnName(index))
+            for index in range(candidate.GetNumberOfColumns())
+        ]
         for row in normalized["rows"]:
-            for columnName in LONG_RESULT_COLUMNS:
+            for columnName in columnNames:
                 column = candidate.GetColumnByName(columnName)
-                value = row[columnName]
+                value = row.get(columnName, "")
                 if columnName == "value":
                     column.InsertNextValue(
                         float("nan") if value is None else float(value)
@@ -2420,14 +2840,14 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             str(table.GetColumnName(index))
             for index in range(table.GetNumberOfColumns())
         )
-        if names != tuple(LONG_RESULT_COLUMNS):
+        if not is_result_table_columns(names):
             raise ValueError(
                 "The selected table is not a Pictologics long-form result table."
             )
         rows: list[dict[str, Any]] = []
         for rowIndex in range(table.GetNumberOfRows()):
             row: dict[str, Any] = {}
-            for columnName in LONG_RESULT_COLUMNS:
+            for columnName in names:
                 column = table.GetColumnByName(columnName)
                 value = column.GetValue(rowIndex)
                 if columnName == "value":

@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final, cast
 
+from .results import is_extra_column_name
+
 JOB_MANIFEST_SCHEMA_VERSION: Final = 1
 WHOLE_VOLUME_ROI_ID: Final = "whole-volume"
 _NIFTI_SUFFIXES: Final = (".nii", ".nii.gz")
@@ -33,7 +35,7 @@ _MANIFEST_REQUIRED_KEYS: Final = frozenset(
         "metadata",
     }
 )
-_MANIFEST_ALLOWED_KEYS: Final = _MANIFEST_REQUIRED_KEYS | {"subject_metadata"}
+_MANIFEST_ALLOWED_KEYS: Final = _MANIFEST_REQUIRED_KEYS | {"subject_metadata", "result_columns"}
 _IMAGE_KEYS: Final = frozenset({"path", "name"})
 _ROI_REQUIRED_KEYS: Final = frozenset({"roi_id", "roi_name", "roi_source", "mask_path"})
 _ROI_ALLOWED_KEYS: Final = _ROI_REQUIRED_KEYS | {"metadata"}
@@ -41,7 +43,8 @@ _CONFIGURATION_REQUIRED_KEYS: Final = frozenset(
     {"standard_configurations", "custom_configuration_path", "warmup"}
 )
 _CONFIGURATION_ALLOWED_KEYS: Final = _CONFIGURATION_REQUIRED_KEYS | {
-    "custom_configuration_sha256"
+    "custom_configuration_sha256",
+    "crop_to_roi",
 }
 _OUTPUT_REQUIRED_KEYS: Final = frozenset({"results_path"})
 _OUTPUT_ALLOWED_KEYS: Final = _OUTPUT_REQUIRED_KEYS | {"provenance_path"}
@@ -250,6 +253,8 @@ def _validate_configuration_document(value: object) -> dict[str, Any]:
         )
     if type(value["warmup"]) is not bool:
         raise JobManifestError("configuration_document.warmup must be a boolean")
+    if type(value.get("crop_to_roi", False)) is not bool:
+        raise JobManifestError("configuration_document.crop_to_roi must be a boolean")
 
     custom_hash = value.get("custom_configuration_sha256")
     if custom_hash is not None:
@@ -276,6 +281,7 @@ def build_job_manifest(
     whole_volume: bool = False,
     subject_id: str = "",
     subject_metadata: Mapping[str, object] | None = None,
+    result_columns: Sequence[tuple[str, str]] | None = None,
     image_name: str | None = None,
     run_id: str | None = None,
     timestamp: str | None = None,
@@ -378,6 +384,9 @@ def build_job_manifest(
         manifest["subject_metadata"] = _json_clone(
             dict(subject_metadata), "subject_metadata"
         )
+    if result_columns is not None:
+        # A list of pairs keeps the column order; the manifest file sorts object keys.
+        manifest["result_columns"] = [[name, value] for name, value in result_columns]
     return validate_job_manifest(manifest)
 
 
@@ -522,6 +531,23 @@ def validate_job_manifest(payload: object) -> dict[str, Any]:
         manifest["subject_metadata"], dict
     ):
         raise JobManifestError("subject_metadata must be an object")
+    if "result_columns" in manifest:
+        columns = manifest["result_columns"]
+        pairs = columns if isinstance(columns, list) else [None]
+        names = [
+            pair[0]
+            for pair in pairs
+            if isinstance(pair, list) and len(pair) == 2
+            and isinstance(pair[0], str) and isinstance(pair[1], str)
+        ]
+        if (
+            len(names) != len(pairs)
+            or len(set(names)) != len(names)
+            or not all(is_extra_column_name(name) for name in names)
+        ):
+            raise JobManifestError(
+                "result_columns must be [name, text] pairs with unique extra column names"
+            )
     return manifest
 
 

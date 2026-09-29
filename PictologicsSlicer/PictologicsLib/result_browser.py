@@ -6,6 +6,8 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from .results import LONG_RESULT_COLUMNS
+
 SEARCH_COLUMNS = (
     "feature_name",
     "feature_key",
@@ -90,6 +92,10 @@ def result_details(row: Mapping[str, Any], history: Sequence[Mapping[str, Any]])
         ("Extension version", "extension_version"),
     ):
         lines.append(f"{title}: {_value(row.get(key))}")
+    extras = [(key, value) for key, value in row.items() if key not in LONG_RESULT_COLUMNS]
+    if extras:
+        lines.extend(["", "EXTRA COLUMNS"])
+        lines.extend(f"{key}: {_value(value)}" for key, value in extras)
     matches = [record for record in history if record.get("run_id") == row.get("run_id")]
     if len(matches) != 1:
         return "\n".join([*lines, "", "Provenance unavailable or ambiguous for this run."])

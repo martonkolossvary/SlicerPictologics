@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 from importlib.metadata import version
+from itertools import product
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "PictologicsSlicer"))
@@ -60,7 +61,7 @@ def _check_inline_builder_round_trip() -> None:
     documents = {INLINE_CONFIG_NAME: build_inline_configuration_document(default_inline_state())}
     for preset in preset_names():
         documents[preset] = preset_configuration_document(preset)
-    for target in MASK_TARGETS:
+    for range_target, outlier_target in product(MASK_TARGETS, repeat=2):
         state = default_inline_state()
         state.update(
             resample=False,
@@ -69,13 +70,13 @@ def _check_inline_builder_round_trip() -> None:
             resegment=True,
             range_min=100.0,
             range_max=400.0,
-            resegment_apply_to=target,
+            resegment_apply_to=range_target,
             filter_outliers=True,
             outlier_sigma=1.0,
-            outlier_apply_to=target,
+            outlier_apply_to=outlier_target,
         )
         document = build_inline_configuration_document(state)
-        name = f"refinement_{target}"
+        name = f"refinement_{range_target}_{outlier_target}"
         document["configs"][name] = document["configs"].pop(INLINE_CONFIG_NAME)
         documents[name] = document
 
@@ -125,8 +126,44 @@ def _check_mirrored_step_parameters() -> None:
         )
 
 
+def _check_builder_filters() -> None:
+    """Each in-app filter must load without warnings and run on the released package."""
+
+    import warnings
+
+    import numpy as np
+    from PictologicsLib.inline_config import (
+        FILTER_PARAMETERS,
+        INLINE_CONFIG_NAME,
+        build_inline_configuration_document,
+        default_inline_state,
+        filter_defaults,
+    )
+
+    rng = np.random.default_rng(0)
+    image = pictologics.Image(
+        array=rng.normal(100.0, 20.0, (20, 20, 20)), spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0)
+    )
+    mask_array = np.zeros((20, 20, 20), dtype=np.uint8)
+    mask_array[5:15, 5:15, 5:15] = 1
+    mask = pictologics.Image(array=mask_array, spacing=image.spacing, origin=image.origin)
+    for filter_type in FILTER_PARAMETERS:
+        state = default_inline_state()
+        state.update(resample=False, discretise=False, families=["intensity"], filter=True,
+                     filter_type=filter_type, filter_params=filter_defaults(filter_type))
+        document = build_inline_configuration_document(state)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            pipeline = pictologics.RadiomicsPipeline.from_dict(
+                document, validate=True, load_standard=False
+            )
+        result = pipeline.run(image, mask, config_names=[INLINE_CONFIG_NAME])[INLINE_CONFIG_NAME]
+        if not np.isfinite(result["mean_intensity_Q4LE"]):
+            raise RuntimeError(f"The in-app {filter_type} filter gave no mean intensity")
+
+
 def _check_refinement_values(pipeline, config_name: str) -> None:
-    """Independent numerical oracle for each mask target on the released wheel."""
+    """Independent oracle for both selectors, including asymmetric mask targets."""
     import numpy as np
 
     data = np.arange(512, dtype=np.float64).reshape(8, 8, 8)
@@ -134,15 +171,32 @@ def _check_refinement_values(pipeline, config_name: str) -> None:
     mask_array = np.ones_like(data, dtype=np.uint8)
     image = pictologics.Image(array=data, spacing=(2.0, 3.0, 4.0), origin=(0.0, 0.0, 0.0))
     mask = pictologics.Image(array=mask_array, spacing=image.spacing, origin=image.origin)
-    values = data[(data >= 100) & (data <= 400)]
-    mean, std = values.mean(), values.std(ddof=0)
-    refined = values[(values >= mean - std) & (values <= mean + std)]
-    target = config_name.removeprefix("refinement_")
-    expected_mean = refined.mean() if target in ("both", "intensity") else data.mean()
-    expected_volume = (len(refined) if target in ("both", "morph") else data.size) * 24.0
+    range_target, outlier_target = config_name.removeprefix("refinement_").split("_")
+    expected_masks = {}
+    for target in ("intensity", "morph"):
+        selected = np.ones_like(data, dtype=bool)
+        if range_target in ("both", target):
+            selected &= (data >= 100) & (data <= 400)
+        if outlier_target in ("both", target):
+            values = data[selected]
+            mean, std = values.mean(), values.std(ddof=0)
+            selected &= (data >= mean - std) & (data <= mean + std)
+        expected_masks[target] = selected
+    values = data[expected_masks["intensity"]]
+    expected = {
+        "mean_intensity_Q4LE": values.mean(),
+        # A symmetric distribution keeps its mean after filtering. These checks
+        # also fail if the outlier step is missing from an intensity-only run.
+        "intensity_variance_ECT3": values.var(ddof=0),
+        "minimum_intensity_1GSF": values.min(),
+        "maximum_intensity_84IY": values.max(),
+        "volume_voxel_counting_YEKZ": expected_masks["morph"].sum() * 24.0,
+    }
     results = pipeline.run(image, mask, config_names=[config_name])[config_name]
-    np.testing.assert_allclose(results["mean_intensity_Q4LE"], expected_mean, rtol=1e-10)
-    np.testing.assert_allclose(results["volume_voxel_counting_YEKZ"], expected_volume, rtol=1e-10)
+    for feature, value in expected.items():
+        np.testing.assert_allclose(
+            results[feature], value, rtol=1e-10, err_msg=f"{config_name}: {feature}"
+        )
     np.testing.assert_array_equal(data, original)
     np.testing.assert_array_equal(mask_array, np.ones_like(mask_array))
 
@@ -192,6 +246,7 @@ def main() -> int:
 
     _check_mirrored_step_parameters()
     _check_inline_builder_round_trip()
+    _check_builder_filters()
 
     print(
         f"Pictologics {installed} wrapper API check passed "

@@ -16,6 +16,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "PictologicsSlicer"))
 
+from PictologicsLib import results  # noqa: E402
 from PictologicsLib.dependencies import (  # noqa: E402
     check_dependency_constraints,
     parse_pictologics_requirement,
@@ -245,11 +246,14 @@ class CrossProcessContractTests(unittest.TestCase):
                 provenance_path=root / "provenance.json",
                 extension_version="0.1.0",
                 pictologics_requirement="pictologics==0.5.0",
+                result_columns=[("reader", "R1"), ("center", "A")],
             )
 
             normalized = worker.validate_manifest(manifest, base_dir=root)
 
         self.assertEqual(normalized.to_dict(), manifest)
+        # Both sides must accept the same extra column names.
+        self.assertEqual(worker._EXTRA_COLUMN_NAME.pattern, results._EXTRA_COLUMN_NAME.pattern)
 
     def test_gui_reads_the_worker_configuration_check(self) -> None:
         worker = load_worker_module()

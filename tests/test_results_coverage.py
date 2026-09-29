@@ -104,9 +104,11 @@ class NormaliseResultRowTests(unittest.TestCase):
         with self.assertRaisesRegex(ResultPayloadError, "missing required columns"):
             normalise_result_row(row)
 
-    def test_unknown_columns_are_rejected(self) -> None:
-        with self.assertRaisesRegex(ResultPayloadError, "unknown columns"):
-            normalise_result_row(result_row(surprise="x"))
+    def test_extra_columns_must_have_a_good_name_and_text(self) -> None:
+        self.assertEqual(normalise_result_row(result_row(reader="R1"))["reader"], "R1")
+        for bad in ({"two__parts": "x"}, {"_start": "x"}, {"a" * 65: "x"}, {"reader": 1}):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ResultPayloadError, "column|string"):
+                normalise_result_row(result_row(**bad))
 
     def test_non_string_non_value_field_is_rejected(self) -> None:
         with self.assertRaisesRegex(ResultPayloadError, r"subject_id must be a string"):
@@ -357,6 +359,29 @@ class FsyncParentDirTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.object(results.os, "fsync", side_effect=OSError("boom")):
                 results._fsync_parent_dir(Path(directory, "file.txt"))
+
+
+class ExtraColumnExportTests(unittest.TestCase):
+    def test_extra_columns_follow_the_fixed_columns(self) -> None:
+        rows = [
+            result_row(config="std_a", pictologics_feature_name="std_a__mean", reader="R1", center="A"),
+            result_row(config="std_b", pictologics_feature_name="std_b__glcm", reader="R1", center="A"),
+            result_row(run_id="run-002", pictologics_feature_name="std_a__mean", reader="R2"),
+        ]
+        self.assertEqual(results.extra_columns(rows), ["reader", "center"])
+        self.assertTrue(results.is_result_table_columns([*LONG_RESULT_COLUMNS, "reader", "center"]))
+        self.assertFalse(results.is_result_table_columns([*LONG_RESULT_COLUMNS, "a__b"]))
+        self.assertFalse(results.is_result_table_columns([*LONG_RESULT_COLUMNS, "reader", "reader"]))
+        self.assertFalse(results.is_result_table_columns(LONG_RESULT_COLUMNS[1:]))
+        wide = rows_to_wide(rows)
+        self.assertEqual(list(wide[0])[len(results.WIDE_ID_COLUMNS):], ["reader", "center", "std_a__mean", "std_b__glcm"])
+        self.assertEqual((wide[1]["reader"], wide[1]["center"]), ("R2", ""))
+        with tempfile.TemporaryDirectory() as directory:
+            for layout, fixed in ((False, LONG_RESULT_COLUMNS), (True, results.WIDE_ID_COLUMNS)):
+                destination = export_rows_csv(rows, Path(directory, "table.csv"), wide=layout)
+                with destination.open("r", encoding="utf-8", newline="") as stream:
+                    header = next(csv.reader(stream))
+                self.assertEqual(header[: len(fixed) + 2], [*fixed, "reader", "center"])
 
 
 class ExportCsvTests(unittest.TestCase):

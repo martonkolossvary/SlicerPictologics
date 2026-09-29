@@ -50,7 +50,7 @@ MANIFEST_REQUIRED_KEYS = frozenset(
         "metadata",
     }
 )
-MANIFEST_OPTIONAL_KEYS = frozenset({"subject_metadata"})
+MANIFEST_OPTIONAL_KEYS = frozenset({"subject_metadata", "result_columns"})
 MANIFEST_KEYS = MANIFEST_REQUIRED_KEYS | MANIFEST_OPTIONAL_KEYS
 
 IMAGE_KEYS = frozenset({"path", "name"})
@@ -60,7 +60,8 @@ CONFIGURATION_DOCUMENT_REQUIRED_KEYS = frozenset(
     {"standard_configurations", "custom_configuration_path", "warmup"}
 )
 CONFIGURATION_DOCUMENT_KEYS = CONFIGURATION_DOCUMENT_REQUIRED_KEYS | {
-    "custom_configuration_sha256"
+    "custom_configuration_sha256",
+    "crop_to_roi",
 }
 OUTPUT_REQUIRED_KEYS = frozenset({"results_path"})
 OUTPUT_KEYS = OUTPUT_REQUIRED_KEYS | {"provenance_path"}
@@ -92,6 +93,8 @@ LONG_ROW_COLUMNS = (
     "extension_version",
 )
 
+# Must equal the rule of PictologicsLib.results.is_extra_column_name.
+_EXTRA_COLUMN_NAME = re.compile(r"[A-Za-z](?:_?[A-Za-z0-9])*")
 _NIFTI_SUFFIXES = (".nii", ".nii.gz")
 _CONFIG_SUFFIXES = (".json", ".yaml", ".yml")
 _SITE_PACKAGE_PARTS = frozenset({"site-packages", "dist-packages"})
@@ -190,6 +193,8 @@ class JobManifest:
     pictologics_requirement: str
     metadata: dict[str, Any]
     subject_metadata: dict[str, Any] | None = None
+    result_columns: tuple[tuple[str, str], ...] | None = None
+    crop_to_roi: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -212,6 +217,8 @@ class JobManifest:
             result["output"]["provenance_path"] = str(self.provenance_path)
         if self.subject_metadata is not None:
             result["subject_metadata"] = copy.deepcopy(self.subject_metadata)
+        if self.result_columns is not None:
+            result["result_columns"] = [list(pair) for pair in self.result_columns]
         return result
 
 
@@ -580,6 +587,11 @@ def validate_manifest(
         raise ManifestValidationError(
             "'configuration_document.warmup' must be a boolean"
         )
+    crop_to_roi = configuration_document.get("crop_to_roi", False)
+    if type(crop_to_roi) is not bool:
+        raise ManifestValidationError(
+            "'configuration_document.crop_to_roi' must be a boolean"
+        )
 
     output = data["output"]
     if not isinstance(output, dict):
@@ -656,6 +668,10 @@ def validate_manifest(
             data["subject_metadata"], "subject_metadata"
         )
 
+    result_columns: tuple[tuple[str, str], ...] | None = None
+    if "result_columns" in data:
+        result_columns = _validate_result_columns(data["result_columns"])
+
     return JobManifest(
         schema_version=schema_version,
         run_id=run_id,
@@ -677,7 +693,31 @@ def validate_manifest(
         pictologics_requirement=pictologics_requirement,
         metadata=metadata,
         subject_metadata=subject_metadata,
+        result_columns=result_columns,
+        crop_to_roi=crop_to_roi,
     )
+
+
+def _validate_result_columns(value: Any) -> tuple[tuple[str, str], ...]:
+    """Return the ordered [name, text] pairs that the worker adds to every row."""
+
+    pairs = value if isinstance(value, list) else [None]
+    columns = tuple(
+        (pair[0], pair[1])
+        for pair in pairs
+        if isinstance(pair, list)
+        and len(pair) == 2
+        and isinstance(pair[0], str)
+        and isinstance(pair[1], str)
+        and len(pair[0]) <= 64
+        and pair[0] not in LONG_ROW_COLUMNS
+        and _EXTRA_COLUMN_NAME.fullmatch(pair[0])
+    )
+    if len(columns) != len(pairs) or len({name for name, _ in columns}) != len(columns):
+        raise ManifestValidationError(
+            "'result_columns' must be [name, text] pairs with unique extra column names"
+        )
+    return columns
 
 
 def load_manifest(path: str | Path) -> JobManifest:
@@ -1040,6 +1080,175 @@ def check_configuration_file(pictologics: Any, path: Path) -> dict[str, Any]:
     return {"valid": True, "configurations": names, "document": document}
 
 
+# The local-intensity (peak) features use a 1 cm3 sphere around each ROI voxel.
+_LOCAL_INTENSITY_RADIUS_MM = 6.2035
+
+
+def _wavelet_taps(name: Any) -> int | None:
+    match = re.fullmatch(r"(haar)|(?:db|sym)(\d+)|coif(\d+)", str(name))
+    if match is None:
+        return None
+    if match.group(1):
+        return 2
+    return 2 * int(match.group(2)) if match.group(2) else 6 * int(match.group(3))
+
+
+def crop_margin_mm(
+    configuration_document: Mapping[str, Any], spacing: Sequence[float]
+) -> float | None:
+    """Return the margin around a ROI that every selected configuration needs.
+
+    The margin holds the voxels that interpolation, filters, and the local-intensity
+    features read outside the ROI. Return None when a configuration needs the whole
+    image. Sentinel detection (``auto``), FFT filters, periodic boundaries, and
+    cubic interpolation's spline prefilter cannot use a finite local margin.
+    Only a leading resample is supported by the crop grid-alignment calculation.
+    """
+
+    configs = configuration_document.get("configs")
+    margin = 0.0
+    for config in configs.values() if isinstance(configs, Mapping) else ():
+        if config.get("source_mode") == "auto":
+            return None
+        step_spacing = max(spacing)
+        needed = 0.0
+        for index, step in enumerate(config.get("steps", [])):
+            name, params = step.get("step"), step.get("params") or {}
+            if name == "resample":
+                if index != 0 or params.get("interpolation", "linear") not in ("linear", "nearest"):
+                    return None
+                needed += 2 * max(spacing)
+                step_spacing = max(params["new_spacing"])
+            elif name == "filter":
+                if params.get("boundary") == "periodic" or "spacing_mm" in params:
+                    # Wrapped image edges and an explicit filter spacing do not
+                    # share this crop planner's local physical-coordinate model.
+                    return None
+                kind = params.get("type")
+                if kind == "mean":
+                    radius_mm = (int(params.get("support", 15)) // 2) * step_spacing
+                elif kind == "log":
+                    radius_mm = float(params.get("truncate", 4.0)) * float(params["sigma_mm"])
+                elif kind == "gabor":
+                    radius_mm = 6.0 * float(params["sigma_mm"])
+                elif kind == "laws":
+                    codes = re.findall(r"[LESWR](\d)", str(params.get("kernel", "L5E5E5")))
+                    energy = int(params.get("energy_distance", 7)) if params.get("compute_energy") else 0
+                    radius_mm = (max(int(code) // 2 for code in codes) + energy) * step_spacing
+                elif kind == "wavelet" and _wavelet_taps(params.get("wavelet", "db2")):
+                    taps = _wavelet_taps(params.get("wavelet", "db2")) or 0
+                    radius_mm = taps * 2 ** int(params.get("level", 1)) * step_spacing
+                else:
+                    return None
+                needed += radius_mm + step_spacing
+            elif name == "extract_features" and (
+                "local_intensity" in params.get("families", [])
+                or params.get("include_local_intensity")
+            ):
+                needed += _LOCAL_INTENSITY_RADIUS_MM + step_spacing
+        margin = max(margin, needed)
+    return margin
+
+
+def resample_targets(configuration_document: Mapping[str, Any]) -> list[tuple[float, ...]]:
+    """Return the new spacing of every resample step of the selected configurations."""
+
+    configs = configuration_document.get("configs")
+    return [
+        tuple(float(value) for value in step["params"]["new_spacing"])
+        for config in (configs.values() if isinstance(configs, Mapping) else ())
+        for step in config.get("steps", [])
+        if step.get("step") == "resample"
+    ]
+
+
+def _grid_error(start: int, stop: int, full: int, old: float, new: float) -> float:
+    """Distance, in new voxels, of a crop's resampling grid from the whole-axis grid.
+
+    Pictologics centers the new grid on the image, with ceil(size * old / new) points.
+    """
+
+    scale = old / new
+    offset = (start + (stop - start - 1) / 2 - (full - 1) / 2) * scale + (
+        math.ceil(round(full * scale, 9)) - math.ceil(round((stop - start) * scale, 9))
+    ) / 2
+    return abs(offset - round(offset))
+
+
+def aligned_range(
+    lower: int, upper: int, full: int, old: float, targets: Sequence[float]
+) -> tuple[int, int]:
+    """Grow [lower, upper) until its resampling grid lies on the whole-axis grid.
+
+    Even a very small grid shift can move a voxel into another intensity bin, so the
+    grids must agree to rounding precision. Even a centered crop can have a
+    half-voxel shift when the resampled sizes have different parity. Use the whole
+    axis when no aligned range adds at most 256 voxels in total to this axis.
+    """
+
+    for extra in range(257):
+        for below in range(extra + 1):
+            start, stop = lower - below, upper + extra - below
+            if 0 <= start and stop <= full and all(
+                _grid_error(start, stop, full, old, new) < 1e-9 for new in targets
+            ):
+                return start, stop
+    return 0, full
+
+
+def crop_to_region(
+    pictologics: Any,
+    image: Any,
+    mask: Any,
+    margin_mm: float,
+    targets: Sequence[Sequence[float]] = (),
+) -> tuple[Any, Any, list[list[int]] | None]:
+    """Crop the image and mask to the ROI box plus *margin_mm* on each side.
+
+    Along each axis, the box grows until its resampling grid for every spacing in
+    *targets* lies on the grid of the whole image, so that the values do not change.
+    Return the images unchanged, and no box, when the box covers the whole image.
+    """
+
+    import numpy as np
+
+    indices = np.nonzero(mask.array)
+    if indices[0].size == 0:
+        return image, mask, None
+    shape = np.asarray(image.array.shape)
+    spacing = np.asarray(image.spacing, dtype=float)
+    pad = np.ceil(margin_mm / spacing).astype(int)
+    lower = np.maximum(np.min(indices, axis=1) - pad, 0)
+    upper = np.minimum(np.max(indices, axis=1) + pad + 1, shape)
+    for axis in range(3):
+        lower[axis], upper[axis] = aligned_range(
+            int(lower[axis]), int(upper[axis]), int(shape[axis]), float(spacing[axis]),
+            sorted({float(target[axis]) for target in targets}),
+        )
+    if np.array_equal(lower, np.zeros(3)) and np.array_equal(upper, shape):
+        return image, mask, None
+    box = tuple(slice(int(start), int(stop)) for start, stop in zip(lower, upper, strict=True))
+    direction = image.direction if image.direction is not None else np.eye(3)
+    origin = tuple(
+        float(value)
+        for value in np.asarray(image.origin)
+        + np.asarray(direction, dtype=float).reshape(3, 3) @ (lower * spacing)
+    )
+
+    def cropped(source: Any) -> Any:
+        source_mask = getattr(source, "source_mask", None)
+        return pictologics.Image(
+            array=source.array[box].copy(),
+            spacing=source.spacing,
+            origin=origin,
+            direction=source.direction,
+            modality=source.modality,
+            source_mask=None if source_mask is None else source_mask[box].copy(),
+        )
+
+    return cropped(image), cropped(mask), [lower.tolist(), upper.tolist()]
+
+
 class ProgressReporter:
     """Emit Slicer Execution Model progress at ROI boundaries."""
 
@@ -1250,6 +1459,7 @@ def build_long_rows(
     for row in rows:
         if tuple(row) != LONG_ROW_COLUMNS:
             raise AssertionError("internal long-row column order drift")
+        row.update(manifest.result_columns or ())
     return rows
 
 
@@ -1275,6 +1485,11 @@ def execute_job(
         ) from exc
 
     pictologics_version = str(getattr(pictologics, "__version__", "unknown"))
+    crop_margin = (
+        crop_margin_mm(bundle.configuration_document, image.spacing)
+        if manifest.crop_to_roi
+        else None
+    )
     rows: list[dict[str, Any]] = []
     processing_logs: list[dict[str, Any]] = []
     roi_errors: list[dict[str, str]] = []
@@ -1283,14 +1498,21 @@ def execute_job(
     for index, roi in enumerate(manifest.rois):
         reporter.roi_started(index, total, roi)
         bundle.pipeline.clear_log()
+        crop_box = None
         try:
             mask = (
                 None
                 if roi.mask_path is None
                 else pictologics.load_image(str(roi.mask_path), reference_image=image)
             )
+            roi_image = image
+            if crop_margin is not None and mask is not None:
+                roi_image, mask, crop_box = crop_to_region(
+                    pictologics, image, mask, crop_margin,
+                    resample_targets(bundle.configuration_document),
+                )
             raw_results = bundle.pipeline.run(
-                image,
+                roi_image,
                 mask,
                 subject_id=manifest.subject_id,
                 config_names=list(bundle.selected_configurations),
@@ -1350,6 +1572,7 @@ def execute_job(
                 "roi_name": roi.roi_name,
                 "mask_path": str(roi.mask_path) if roi.mask_path is not None else None,
                 "metadata": copy.deepcopy(roi.metadata),
+                "crop_box": crop_box,
                 "entries": log_entries,
             }
         )
@@ -1376,6 +1599,7 @@ def execute_job(
             "dependency_path": str(Path(dependency_path).resolve(strict=False)),
             "numba_cache_path": str(manifest.numba_cache_path),
             "configuration_sha256": manifest.configuration_sha256,
+            "crop_margin_mm": crop_margin,
             "effective_configuration": bundle.configuration_document,
             "feature_catalog": list(bundle.catalog_records),
             "processing_logs": processing_logs,

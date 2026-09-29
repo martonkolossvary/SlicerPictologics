@@ -133,10 +133,10 @@ class ResultValidationTests(unittest.TestCase):
                     "future": True,
                 }
             )
-        with self.assertRaisesRegex(ResultPayloadError, "unknown columns"):
+        with self.assertRaisesRegex(ResultPayloadError, "invalid column name"):
             build_result_payload(
                 run_id="run-001",
-                rows=[result_row(future="value")],
+                rows=[result_row(**{"future__value": "text"})],
             )
 
 

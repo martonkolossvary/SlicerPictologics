@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -55,6 +56,104 @@ ROI_REFINEMENT_DEFAULTS: dict[str, Any] = {
     "outlier_sigma": 3.0,
     "outlier_apply_to": "both",
 }
+
+
+# IBSI 2 image filters that the in-app builder offers, with the parameters it shows:
+# (name, kind, default, range or choices). The defaults follow the IBSI 2 reference
+# settings. The FFT-based Riesz filters need a configuration file.
+_POOLING: tuple[str, ...] = ("max", "average", "min")
+FILTER_PARAMETERS: dict[str, tuple[tuple[str, str, Any, Any], ...]] = {
+    "mean": (("support", "int", 5, (1, 99)),),
+    "log": (
+        ("sigma_mm", "float", 1.5, (0.01, 100.0)),
+        ("truncate", "float", 4.0, (0.5, 20.0)),
+    ),
+    "laws": (
+        ("kernel", "laws_kernel", "L5E5E5", None),
+        ("rotation_invariant", "bool", True, None),
+        ("pooling", "choice", "max", _POOLING),
+        ("compute_energy", "bool", True, None),
+        ("energy_distance", "int", 7, (1, 50)),
+    ),
+    "gabor": (
+        ("sigma_mm", "float", 5.0, (0.01, 100.0)),
+        ("lambda_mm", "float", 2.0, (0.01, 100.0)),
+        ("gamma", "float", 1.5, (0.01, 10.0)),
+        ("theta", "float", 0.0, (-6.2832, 6.2832)),
+        ("rotation_invariant", "bool", True, None),
+        ("delta_theta", "float", 0.3927, (0.01, 3.1416)),
+        ("pooling", "choice", "average", _POOLING),
+        ("average_over_planes", "bool", True, None),
+    ),
+    "wavelet": (
+        ("wavelet", "choice", "db3", ("haar", "db2", "db3", "db4", "sym2", "sym3", "coif1", "coif2")),
+        ("level", "int", 1, (1, 4)),
+        ("decomposition", "decomposition", "LLH", None),
+        ("rotation_invariant", "bool", True, None),
+        ("pooling", "choice", "average", _POOLING),
+    ),
+    "simoncelli": (("level", "int", 1, (1, 4)),),
+}
+# "default" leaves the boundary to Pictologics: mirror for the spatial filters, periodic
+# for the Simoncelli wavelet.
+FILTER_BOUNDARIES: tuple[str, ...] = ("default", "mirror", "nearest", "zero", "periodic")
+_LAWS_KERNEL = re.compile(r"(?:L3|E3|S3|L5|E5|S5|W5|R5){3}")
+_DECOMPOSITION = re.compile(r"[LH]{3}")
+
+
+def filter_defaults(filter_type: str) -> dict[str, Any]:
+    """Return the default parameters that the builder shows for *filter_type*."""
+
+    return {name: default for name, _, default, _ in FILTER_PARAMETERS[filter_type]}
+
+
+FILTER_DEFAULTS: dict[str, Any] = {
+    "filter": False,
+    "filter_type": "log",
+    "filter_boundary": "default",
+    "filter_params": filter_defaults("log"),
+}
+
+
+def filter_step(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate filter settings, even when disabled, and return their pipeline step."""
+
+    filter_type = state.get("filter_type")
+    if not isinstance(filter_type, str) or filter_type not in FILTER_PARAMETERS:
+        raise ValueError(f"Unknown image filter: {filter_type}")
+    boundary = state.get("filter_boundary", "default")
+    if boundary not in FILTER_BOUNDARIES:
+        raise ValueError(f"Unknown filter boundary: {boundary}")
+    values = state.get("filter_params")
+    names = [name for name, _, _, _ in FILTER_PARAMETERS[filter_type]]
+    if not isinstance(values, Mapping) or set(values) != set(names):
+        raise ValueError(f"The {filter_type} filter needs these parameters: {', '.join(names)}.")
+    params: dict[str, Any] = {"type": filter_type}
+    for name, kind, _, limits in FILTER_PARAMETERS[filter_type]:
+        value = values[name]
+        label = f"Filter {name.replace('_', ' ')}"
+        if kind == "bool":
+            if type(value) is not bool:
+                raise ValueError(f"{label} must be on or off.")
+        elif kind in ("int", "float"):
+            number = finite_number(value, label)
+            if kind == "int" and not number.is_integer():
+                raise ValueError(f"{label} must be a whole number.")
+            if not limits[0] <= number <= limits[1]:
+                raise ValueError(f"{label} must be from {limits[0]} to {limits[1]}.")
+            value = int(number) if kind == "int" else number
+        elif kind == "choice":
+            if value not in limits:
+                raise ValueError(f"{label} must be one of: {', '.join(limits)}.")
+        else:
+            pattern = _LAWS_KERNEL if kind == "laws_kernel" else _DECOMPOSITION
+            if not isinstance(value, str) or pattern.fullmatch(value) is None:
+                example = "L5E5E5" if kind == "laws_kernel" else "LLH"
+                raise ValueError(f"{label} must look like {example}.")
+        params[name] = value
+    if boundary != "default":
+        params["boundary"] = boundary
+    return {"step": "filter", "params": params}
 
 
 def finite_number(value: Any, label: str) -> float:
@@ -141,6 +240,8 @@ def default_inline_state() -> dict[str, Any]:
         "source_mode": "full_image",
         "sentinel_value": None,
         **ROI_REFINEMENT_DEFAULTS,
+        **FILTER_DEFAULTS,
+        "filter_params": filter_defaults("log"),
     }
 
 
@@ -203,6 +304,10 @@ def build_inline_configuration_document(state: Mapping[str, Any]) -> dict[str, A
         if target not in MASK_TARGETS:
             raise ValueError("Unknown outlier-filter mask target.")
         steps.append({"step": "filter_outliers", "params": {"sigma": sigma, "apply_to": target}})
+
+    # IBSI 2: filter after resampling and mask refinement, and before discretisation.
+    if state.get("filter", False):
+        steps.append(filter_step(state))
 
     needs_discretisation = bool(DISCRETISATION_REQUIRED_FAMILIES.intersection(families))
     if state.get("discretise", False):

@@ -133,6 +133,54 @@ the worker, result validation, and the atomic table commit. Rows and a provenanc
 record go after the rows that are in the given table. The README shows a loop over
 case folders; an opt-in in-Slicer test runs two cases into one table.
 
+## Extra result columns
+
+The GUI gives the worker the reader, the scanner details, and the user's columns as
+the manifest key `result_columns`: a list of `[name, text]` pairs, because the
+manifest file sorts object keys. The worker adds them, in that order, to every row
+after the fixed columns. A name has letters, digits, and single underscores, so
+eigenradiomics never reads it as a `config__feature_key` feature. Tables accept new
+extra columns on append; older rows get empty text. The scanner details come from
+`slicer.dicomDatabase` (when the volume has `DICOM.instanceUIDs` and the database is
+open) or from a dcm2niix JSON file next to a NIfTI image.
+
+## Image filters in the builder
+
+`FILTER_PARAMETERS` in `inline_config.py` lists the filters and parameters that the
+builder shows, with the IBSI 2 reference settings as defaults. The release gate
+builds one configuration for each filter, loads it with warnings as errors, and runs
+it on the released package.
+
+## Crop around each region
+
+With `configuration_document.crop_to_roi`, the worker crops the image and the mask to
+the ROI box plus a margin before it calls `RadiomicsPipeline.run()`. The margin is
+the largest need of all selected configurations: interpolation support, the filter
+support, and the 1 cm³ sphere of the local-intensity features. The worker does not
+crop for the *auto* voxel-validity mode, FFT-based filters, periodic filter
+boundaries, cubic interpolation (whose spline prefilter is nonlocal), explicit
+filter-spacing overrides, or non-leading/repeated resampling. These either use the
+whole image or fall outside the supported crop model. Memory warnings conservatively
+use the full-volume estimate; batch confirmation covers only cases no larger than
+the previously accepted estimate. Pictologics 0.5.1 centers the resampling grid on the image that it gets,
+so a plain crop moves the grid: in a test, texture values then changed by up to 20%.
+The worker therefore grows the box along each axis until the grid error, in new
+voxels, is below 1e-9 for every resample spacing (`aligned_range`). It searches
+expansions adding at most 256 voxels in total per axis, then uses the whole axis
+as the fallback. Centering a smaller box alone does not guarantee alignment. The provenance
+keeps each box. A package option that resamples a window of the whole-scan grid
+would allow tight boxes on every axis.
+
+## Batch runs in the window
+
+**Run batch…** loads one case folder at a time, sets the input selectors and the
+subject ID, and calls the normal asynchronous run. When the worker stops, the GUI
+removes the case nodes and starts the next case. Errors of a case are kept and shown
+once at the end; **Cancel** stops the batch after the current case.
+Afterwards the previous input nodes, checked segments, subject ID, and append setting
+are restored, unless the original scene has been closed. A blank/unreadable study
+folder is rejected before any case is loaded.
+
 ## Load a development checkout
 
 Python-only Slicer modules do not require a local Slicer build for source development.

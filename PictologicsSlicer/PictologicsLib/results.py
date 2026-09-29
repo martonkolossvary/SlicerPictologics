@@ -7,6 +7,7 @@ import json
 import math
 import numbers
 import os
+import re
 import tempfile
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
@@ -63,8 +64,45 @@ WIDE_ID_COLUMNS: Final[tuple[str, ...]] = (
 )
 
 
+# Extra columns follow the fixed columns: the reader, the scanner details, and the
+# user's own columns. Each holds one text value for a run. A name has letters, digits,
+# and single underscores, because eigenradiomics reads a name with "__" as a feature.
+_EXTRA_COLUMN_NAME: Final = re.compile(r"[A-Za-z](?:_?[A-Za-z0-9])*")
+
+
 class ResultPayloadError(ValueError):
     """Raised when CLI result data violates the interchange contract."""
+
+
+def is_extra_column_name(name: object) -> bool:
+    """Return whether *name* can be the name of an extra results column."""
+
+    return (
+        isinstance(name, str)
+        and len(name) <= 64
+        and name not in LONG_RESULT_COLUMNS
+        and _EXTRA_COLUMN_NAME.fullmatch(name) is not None
+    )
+
+
+def is_result_table_columns(names: Sequence[str]) -> bool:
+    """Return whether table column *names* are the fixed columns, then extra columns."""
+
+    fixed = len(LONG_RESULT_COLUMNS)
+    return (
+        tuple(names[:fixed]) == LONG_RESULT_COLUMNS
+        and all(is_extra_column_name(name) for name in names[fixed:])
+        and len(set(names)) == len(names)
+    )
+
+
+def extra_columns(rows: Iterable[Mapping[str, object]]) -> list[str]:
+    """Return the extra column names of long *rows*, in first-seen order."""
+
+    names: dict[str, None] = {}
+    for row in rows:
+        names.update((column, None) for column in row if column not in LONG_RESULT_COLUMNS)
+    return list(names)
 
 
 def _normalise_value(value: object, field: str) -> int | float | None:
@@ -98,11 +136,12 @@ def normalise_result_row(
         raise ResultPayloadError(
             f"{location} is missing required columns: {', '.join(missing)}"
         )
-    unknown = sorted(set(row) - set(LONG_RESULT_COLUMNS), key=str)
-    if unknown:
-        raise ResultPayloadError(
-            f"{location} has unknown columns: {', '.join(str(item) for item in unknown)}"
-        )
+    extras = [column for column in row if column not in LONG_RESULT_COLUMNS]
+    for column in extras:
+        if not is_extra_column_name(column):
+            raise ResultPayloadError(f"{location} has an invalid column name: {column!r}")
+        if not isinstance(row[column], str):
+            raise ResultPayloadError(f"{location}.{column} must be a string")
 
     normalised: dict[str, Any] = {}
     for column in LONG_RESULT_COLUMNS:
@@ -136,6 +175,7 @@ def normalise_result_row(
         raise ResultPayloadError(
             f"{location}.run_id does not match payload run_id {expected_run_id!r}"
         )
+    normalised.update((column, row[column]) for column in extras)
     return normalised
 
 
@@ -254,6 +294,7 @@ def rows_to_wide(rows: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:
 
     long_rows = validate_result_rows(rows)
     identity_columns = tuple(column for column in WIDE_ID_COLUMNS if column != "status")
+    extras = extra_columns(long_rows)
     grouped: OrderedDict[tuple[str, ...], dict[str, Any]] = OrderedDict()
     statuses: dict[tuple[str, ...], list[str]] = {}
 
@@ -261,6 +302,7 @@ def rows_to_wide(rows: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:
         key = tuple(str(row[column]) for column in identity_columns)
         if key not in grouped:
             grouped[key] = {column: row[column] for column in identity_columns}
+            grouped[key].update((column, row.get(column, "")) for column in extras)
             statuses[key] = []
         if row["status"] not in statuses[key]:
             statuses[key].append(row["status"])
@@ -280,10 +322,11 @@ def rows_to_wide(rows: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:
             ordered[column] = (
                 ";".join(statuses[key]) if column == "status" else row[column]
             )
+        ordered.update((column, row[column]) for column in extras)
         ordered.update(
             (column, value)
             for column, value in row.items()
-            if column not in identity_columns
+            if column not in identity_columns and column not in extras
         )
         result.append(ordered)
     return result
@@ -356,19 +399,21 @@ def export_rows_csv(
 ) -> Path:
     """Atomically export validated rows as UTF-8 CSV."""
 
-    exported_rows = rows_to_wide(rows) if wide else validate_result_rows(rows)
+    long_rows = validate_result_rows(rows)
+    extras = extra_columns(long_rows)
+    exported_rows = rows_to_wide(long_rows) if wide else long_rows
     if wide:
         feature_columns = sorted(
             {
                 column
                 for row in exported_rows
                 for column in row
-                if column not in WIDE_ID_COLUMNS
+                if column not in WIDE_ID_COLUMNS and column not in extras
             }
         )
-        columns: Sequence[str] = (*WIDE_ID_COLUMNS, *feature_columns)
+        columns: Sequence[str] = (*WIDE_ID_COLUMNS, *extras, *feature_columns)
     else:
-        columns = LONG_RESULT_COLUMNS
+        columns = (*LONG_RESULT_COLUMNS, *extras)
 
     destination = Path(path).expanduser().resolve(strict=False)
     stream, temporary = _atomic_text_path(destination)

@@ -30,6 +30,7 @@ from PictologicsLib.inline_config import (
     ROI_REFINEMENT_DEFAULTS,
     build_inline_configuration_document,
     default_inline_state,
+    filter_defaults,
     preset_configuration_document,
 )
 from PictologicsLib.memory import BYTES_PER_VOXEL, largest_voxel_count
@@ -37,6 +38,7 @@ from PictologicsLib.profiles import build_profile
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     RESULT_PAYLOAD_SCHEMA_VERSION,
+    WIDE_ID_COLUMNS,
     load_result_payload,
     validate_result_payload,
 )
@@ -127,6 +129,13 @@ def _remove_scene_nodes_not_in(baseline_ids: set[str]) -> None:
             and node.GetScene() == slicer.mrmlScene
         ):
             slicer.mrmlScene.RemoveNode(node)
+
+
+def _qt_with(**replacements: Any) -> SimpleNamespace:
+    """Return the qt module with some dialog classes replaced, for dialog tests."""
+
+    names = {name: getattr(qt, name) for name in dir(qt) if not name.startswith("__")}
+    return SimpleNamespace(**{**names, **replacements})
 
 
 def _pictologics_modules_in_main_process() -> set[str]:
@@ -613,8 +622,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         original_ids = widget._selectedSegmentIDs()
         destination = self.temporary_directory / "saved.pictologics-profile.json"
         chosen = {"file": destination, "name": "Test profile"}
-        dialog_qt = SimpleNamespace(
-            Qt=qt.Qt, QLineEdit=qt.QLineEdit, QListWidgetItem=qt.QListWidgetItem,
+        dialog_qt = _qt_with(
             QInputDialog=SimpleNamespace(getText=lambda *args: chosen["name"]),
             QFileDialog=SimpleNamespace(getSaveFileName=lambda *args: str(chosen["file"]),
                                         getOpenFileName=lambda *args: str(chosen["file"])),
@@ -651,6 +659,17 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             widget.ui.loadProfileButton.click()
             self.assertTrue(errors.called)
             self.assertEqual(widget._inlineStateFromGUI(), original_state)
+            # Disabled filter settings also have to be representable without
+            # partially applying a profile or silently rounding its parameters.
+            for changes in ({"filter_type": "unknown"},
+                            {"filter_params": {"sigma_mm": 1.23456, "truncate": 4.0}}):
+                errors.reset_mock()
+                document["inline_state"] = {**original_state, **changes}
+                chosen["file"].write_text(json.dumps(document), encoding="utf-8")
+                widget.ui.loadProfileButton.click()
+                self.assertTrue(errors.called)
+                self.assertEqual(widget._inlineStateFromGUI(), original_state)
+                self.assertEqual(widget._storedInlineState(), original_state)
             # Extension normalization must not bypass overwrite confirmation.
             normalized = self.temporary_directory / "normalized.pictologics-profile.json"
             normalized.write_text("keep original", encoding="utf-8")
@@ -751,6 +770,217 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         exported = self.logic.exportTable(moved, self.temporary_directory / "features.csv", wide=True)
         self.assertEqual([path.name for path in exported],
                          ["features.csv", "features.provenance.json", "features_catalog.csv"])
+
+    def test_reader_extra_and_scanner_columns(self) -> None:
+        volume = self.fixture.volume_node
+        self.assertEqual(self.logic.scannerDetails(volume), {})
+        image = self.temporary_directory / "image.nii.gz"
+        self.assertTrue(slicer.util.saveNode(volume, str(image)))
+        (self.temporary_directory / "image.json").write_text(
+            json.dumps({"Modality": "CT", "Manufacturer": "SIEMENS", "KVP": 120}), encoding="utf-8")
+        loaded = slicer.util.loadVolume(str(image))
+        details = self.logic.scannerDetails(loaded)
+        self.assertEqual((details["modality"], details["manufacturer"], details["kvp"]), ("CT", "SIEMENS", "120"))
+        database = SimpleNamespace(isOpen=True, fileForInstance=lambda uid: "/dicom/1.dcm" if uid == "1.2.3" else "",
+                                   fileValue=lambda path, tag: {"0008,0060": "MR", "0018,0087": "3"}.get(tag, ""))
+        loaded.SetAttribute("DICOM.instanceUIDs", "1.2.3 1.2.4")
+        with patch.object(slicer, "dicomDatabase", database, create=True):
+            details = self.logic.scannerDetails(loaded)
+        self.assertEqual((details["modality"], details["magnetic_field_strength"]), ("MR", "3"))
+        columns = self.logic.resultColumns(loaded, "R1", [("center", "A")])
+        self.assertEqual((columns[0], columns[-1]), (("reader", "R1"), ("center", "A")))
+
+        widget = self._feedback_widget()
+        widget.ui.inputVolumeSelector.setCurrentNode(loaded)
+        self.assertIn("manufacturer: SIEMENS", widget.ui.scannerDetailsLabel.text)
+        widget.ui.readerLineEdit.setText("R2")
+        widget.ui.extraColumnsTextEdit.setPlainText("center = B")
+        self.assertEqual(widget._parameterNode.GetParameter(gui_module.PARAM_READER), "R2")
+        self.assertEqual(widget._parameterNode.GetParameter(gui_module.PARAM_EXTRA_COLUMNS), "center = B")
+        widget.ui.extraColumnsTextEdit.setPlainText("two__parts = x")
+        self.assertIn("cannot be a column name", widget.ui.readinessLabel.text)
+        self.assertFalse(widget.ui.runButton.enabled)
+
+        def payload(run: str, extra: dict[str, str]) -> dict[str, Any]:
+            row = dict.fromkeys(LONG_RESULT_COLUMNS, "")
+            row.update(run_id=run, timestamp="2026-09-26", roi_id="1", config="c", feature_name="f",
+                       feature_key="f_X", pictologics_feature_name="c__f_X", value=1.0, status="ok", **extra)
+            provenance = {"effective_configuration": {"configs": {"c": {"steps": []}}}}
+            return {"schema_version": RESULT_PAYLOAD_SCHEMA_VERSION, "run_id": run, "rows": [row],
+                    "provenance": provenance, "errors": []}
+
+        table = None
+        for run, extra in (("run-a", {}), ("run-b", {"reader": "R1", "center": "A"})):
+            result = payload(run, extra)
+            table = self.logic.commitRows(table, result["rows"], append=True, payload=result,
+                                         manifest={"configuration_sha256": run})
+        rows = self.logic.rowsFromTable(table)
+        self.assertEqual([(row["reader"], row["center"]) for row in rows], [("", ""), ("R1", "A")])
+        exported = self.logic.exportTable(table, self.temporary_directory / "features.csv", wide=True)
+        header = exported[0].read_text(encoding="utf-8").splitlines()[0].split(",")
+        self.assertEqual(header[len(WIDE_ID_COLUMNS):][:3], ["reader", "center", "c__f_X"])
+
+    def _write_batch_study(self) -> Path:
+        study = self.temporary_directory / "study"
+        for name in ("case-b", "case-a"):
+            (study / name).mkdir(parents=True)
+            self.assertTrue(slicer.util.saveNode(self.fixture.volume_node, str(study / name / "image.nii.gz")))
+            self.assertTrue(slicer.util.saveNode(self.fixture.segmentation_node,
+                                                 str(study / name / "segmentation.seg.nrrd")))
+        (study / "empty").mkdir()
+        return study
+
+    def _wait_for_batch_end(self, widget, timeout_seconds: float) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        while widget._batch is not None:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("The batch did not finish.")
+            _pump_slicer_events()
+
+    def test_batch_runs_each_case_folder_and_cleans_up(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.segmentationSelector.setCurrentNode(self.fixture.segmentation_node)
+        original_ids = widget._selectedSegmentIDs()
+        widget.ui.wholeVolumeCheckBox.setChecked(False)
+        widget.ui.subjectIdLineEdit.setText("before")
+        widget.ui.batchFolderLineEdit.setText(str(self._write_batch_study()))
+        scene_before = _scene_node_ids()
+        seen = []
+
+        def fake_run():
+            volume = widget.ui.inputVolumeSelector.currentNode()
+            seen.append((str(widget.ui.subjectIdLineEdit.text), widget._selectedSegmentIDs(),
+                         volume.GetImageData().GetDimensions(), widget.ui.appendResultsCheckBox.checked))
+            widget._batch["completed"] += 1
+
+        with patch.object(widget, "onRun", side_effect=fake_run), patch.object(
+            slicer.util, "confirmOkCancelDisplay", return_value=True
+        ) as confirm, patch.object(slicer.util, "warningDisplay") as warning:
+            widget.onRunBatch()
+            self._wait_for_batch_end(widget, 30)
+        self.assertIn("1 folder(s) are skipped", confirm.call_args.args[0])
+        self.assertEqual([case[0] for case in seen], ["case-a", "case-b"])
+        self.assertEqual({tuple(case[1]) for case in seen}, {(self.fixture.segment_id,)})
+        self.assertEqual({case[2] for case in seen}, {tuple(reversed(ARRAY_SHAPE_KJI))})
+        self.assertTrue(all(case[3] for case in seen))
+        warning.assert_not_called()
+        self.assertEqual(widget.ui.statusLabel.text, "Batch finished: 2 of 2 case(s) added rows.")
+        self.assertEqual(widget.ui.subjectIdLineEdit.text, "before")
+        self.assertFalse(widget.ui.appendResultsCheckBox.checked)
+        self.assertEqual(widget.ui.inputVolumeSelector.currentNode(), self.fixture.volume_node)
+        self.assertEqual(widget.ui.segmentationSelector.currentNode(), self.fixture.segmentation_node)
+        self.assertEqual(widget._selectedSegmentIDs(), original_ids)
+        self.assertEqual(_scene_node_ids() - scene_before, set())
+        self.assertTrue(widget.ui.runBatchButton.enabled)
+        widget.ui.batchFolderLineEdit.setText(str(self.temporary_directory / "missing"))
+        with patch.object(slicer.util, "errorDisplay") as error:
+            widget.onRunBatch()
+        self.assertIn("study folder that exists", error.call_args.args[0])
+        widget.ui.batchFolderLineEdit.setText("")
+        with patch.object(slicer.util, "errorDisplay") as error:
+            widget.onRunBatch()
+        self.assertIn("study folder that exists", error.call_args.args[0])
+        widget.ui.batchFolderLineEdit.setText(str(self.temporary_directory))
+        with patch.object(gui_module, "find_cases", side_effect=PermissionError("denied")), patch.object(
+            slicer.util, "errorDisplay"
+        ) as error:
+            widget.onRunBatch()
+        self.assertIn("Could not read the study folder", error.call_args.args[0])
+
+    def test_memory_warning_allows_crop_fallback_and_rechecks_larger_batch_cases(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.cropCheckBox.setChecked(True)
+        widget.ui.wholeVolumeCheckBox.setChecked(False)
+        widget._batch = {"approvedImageBytes": 0}
+        try:
+            with patch.object(gui_module, "LARGE_IMAGE_BYTES", 1), patch.object(
+                gui_module, "largest_voxel_count", side_effect=[100, 100, 200, 300, 300]
+            ) as estimate, patch.object(slicer.util, "confirmOkCancelDisplay", side_effect=[True, True, False, True]) as confirm:
+                self.assertTrue(widget._confirmLargeRun())
+                self.assertEqual(tuple(estimate.call_args.args[0]),
+                                 self.fixture.volume_node.GetImageData().GetDimensions())
+                self.assertTrue(widget._confirmLargeRun())
+                self.assertEqual(confirm.call_count, 1)
+                self.assertTrue(widget._confirmLargeRun())
+                self.assertEqual(widget._batch["approvedImageBytes"], 200 * BYTES_PER_VOXEL)
+                self.assertFalse(widget._confirmLargeRun())
+                self.assertEqual(widget._batch["approvedImageBytes"], 200 * BYTES_PER_VOXEL)
+                self.assertTrue(widget._confirmLargeRun())
+                self.assertEqual(confirm.call_count, 4)
+                self.assertIn("some configurations or axes require the whole scan", confirm.call_args.args[0])
+        finally:
+            widget._batch = None
+
+    @unittest.skipUnless(
+        os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1",
+        f"Set {RUN_REAL_CLI_TEST_ENV}=1 to run the existing-dependency CLI gate.",
+    )
+    def test_real_batch_adds_every_case_to_one_table(self) -> None:
+        dependency_path, _ = _qualified_dependency_target(self.logic)
+        inspection = inspect_target(dependency_path, self.logic.pictologicsRequirement())
+        widget = self._feedback_widget()
+        widget.ui.wholeVolumeCheckBox.setChecked(False)
+        widget.ui.readerLineEdit.setText("R1")
+        widget.ui.batchFolderLineEdit.setText(str(self._write_batch_study()))
+        with patch.object(widget.logic, "ensureDependencies", return_value=inspection), patch.object(
+            widget.logic, "showTable"
+        ), patch.object(slicer.util, "confirmOkCancelDisplay", return_value=True), patch.object(
+            slicer.util, "warningDisplay"
+        ) as warning:
+            widget.onRunBatch()
+            self._wait_for_batch_end(widget, 2 * CLI_TIMEOUT_SECONDS)
+        warning.assert_not_called()
+        self.assertEqual(widget.ui.statusLabel.text, "Batch finished: 2 of 2 case(s) added rows.")
+        rows = widget.logic.rowsFromTable(widget.ui.outputTableSelector.currentNode())
+        self.assertEqual({row["subject_id"] for row in rows}, {"case-a", "case-b"})
+        self.assertEqual({row["reader"] for row in rows}, {"R1"})
+        self.assertIn("ok", {row["status"] for row in rows})
+
+    def test_crop_switch_reaches_the_manifest(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.cropCheckBox.setChecked(True)
+        self.assertEqual(widget._parameterNode.GetParameter(gui_module.PARAM_CROP), "true")
+        dependency = self.temporary_directory / "dependency"
+        dependency.mkdir()
+        job = self.logic.prepareJob(
+            inputVolumeNode=self.fixture.volume_node, segmentationNode=self.fixture.segmentation_node,
+            selectedSegmentIDs=[self.fixture.segment_id], includeWholeVolume=False,
+            standardConfigurations=["standard_fbn_32"], customConfigurationPath=None, subjectID="",
+            installedVersion="0.5.1", dependencyPath=dependency, cropToRegion=True)
+        self.addCleanup(self.logic.cleanupJob, job)
+        self.assertTrue(job["manifest"]["configuration_document"]["crop_to_roi"])
+
+    @unittest.skipUnless(
+        os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1",
+        f"Set {RUN_REAL_CLI_TEST_ENV}=1 to run the existing-dependency CLI gate.",
+    )
+    def test_real_crop_keeps_the_values_of_a_whole_scan_run(self) -> None:
+        dependency_path, _ = _qualified_dependency_target(self.logic)
+        inspection = inspect_target(dependency_path, self.logic.pictologicsRequirement())
+        rng = np.random.default_rng(7)
+        volume = slicer.util.addVolumeFromArray(rng.normal(100.0, 25.0, (40, 44, 48)).astype(np.float32))
+        volume.SetSpacing(1.0, 1.0, 1.3)
+        grid = np.indices((40, 44, 48)).astype(float)
+        sphere = ((grid[0] - 12) ** 2 + (grid[1] - 30) ** 2 + (grid[2] - 34) ** 2) <= 36
+        labelmap = slicer.util.addVolumeFromArray(sphere.astype(np.uint8), nodeClassName="vtkMRMLLabelMapVolumeNode")
+        labelmap.SetSpacing(1.0, 1.0, 1.3)
+        segmentation = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+        slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(labelmap, segmentation)
+        tables = {}
+        with patch.object(self.logic, "ensureDependencies", return_value=inspection):
+            for crop in (False, True):
+                tables[crop] = self.logic.process(volume, segmentation, cropToRegion=crop)
+        values = {crop: {row["feature_key"]: row["value"] for row in self.logic.rowsFromTable(table)}
+                  for crop, table in tables.items()}
+        provenance = self.logic.provenanceHistory(tables[True])[0]["provenance"]
+        self.assertGreater(provenance["crop_margin_mm"], 0)
+        box = provenance["processing_logs"][0]["crop_box"]
+        self.assertLess(math.prod(stop - start for start, stop in zip(*box, strict=True)), 40 * 44 * 48 / 4)
+        self.assertEqual(values[True].keys(), values[False].keys())
+        for key, whole in values[False].items():
+            with self.subTest(feature=key):
+                cropped = values[True][key]
+                self.assertTrue(cropped is whole or math.isclose(cropped, whole, rel_tol=1e-9, abs_tol=1e-9))
 
     def test_elapsed_roi_feedback_and_cancellation_preserve_terminal_state(self) -> None:
         widget = self._feedback_widget()
@@ -918,8 +1148,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         profile_path.write_text(json.dumps(build_profile(
             "Real extraction profile", ["standard_fbn_32"], state
         )), encoding="utf-8")
-        dialog_qt = SimpleNamespace(
-            Qt=qt.Qt, QListWidgetItem=qt.QListWidgetItem,
+        dialog_qt = _qt_with(
             QFileDialog=SimpleNamespace(getOpenFileName=lambda *args: str(profile_path)),
         )
         with patch.object(gui_module, "qt", dialog_qt), patch.object(slicer.util, "errorDisplay") as errors:
@@ -1015,7 +1244,8 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         with patch.object(self.logic, "ensureDependencies", return_value=inspection):
             for subject in ("case-1", "case-2"):
                 table = self.logic.process(self.fixture.volume_node, self.fixture.segmentation_node,
-                                           subjectID=subject, outputTable=table)
+                                           subjectID=subject, reader="R1", extraColumns={"center": "A"},
+                                           outputTable=table)
         rows = self.logic.rowsFromTable(table)
         history = self.logic.provenanceHistory(table, required=True)
         self.assertEqual(len(history), 2)
@@ -1027,6 +1257,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             self.assertLessEqual(set(statuses), {"ok", "not_computed"})
         self.assertEqual({row["roi_name"] for row in rows}, {SEGMENT_NAME})
         self.assertEqual({row["config"] for row in rows}, {"standard_fbn_32"})
+        self.assertEqual({(row["reader"], row["center"], row["modality"]) for row in rows}, {("R1", "A", "")})
         self.assertEqual(_scene_node_ids() - scene_before, {table.GetID()})
         self.assertEqual(list(self.logic.jobsRoot().glob("job-*")), [])
 
@@ -1066,7 +1297,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
                                   if key not in ROI_REFINEMENT_DEFAULTS}
         legacy_path = self.temporary_directory / "legacy.json"
         legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
-        dialog_qt = SimpleNamespace(Qt=qt.Qt, QListWidgetItem=qt.QListWidgetItem,
+        dialog_qt = _qt_with(
             QFileDialog=SimpleNamespace(getOpenFileName=lambda *args: str(legacy_path)))
         with patch.object(gui_module, "qt", dialog_qt), patch.object(slicer.util, "errorDisplay") as errors:
             widget.onLoadProfile()
@@ -1075,6 +1306,59 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertFalse(widget.ui.outlierGroup.checked)
         self.assertEqual(widget._inlineStateFromGUI(), default_inline_state())
         self.assertTrue(widget.ui.runButton.enabled)
+
+    def test_inline_keyboard_edits_preserve_decimals_and_filter_editors(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.additionalConfigCombo.setCurrentIndex(1)
+        widget.ui.outlierGroup.setChecked(True)
+
+        def type_number(spin, text):
+            spin.selectAll()
+            for character in text:
+                for event_type in (qt.QEvent.KeyPress, qt.QEvent.KeyRelease):
+                    event = qt.QKeyEvent(event_type, ord(character), qt.Qt.NoModifier, character)
+                    qt.QApplication.sendEvent(spin, event)
+
+        type_number(widget.ui.outlierSigmaSpinBox, "1.5")
+        self.assertEqual(widget.ui.outlierSigmaSpinBox.value, 1.5)
+        self.assertEqual(widget._storedInlineState()["outlier_sigma"], 1.5)
+
+        widget.ui.filterGroup.setChecked(True)
+        parameter = widget._filterParameterWidgets["sigma_mm"]
+        type_number(parameter, "2.75")
+        self.assertIs(widget._filterParameterWidgets["sigma_mm"], parameter)
+        self.assertEqual(parameter.value, 2.75)
+        self.assertEqual(widget._storedInlineState()["filter_params"]["sigma_mm"], 2.75)
+
+        # Only our own write-back is suppressed; external scene edits still refresh.
+        state = widget._storedInlineState()
+        state["outlier_sigma"] = 2.25
+        widget._parameterNode.SetParameter(gui_module.PARAM_INLINE_CONFIG, json.dumps(state))
+        self.assertEqual(widget.ui.outlierSigmaSpinBox.value, 2.25)
+
+    def test_filter_controls_follow_the_type_and_persist(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.additionalConfigCombo.setCurrentIndex(1)
+        self.assertFalse(widget.ui.filterGroup.checked)
+        widget.ui.filterGroup.setChecked(True)
+        for filter_type in gui_module.FILTER_PARAMETERS:
+            with self.subTest(filter_type=filter_type):
+                widget.ui.filterTypeCombo.setCurrentIndex(widget.ui.filterTypeCombo.findData(filter_type))
+                self.assertEqual(widget._inlineStateFromGUI()["filter_params"], filter_defaults(filter_type))
+                self.assertTrue(widget.ui.runButton.enabled, widget.ui.readinessLabel.text)
+        widget.ui.filterTypeCombo.setCurrentIndex(widget.ui.filterTypeCombo.findData("laws"))
+        widget._filterParameterWidgets["kernel"].setText("L5")
+        self.assertIn("look like L5E5E5", widget.ui.readinessLabel.text)
+        self.assertFalse(widget.ui.runButton.enabled)
+        widget._filterParameterWidgets["kernel"].setText("E5L5S5")
+        widget.ui.filterBoundaryCombo.setCurrentIndex(widget.ui.filterBoundaryCombo.findText("nearest"))
+        state = widget._storedInlineState()
+        self.assertEqual((state["filter_type"], state["filter_boundary"]), ("laws", "nearest"))
+        self.assertEqual(state["filter_params"]["kernel"], "E5L5S5")
+        steps = build_inline_configuration_document(state)["configs"]["in_app"]["steps"]
+        self.assertEqual([step["step"] for step in steps], ["resample", "filter", "discretise", "extract_features"])
+        widget.updateGUIFromParameterNode()
+        self.assertEqual(widget._inlineStateFromGUI(), state)
 
     def test_oblique_volume_and_shared_linear_transform(self) -> None:
         fixture = self.fixture

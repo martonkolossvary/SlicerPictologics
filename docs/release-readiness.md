@@ -1,6 +1,46 @@
 # Release readiness
 
-Review date: 2026-09-24. Extension/result contract remains **0.1.0**.
+Review date: 2026-09-29. Extension version remains **0.1.0**; the existing job
+manifest schema is **1** and result-payload schema is **2**. This review changes
+none of those versions.
+
+## Pre-publication consolidation snapshot (2026-09-29)
+
+- **Published versus local at review:** GitHub's live `main`, read on 2026-09-28, was
+  [`7a912cc`](https://github.com/martonkolossvary/SlicerPictologics/commit/7a912cc0ac4b6686753e96e7b148217921bdc208).
+  The local base was `b0b5f62`, **14 commits ahead**, plus the changes
+  reviewed here. Existing green GitHub runs did not qualify this newer local code.
+  The dated entries below are historical evidence, not a claim that all current
+  functionality has been published.
+- **Implemented locally:** ROI intensity/outlier refinement, six image filters,
+  reader/scanner/custom result columns, optional grid-aligned ROI cropping, and GUI
+  batch processing. Profiles, readable results/provenance, and run feedback are
+  already part of the earlier published milestone.
+- **Consolidation fixes:** filter defaults no longer share mutable parameter state;
+  profiles reject malformed or unrepresentable filter values even when filtering
+  is disabled; invalid/duplicate result-column names fail cleanly. Cropping falls
+  back to the full image for cubic interpolation, periodic filter boundaries,
+  filter-spacing overrides, and non-leading/repeated resampling. Memory warnings
+  use a conservative full-volume estimate and reappear for larger batch cases.
+  Batch processing restores the previous inputs and rejects blank/unreadable
+  study folders; restoration is discarded when the original scene closes.
+- **Validation:** 506 portable tests and 328 subtests pass, with 100% scoped
+  library/worker coverage. Ruff, Mypy (14 source files), syntax checks, and
+  `git diff --check` pass. The published Pictologics 0.5.1 API gate passes with
+  1,020 described configuration-feature rows, all six filter smoke checks, and
+  numerical ROI-refinement checks. **All 32 Slicer 5.12.4 integration tests passed
+  on macOS with no skips** (506 seconds, successful exit), including real
+  asynchronous extraction, GUI/scripted batches, crop parity, refinement, and
+  YAML validation. After removing the now-unused optimistic crop estimator,
+  the final fast suite passed again (26 passed, six opt-in extraction checks
+  skipped). Tests used isolated scenes/settings, not the normal Slicer session.
+- **Publication boundary:** no commits, pushes, new images, ExtensionsIndex PRs,
+  or public releases were made during this consolidation review.
+
+The maintainer subsequently authorized committing and pushing this milestone on
+2026-09-29. Qualification must be assessed on the exact pushed revision. This does
+not authorize ExtensionsIndex submission, a tagged public release, or new imagery;
+the previously approved 2026-09-25 workflow screenshot is included unchanged.
 
 ## Catalog identity, icon, and screenshots
 
@@ -281,30 +321,119 @@ new adopted wheel. Startup never silently upgrades dependencies.
   released 0.5.1 wheel. All 23 Slicer 5.12.4 integration tests passed on macOS,
   including the four tests that use the installed Pictologics 0.5.1 wheel.
 
+## Columns, filters, crop, and batch (2026-09-26)
+
+- **One meaning per column.** An append whose configuration name the table already
+  holds with other effective settings now goes to a new table. Before, one
+  `config__feature_key` column could hold values of two settings.
+- **Catalog file name.** The CSV export writes `<name>_catalog.csv`, so
+  `features.csv` gets `features_catalog.csv`, which eigenradiomics finds. The README
+  recipe loaded a real export with the catalog found automatically, 170 features, and
+  grouping by patient.
+- **Result columns.** Every row gets `reader`, seven scanner columns, and the user's
+  `name = value` columns after the fixed columns. The scanner details came out right
+  from a real DICOM import (a synthetic CT series in a temporary DICOM database) and
+  from a dcm2niix JSON file. eigenradiomics reads these columns as row information,
+  for example `batch="manufacturer"` and `roles={"observer": "reader"}`.
+- **Image filters.** The in-app builder offers mean, LoG, Laws, Gabor, separable
+  wavelet, and Simoncelli filters, after ROI refinement and before discretisation. The
+  release gate builds each filter, loads it with warnings as errors, and runs it on
+  the released 0.5.1 wheel and requires a finite mean-intensity result. This is a
+  compatibility smoke check, not independent numerical validation of every filter.
+- **Crop around each region.** A plain crop moved the resampling grid: on MRHead
+  with an off-center 12 mm sphere, only 15 of 170 values stayed equal (median
+  difference 0.65%, largest 20%). A grid tolerance of 0.001 voxel still left 0.2%
+  differences. With the final grid rule (error below 1e-9 voxel), 152 of 170 values
+  were equal and all 170 agreed within one part in a billion, and the worker used
+  0.48 GB instead of 2.4 GB. The crop is off by default.
+- **Batch in the window.** The Batch section runs every case folder through the
+  normal background run and removes each case from the scene afterwards. A real
+  two-case batch added the rows of both cases, with the reader column, to one table.
+- **Validation.** 503 portable tests and 302 subtests passed, with 100% scoped
+  library/worker coverage, Ruff, and Mypy. The API gate, including the filter check,
+  passed on the released 0.5.1 wheel. All 30 Slicer 5.12.4 integration tests passed on
+  macOS, including the 6 that use the installed Pictologics 0.5.1 wheel. The README
+  batch example ran unchanged: 3 regions, 170 feature columns, and all 3 export files.
+
+## Refinement regression recheck (2026-09-28)
+
+- The released-wheel gate now checks all nine combinations of the range and
+  outlier mask targets, including different targets for the two steps. Each
+  mask's expected values are calculated independently with NumPy.
+- Checks cover mean, population variance, minimum, maximum, and voxel-counting
+  volume, as well as unchanged input arrays. The additional intensity statistics
+  catch missing outlier removal even when the ROI is symmetric and its mean
+  remains unchanged.
+- The expanded gate passed against the installed, published **Pictologics 0.5.1**
+  wheel in Slicer's standalone Python. A deliberately omitted intensity-only
+  outlier step was rejected by the variance assertion.
+- The current working tree passed **503 portable tests and 302 subtests**, with
+  100% scoped library/worker coverage, Ruff, Mypy, and syntax checks. Existing
+  batch, crop, filter, and result-column changes were preserved. These regression
+  additions do not change runtime behavior, dependency versions, or images.
+- **All 30 Slicer 5.12.4 integration tests passed**, with no skips and a successful
+  process exit (429 seconds). This includes the real two-ROI refinement run,
+  profile persistence and legacy loading, numerical results, batch runs, and
+  cleanup. The tests used an isolated scene/settings profile.
+- The normal Slicer session discovered and opened Pictologics. Interactive visual
+  review was initially interrupted by the Mac locking. After unlocking, a
+  temporary settings-only profile opened the builder: both refinement groups,
+  their enabled/disabled states, range fields, and independent mask-target
+  selectors were inspected. No publication or new screenshot was made.
+
+## Interactive decimal-entry fix (2026-09-28)
+
+- Typing `1.5` in the sigma editor produced `1.000`: each GUI change wrote to the
+  parameter node, whose observer immediately reformatted the active editor. The
+  same refresh also recreated dynamic image-filter editors while they were in use.
+- GUI-originated write-back now suppresses only its own immediate GUI refresh,
+  keeping the live editors intact. External parameter-node changes and profile
+  loads continue to refresh the controls normally; the guard resets in `finally`.
+- A real Qt key-event regression reproduced `1.0 != 1.5` before the fix and passed
+  afterward. It also checks typing `2.75` into a filter editor without replacing
+  that widget and confirms an external scene update still changes the sigma.
+- After the fix, **25 non-extraction Slicer integration tests passed** (six opt-in
+  real-worker checks skipped), along with **503 portable tests and 302 subtests**,
+  100% scoped coverage, Ruff, and Mypy. The earlier full 30-test real-worker run
+  above predates this UI-only fix.
+- With explicit maintainer permission, the normal Slicer session reloaded the
+  corrected module. Native keyboard entry retained **1.500** in the outlier sigma
+  field and **2.7500** in the image-filter sigma field after moving focus. This
+  completes the post-fix visual verification, in addition to the Qt regression.
+- The temporary settings-only review profile was reloaded to restore defaults:
+  both refinement steps and image filtering are off, bounds are blank, both mask
+  targets are `both`, and outlier sigma is 3.0. The refinement panel remains open.
+  The scene was empty throughout; no images or results were changed. Source
+  changes remain local, with no publication or new tutorial/catalog images.
+
 ## Reassessment: next priorities
 
-The maintainer has explicitly deferred catalog submission and broader release
-until after functional improvements. Review the new refinement controls first;
-then consider the next guided preprocessing feature below. Distribution remains
-a later acceptance gate, not an authorized publication action.
+The requested functionality now forms a usable local release candidate. Prioritize
+release qualification and delivery over adding more controls. The maintainer's hold
+on catalog submission and broader release remains in force.
 
-1. **Finish catalog distribution.** Catalog identity, metadata, icon integration,
-   and example screenshots are implemented, with the MRHead workflow visually
-   approved. The implementation passed GitHub CI and the full ExtensionsIndex
-   validator. Recheck the published assets, then submit for Preview and the
-   supported Stable branch. Verify
-   Extension Factory packaging and installation/update through
-   Extensions Manager. This is the missing link between automatic adoption and
-   delivery to ordinary users.
-2. **Broaden actual application acceptance.** Run Slicer Preview and real Windows
-   Slicer (normal-Python Windows checks alone are insufficient), then record an
-   interactive checklist: first install, restart, multiple ROIs, busy/progress,
-   cancellation, append/export, and scene close during execution.
-3. **Expand preprocessing controls beyond ROI refinement.** Use 0.5.1's versioned filter-capability
-   metadata for a filter browser and guided authoring of additional supported
-   operations. Requested/effective parameters are now visible in result details
-   when recorded. Capability metadata is not a complete configuration schema, so
-   a fully generated multi-step editor still needs additional upstream API work.
+1. **Save and synchronize this milestone, with maintainer approval.** Include the
+   new helper/test files, not just tracked modifications. Keep runtime changes and
+   their tests together, then the readiness/documentation update. Do not rewrite
+   the existing 14 local commits. Push only after approval and require all five
+   qualification jobs on the resulting GitHub revision; scheduled dependency
+   checks on the older `main` are not sufficient.
+2. **Complete acceptance before catalog submission.** Validate actual Slicer on
+   Windows and Slicer Preview, plus a clean package install/restart/update. Check
+   multiple ROIs, profile loading, filtering, batch failure/cancel/scene-close,
+   append/export, and memory warnings. Test packaged module discovery/resources,
+   not only a checkout added to Additional module paths.
+3. **Finish distribution when authorized.** Revalidate the final catalog JSON,
+   approved icon and screenshot URLs at the exact published revision; verify
+   Extension Factory packaging; then submit ExtensionsIndex for Preview and the
+   supported Stable branch. Extensions Manager install/update is the remaining
+   link between tested automatic dependency adoption and delivery to users.
+4. **Next functional iteration, after qualification:** add an ROI quality summary
+   (voxel counts before/after refinement and empty/tiny-ROI warnings), then batch
+   preflight and a persistent per-case success/failure report. These would help
+   users audit exclusions and recover failed cases. Fine-grained extraction
+   progress still needs an upstream callback API. A general multi-step editor is
+   lower priority; six guided image filters are already implemented locally.
 
 The sibling Pictologics package is already at published 0.5.1. Its untracked
 `notify-slicer-extension.yml` draft was left untouched: the independent schedule makes

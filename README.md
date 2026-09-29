@@ -15,14 +15,17 @@ The extension provides:
   optional whole-volume region;
 - the six Pictologics standard presets, an in-app single-configuration builder
   (feature families, resampling, intensity-range resegmentation, outlier filtering,
-  discretisation, and voxel-validity/sentinel mode),
+  IBSI 2 image filters, discretisation, and voxel-validity/sentinel mode),
   and optional custom YAML/JSON configuration with authoring aids;
+- a reader label, your own extra columns, and scanner details (from DICOM or a
+  dcm2niix JSON file) in every result row;
+- an optional crop around each region that uses much less memory;
 - named settings profiles with save, load, and save-copy actions;
 - background execution in a separate worker process, progress, and cancellation;
 - atomic long-form results in a `vtkMRMLTableNode`, with replace or append behavior;
 - a read-only results browser with feature search, ROI/configuration/family/status
   filters, and readable feature details and per-run provenance;
-- a scripting method that runs many cases, one after the other, into one table;
+- a batch run over a folder of cases, in the window or from a script, into one table;
 - CSV export with a provenance sidecar, or a self-contained JSON export, with
   per-run provenance retained when tables are appended; and
 - installation of Pictologics and its dependencies into a private folder, after you
@@ -82,7 +85,7 @@ old version is deleted automatically.
    which can need several gigabytes of memory for a large CT.
 3. Check one or more standard presets and/or add one more configuration via
    **Additional config**: *Build one in app* (choose feature families, resampling,
-   optional ROI refinement, discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
+   optional ROI refinement, an optional image filter, discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
    custom Pictologics YAML/JSON, generate a starter with **New from preset…**, or press
    **Validate** to load the file with Pictologics as a run does).
 4. Choose or create an output table. Check the **Ready** summary of whole-volume,
@@ -152,12 +155,63 @@ Each step has an independent **Apply to** choice:
 - **Morphology only:** refine the morphology mask without changing intensity-mask
   membership. Outlier statistics are computed separately for each targeted mask.
 
-The fixed order is **resample → intensity range → outliers → discretise → features**;
-disabled steps are skipped. These controls affect only `in_app`, not the checked
+The fixed order is **resample → intensity range → outliers → filter → discretise →
+features**; disabled steps are skipped. These controls affect only `in_app`, not the checked
 standard presets. ROI refinement removes voxels from calculation masks; it does
 not clip or overwrite image intensities. If a required mask becomes empty, the
 worker reports the ROI error instead of falling back to the original mask.
 Effective steps, mask targets, and parameters are retained in result provenance.
+
+### Filter the image (IBSI 2)
+
+Turn on **Image filter (IBSI 2)** in the in-app builder and choose a filter: mean,
+Laplacian of Gaussian (LoG), Laws texture energy, Gabor, separable wavelet, or
+Simoncelli wavelet. The fields show the parameters of the chosen filter, with the IBSI 2
+reference settings as defaults. **Boundary** sets how the filter treats the image
+border; *default* lets Pictologics choose (mirror, or periodic for the Simoncelli
+wavelet).
+
+The filter runs after resampling and ROI refinement, and before discretisation, as
+IBSI 2 requires. The features are then computed from the filter response inside the
+ROI; the masks do not change. IBSI 2 reports intensity features for response maps.
+The Riesz filters need a configuration file.
+
+### Add columns for later analysis
+
+Three kinds of text columns follow the fixed columns of every result row:
+
+- **Reader** (`reader`): a label that you type, for example `R1`. Use it to pair the
+  results of two readers.
+- **Scanner details** (`modality`, `manufacturer`, `manufacturer_model_name`,
+  `convolution_kernel`, `slice_thickness`, `kvp`, `magnetic_field_strength`): read
+  from the DICOM database for a volume loaded from DICOM, or from the JSON file that
+  dcm2niix writes next to a NIfTI image. The Inputs section shows what it found.
+  Empty when neither is available.
+- **Extra columns**: one `name = value` per line, for example `center = A`. A name has
+  letters, digits, and single underscores. A line with a scanner column name replaces
+  the value that was read.
+
+The wide export puts these columns before the feature columns.
+
+### Use less memory
+
+Pictologics resamples the whole scan for each region. Turn on **Crop around each
+region** to give Pictologics only a box around each region. The box has a margin for
+interpolation, the filter, and the local-intensity features. The worker does not
+crop for the *auto* voxel-validity mode, FFT-based filters (Simoncelli and Riesz),
+periodic filter boundaries, cubic interpolation, an explicit filter-spacing
+override, or resampling after another step. These need the whole image or a crop
+model not yet supported. The provenance of each region keeps the crop box, or no
+box when the worker did not crop. Memory warnings use the full-scan estimate because
+cropping can fall back to the whole image or an entire axis.
+
+Pictologics centers its resampling grid on the image that it gets. So along each
+axis, the box grows until its grid lies on the grid of the whole scan; when that is
+not possible by adding up to 256 voxels in total along that axis, the box keeps the
+whole axis. The values then agree
+with a whole-scan run to rounding precision. On Slicer's MRHead sample with a 12 mm
+sphere away from the center, the worker used 0.48 GB instead of 2.4 GB, and all 170
+values of `standard_fbn_32` agreed within one part in a billion (152 exactly).
 
 ### Browse results and provenance
 
@@ -202,6 +256,19 @@ files. Advanced YAML/JSON pipelines still use **Additional config → Load from 
 profile saving is disabled in that mode. A profile can select multiple standard
 presets and one in-app configuration, not multiple custom pipelines.
 
+### Process many cases in the Batch section
+
+Put each case in its own subfolder of a study folder, with the same file names, for
+example `image.nii.gz` and `segmentation.seg.nrrd`. In the **Batch** section, choose
+the study folder and the two file names (a pattern such as `*.nrrd` is allowed), then
+select **Run batch…**. The module shows the number of cases and the folders it
+skips, and asks before it starts.
+
+Each case uses the settings of the window. The folder name becomes the subject ID,
+and every segment is a region. The rows of all cases go into the results table.
+**Cancel** stops the batch after the current case. At the end, the status line shows
+how many cases added rows, and a message lists the cases that failed.
+
 ### Process many cases with a script
 
 Use Slicer's Python console (**View → Python Console**) to run many cases into one
@@ -228,6 +295,8 @@ logic.exportTable(table, study / "features.csv", wide=True)
   `includeWholeVolume=True` to add the whole scan.
 - Use `standardConfigurations=[...]` to select presets, and
   `customConfigurationPath="settings.yaml"` to add a configuration file.
+- Use `reader="R1"`, `extraColumns={"center": "A"}`, and `cropToRegion=True` as in the
+  window.
 - A region that fails gets rows with a status that is not `ok`, and the loop
   continues. A case that cannot run stops the loop with an error.
 - `wide=True` writes one row per region. The export also writes
@@ -249,12 +318,16 @@ dataset = RadiomicsDataset.from_pictologics(
 
 `drop_subject_id=False` keeps the extension's `subject_id` column, which the loader
 otherwise deletes. The feature columns have the same names as in Pictologics' own wide
-output.
+output. The reader, scanner, and extra columns are metadata: for example, use
+`batch="manufacturer"` for the batch-effect checks, and `roles={"observer": "reader"}`
+for a two-reader study.
 
 ## Current limitations
 
 - One scalar 3D volume is processed per run; vector and 4D images are out of scope.
-  To process many cases, use a script (see above).
+  To process many cases, use the Batch section or a script (see above).
+- A batch reads files that Slicer can load (for example NIfTI and NRRD), not DICOM
+  folders.
 - The extension accepts segmentation regions and whole-volume mode, not multi-label
   labelmap selection.
 - Nonlinear parent transforms are rejected. Resample with an explicit interpolation
@@ -264,14 +337,15 @@ output.
   report fine-grained progress. Multi-ROI jobs report completed-ROI percentages;
   single-ROI jobs display an indeterminate busy indicator until the package returns.
 - The in-app builder composes a single configuration with a fixed step order
-  (families, resample, resegment, filter outliers, discretise, source mode).
-  Further advanced steps (IBSI-2 image filters, custom discretisation cut-offs, mask
-  binarization, and largest-component selection), or a different step order, still
-  require a custom YAML/JSON file. Before Pictologics is installed, **Validate** does
-  only a quick structural check.
-- Pictologics resamples the whole scan for each region, not only the area around it.
-  Large scans with fine resampling spacing can therefore need several gigabytes of
-  memory.
+  (families, resample, resegment, filter outliers, image filter, discretise, source
+  mode). The Riesz filters, custom discretisation cut-offs, mask binarization,
+  largest-component selection, and a different step order still require a custom
+  YAML/JSON file. Before Pictologics is installed, **Validate** does only a quick
+  structural check.
+- Without the crop, Pictologics resamples the whole scan for each region. Large scans
+  with fine resampling spacing can then need several gigabytes of memory. With the
+  crop, an axis whose voxel size is not a whole multiple of the new spacing can need a
+  wide box, or the whole axis, to keep the grid (see "Use less memory").
 - Each configuration is computed on its own, because Pictologics 0.5.1 can copy wrong
   values between configurations when it reuses shared results. Runs with several
   presets therefore take longer.

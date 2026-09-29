@@ -5,6 +5,7 @@ set(MODULE_PYTHON_SCRIPTS
   PictologicsWidgets/__init__.py
   PictologicsWidgets/results_browser.py
   PictologicsLib/__init__.py
+  PictologicsLib/batch.py
   PictologicsLib/dependency_probe.py
   PictologicsLib/dependencies.py
   PictologicsLib/inline_config.py
@@ -13,6 +14,7 @@ set(MODULE_PYTHON_SCRIPTS
   PictologicsLib/progress.py
   PictologicsLib/profiles.py
   PictologicsLib/result_browser.py
+  PictologicsLib/result_columns.py
   PictologicsLib/results.py
   PictologicsLib/staging.py
   )

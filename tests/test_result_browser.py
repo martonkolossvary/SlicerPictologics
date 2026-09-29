@@ -154,6 +154,12 @@ class ResultBrowserTests(unittest.TestCase):
         assert "ROI warning" not in text
         assert "FEATURE DICTIONARY" not in text
 
+    def test_extra_columns_are_shown_only_when_present(self) -> None:
+        row, history = browser_fixture()
+        assert "EXTRA COLUMNS" not in result_details(row, history)
+        text = result_details(dict(row, reader="R1", center="A"), history)
+        assert "EXTRA COLUMNS\nreader: R1\ncenter: A" in text
+
 
 if __name__ == "__main__":
     unittest.main()

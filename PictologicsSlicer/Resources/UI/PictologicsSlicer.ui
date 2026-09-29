@@ -71,6 +71,48 @@
         <property name="placeholderText"><string>Optional subject or case identifier</string></property>
        </widget>
       </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="readerLabel">
+        <property name="text"><string>Reader:</string></property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QLineEdit" name="readerLineEdit">
+        <property name="placeholderText"><string>Optional reader or segmentation label, for example R1</string></property>
+        <property name="toolTip"><string>Written to the reader column of every result row. Use it to pair the results of two readers.</string></property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="extraColumnsLabel">
+        <property name="text"><string>Extra columns:</string></property>
+       </widget>
+      </item>
+      <item row="6" column="1">
+       <widget class="QPlainTextEdit" name="extraColumnsTextEdit">
+        <property name="maximumSize"><size><width>16777215</width><height>70</height></size></property>
+        <property name="placeholderText"><string>Optional, one per line: name = value, for example center = A</string></property>
+        <property name="toolTip"><string>Each line adds a text column to every result row, for later analysis. A name has letters, digits, and single underscores.</string></property>
+       </widget>
+      </item>
+      <item row="7" column="0">
+       <widget class="QLabel" name="scannerDetailsTitleLabel">
+        <property name="text"><string>Scanner details:</string></property>
+       </widget>
+      </item>
+      <item row="7" column="1">
+       <widget class="QLabel" name="scannerDetailsLabel">
+        <property name="text"><string>No volume selected.</string></property>
+        <property name="wordWrap"><bool>true</bool></property>
+        <property name="toolTip"><string>Written to the scanner columns of every result row. Read from DICOM, or from a dcm2niix JSON file next to a NIfTI image.</string></property>
+       </widget>
+      </item>
+      <item row="8" column="1">
+       <widget class="QCheckBox" name="cropCheckBox">
+        <property name="text"><string>Crop around each region (uses less memory)</string></property>
+        <property name="checked"><bool>false</bool></property>
+        <property name="toolTip"><string>Give Pictologics only a box around each region, with a margin for interpolation, filters, and local-intensity features. This saves much memory for small regions in large scans. The box keeps the resampling grid of the whole scan, so the values agree with a whole-scan run to rounding precision.</string></property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -188,12 +230,27 @@
            </layout>
           </widget>
          </item>
-         <item row="4" column="0">
+         <item row="4" column="0" colspan="2">
+          <widget class="QGroupBox" name="filterGroup">
+           <property name="title"><string>Image filter (IBSI 2)</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="checked"><bool>false</bool></property>
+           <property name="toolTip"><string>Replace the image with a filter response map before discretisation. Features are then computed from the response map inside the ROI. The masks do not change.</string></property>
+           <layout class="QFormLayout" name="filterLayout">
+            <item row="0" column="0"><widget class="QLabel" name="filterTypeLabel"><property name="text"><string>Filter:</string></property></widget></item>
+            <item row="0" column="1"><widget class="QComboBox" name="filterTypeCombo"/></item>
+            <item row="1" column="0"><widget class="QLabel" name="filterBoundaryLabel"><property name="text"><string>Boundary:</string></property></widget></item>
+            <item row="1" column="1"><widget class="QComboBox" name="filterBoundaryCombo"><property name="toolTip"><string>How the filter treats the image border. Default: mirror for the spatial filters, periodic for the Simoncelli wavelet.</string></property></widget></item>
+            <item row="2" column="0" colspan="2"><widget class="QWidget" name="filterParametersWidget" native="true"/></item>
+           </layout>
+          </widget>
+         </item>
+         <item row="5" column="0">
           <widget class="QLabel" name="discretiseLabel">
            <property name="text"><string>Discretise:</string></property>
           </widget>
          </item>
-         <item row="4" column="1">
+         <item row="5" column="1">
           <widget class="QWidget" name="discretiseWidget" native="true">
            <layout class="QHBoxLayout" name="discretiseRowLayout">
             <property name="leftMargin"><number>0</number></property>
@@ -206,12 +263,12 @@
            </layout>
           </widget>
          </item>
-         <item row="5" column="0">
+         <item row="6" column="0">
           <widget class="QLabel" name="sourceModeLabel">
            <property name="text"><string>Voxel validity:</string></property>
           </widget>
          </item>
-         <item row="5" column="1">
+         <item row="6" column="1">
           <widget class="QWidget" name="sourceModeWidget" native="true">
            <layout class="QHBoxLayout" name="sourceModeRowLayout">
             <property name="leftMargin"><number>0</number></property>
@@ -223,9 +280,9 @@
            </layout>
          </widget>
          </item>
-         <item row="6" column="0" colspan="2">
+         <item row="7" column="0" colspan="2">
           <widget class="QLabel" name="preprocessingOrderLabel">
-           <property name="text"><string>Order: resample → intensity range → outliers → discretise → features. Disabled steps are skipped. These controls affect only the in_app configuration, not the checked standard presets.</string></property>
+           <property name="text"><string>Order: resample → intensity range → outliers → filter → discretise → features. Disabled steps are skipped. These controls affect only the in_app configuration, not the checked standard presets.</string></property>
            <property name="wordWrap"><bool>true</bool></property>
           </widget>
          </item>
@@ -330,6 +387,27 @@
         <property name="enabled"><bool>false</bool></property>
        </widget>
       </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="ctkCollapsibleButton" name="batchCollapsibleButton">
+     <property name="text"><string>Batch</string></property>
+     <property name="collapsed"><bool>true</bool></property>
+     <layout class="QFormLayout" name="batchFormLayout">
+      <item row="0" column="0"><widget class="QLabel" name="batchFolderLabel"><property name="text"><string>Study folder:</string></property></widget></item>
+      <item row="0" column="1">
+       <layout class="QHBoxLayout" name="batchFolderLayout">
+        <item><widget class="QLineEdit" name="batchFolderLineEdit"><property name="placeholderText"><string>Folder with one subfolder for each case</string></property></widget></item>
+        <item><widget class="QPushButton" name="batchBrowseButton"><property name="text"><string>Browse…</string></property></widget></item>
+       </layout>
+      </item>
+      <item row="1" column="0"><widget class="QLabel" name="batchImageLabel"><property name="text"><string>Image file:</string></property></widget></item>
+      <item row="1" column="1"><widget class="QLineEdit" name="batchImagePatternLineEdit"><property name="text"><string>image.nii.gz</string></property><property name="toolTip"><string>Name of the image file in each case folder. A pattern such as *.nrrd is allowed; it must match exactly one file.</string></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="batchSegmentationLabel"><property name="text"><string>Segmentation file:</string></property></widget></item>
+      <item row="2" column="1"><widget class="QLineEdit" name="batchSegmentationPatternLineEdit"><property name="text"><string>segmentation.seg.nrrd</string></property><property name="toolTip"><string>Name or pattern of the segmentation or label map file in each case folder. Leave it empty to analyze only the whole volume.</string></property></widget></item>
+      <item row="3" column="0" colspan="2"><widget class="QLabel" name="batchHelpLabel"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>Each subfolder is one case, and its name becomes the subject ID. Every segment is a region. The configurations, reader, extra columns, and crop setting above apply to every case. The rows of all cases go into the results table.</string></property></widget></item>
+      <item row="4" column="0" colspan="2"><widget class="QPushButton" name="runBatchButton"><property name="text"><string>Run batch…</string></property></widget></item>
      </layout>
     </widget>
    </item>

@@ -8,10 +8,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from .inline_config import (
+    FILTER_DEFAULTS,
+    FILTER_PARAMETERS,
     MASK_TARGETS,
     ROI_REFINEMENT_DEFAULTS,
     build_inline_configuration_document,
     default_inline_state,
+    filter_step,
     finite_number,
     preset_names,
 )
@@ -51,17 +54,17 @@ def validate_profile(document: Any) -> dict[str, Any]:
         if not presets:
             raise ValueError("Select at least one preset or an in-app configuration.")
     else:
-        # The original version-1 profiles predate optional ROI refinement. Keep
-        # their effective configuration identical by adding disabled defaults.
-        if isinstance(state, dict) and set(state) == set(default_inline_state()) - set(
-            ROI_REFINEMENT_DEFAULTS
-        ):
-            state = {**state, **ROI_REFINEMENT_DEFAULTS}
+        # Earlier version-1 profiles predate ROI refinement and the image filter. Keep
+        # their effective configuration identical by adding the disabled defaults.
+        if isinstance(state, dict):
+            for group in (ROI_REFINEMENT_DEFAULTS, FILTER_DEFAULTS):
+                if not set(group) & set(state):
+                    state = {**state, **group}
         if not isinstance(state, dict) or set(state) != set(default_inline_state()):
             raise ValueError("Profile contains unsupported in-app settings.")
         if any(
             type(state[key]) is not bool
-            for key in ("resample", "discretise", "resegment", "filter_outliers")
+            for key in ("resample", "discretise", "resegment", "filter_outliers", "filter")
         ):
             raise ValueError("Preprocessing enable flags must be booleans.")
         families = state["families"]
@@ -113,6 +116,18 @@ def validate_profile(document: Any) -> dict[str, Any]:
         for key in ("resegment_apply_to", "outlier_apply_to"):
             if state[key] not in MASK_TARGETS:
                 raise ValueError("Unsupported ROI-refinement mask target.")
+        # Disabled controls are restored too: reject invalid values before changing
+        # any widgets, rather than letting Qt silently clamp or round them.
+        filter_step(state)
+        for key, kind, _, _ in FILTER_PARAMETERS[state["filter_type"]]:
+            if kind in ("int", "float"):
+                value = state["filter_params"][key]
+                if not isinstance(value, (int, float)) or not math.isclose(
+                    value, round(value, 4), abs_tol=1e-10, rel_tol=0
+                ):
+                    raise ValueError(
+                        "Profile filter values must be numbers with at most four-decimal precision."
+                    )
         build_inline_configuration_document(state)
     result = copy.deepcopy(document)
     result["inline_state"] = copy.deepcopy(state)

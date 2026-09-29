@@ -68,6 +68,7 @@ def _valid_manifest(root: Path) -> dict[str, object]:
         provenance_path=root / "provenance.json",
         subject_id="patient-001",
         subject_metadata={"age": 40},
+        result_columns=[("reader", "R1"), ("center", "A")],
         image_name="CT",
         run_id="run-001",
         timestamp="2026-07-18T12:00:00Z",
@@ -582,6 +583,31 @@ class ValidateManifestTampers(unittest.TestCase):
                     manifest = self._tampered(root, mutator)
                 with self.assertRaisesRegex(JobManifestError, pattern):
                     validate_job_manifest(manifest)
+
+
+class ResultColumnTests(unittest.TestCase):
+    def test_pairs_keep_their_order_and_names_are_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = _valid_manifest(Path(directory))
+        self.assertEqual(manifest["result_columns"], [["reader", "R1"], ["center", "A"]])
+        for bad in ({"reader": "R1"}, [["reader"]], [["reader", 1]], [["two__parts", "x"]],
+                    [["value", "x"]], [["a", "x"], ["a", "y"]], [[[], "x"]], [[{}, "x"]]):
+            with self.subTest(bad=bad), self.assertRaisesRegex(JobManifestError, "result_columns"):
+                validate_job_manifest(dict(manifest, result_columns=bad))
+
+
+class CropFlagTests(unittest.TestCase):
+    def test_crop_flag_must_be_a_boolean(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = _valid_manifest(Path(directory))
+        def with_crop(value: object) -> dict[str, object]:
+            document = dict(manifest["configuration_document"], crop_to_roi=value)
+            return dict(manifest, configuration_document=document,
+                        configuration_sha256=sha256_payload(document))
+
+        self.assertTrue(validate_job_manifest(with_crop(True))["configuration_document"]["crop_to_roi"])
+        with self.assertRaisesRegex(JobManifestError, "crop_to_roi must be a boolean"):
+            validate_job_manifest(with_crop("yes"))
 
 
 class WriteAndLoadTests(unittest.TestCase):
