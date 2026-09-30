@@ -2,6 +2,10 @@ name: Compatibility qualification
 
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        description: Optional repository token for coverage reporting
+        required: false
     inputs:
       version:
         description: Candidate stable version; empty checks the committed pin
@@ -55,6 +59,7 @@ jobs:
         run: python -m json.tool Pictologics.json >/dev/null
       - uses: codecov/codecov-action@v7
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           fail_ci_if_error: false
 

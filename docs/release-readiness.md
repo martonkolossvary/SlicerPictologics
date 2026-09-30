@@ -1,10 +1,148 @@
 # Release readiness
 
-Review date: 2026-09-29. Extension version remains **0.1.0**; the existing job
+Review date: 2026-09-30. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.
 
-## Pre-publication consolidation snapshot (2026-09-29)
+## Current pre-catalog source milestone (2026-09-30)
+
+**ExtensionsIndex registration remains on hold.** On 2026-09-30, after the local
+acceptance run, the maintainer authorized reviewing, committing, and pushing this
+source milestone and assessing its GitHub tests. That authorization does not include
+a tag/release, new screenshot, public repository-settings change, or catalog
+submission. The exact pushed revision must pass its own GitHub qualification;
+the older green run below is not evidence for these changes.
+
+**Distribution decision (2026-09-30):** the maintainer stopped the local
+Xcode/Qt/Slicer SDK build. It is no longer a release gate. Qualification uses the
+installed Slicer application; after explicit registration approval, the Extension
+Factory will build the distribution archives. Archive auditing and clean-package
+installation follow that build. The private SDK recipe is retained only as an
+inactive reference, not a prerequisite or an unfinished action for this milestone.
+
+- **Previous published baseline:** `dd1c5fc6b7365022fdc54e63a093a34ba90a8a03`, following the
+  consolidated feature milestone `dd16e4d`. All five jobs in its
+  [GitHub qualification run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36523318487)
+  passed: 507 portable tests / 328 subtests / 100% scoped coverage, all 32 real Linux
+  Slicer tests, and released-wheel API/worker/geometry checks on Linux, Windows,
+  and Intel macOS. The quality follow-up explicitly declared NumPy for crop tests.
+- **Catalog metadata refreshed:** the official ExtensionsIndex validator at
+  `2a06251a679e3d5a04cccec549c5df2febc5c4b0` passed on 2026-09-30 against a fresh
+  clone of that published revision, including repository/topic, CMake, license, dependency,
+  icon, and screenshot checks; clone size was 68.9 MiB. The published hash was
+  unchanged before/after the check. The local [submission draft](extensions-index-pr-draft.md)
+  and [ordered handoff](extensions-index-submission.md) now distinguish preparation,
+  publication authorization, registration, and post-submission package acceptance.
+  The maintainer declared no known related patents on 2026-09-30. Optional GitHub
+  presentation cleanup is deferred; no public settings changed. This is not
+  package-build, cross-platform application, or catalog acceptance.
+- **Batch teardown fixed locally:** a queued next-case callback previously loaded
+  the second case even after module cleanup. The regression failed on the original
+  code and passes after cleanup removes owned case nodes and clears the queue.
+  Additional actual-MRML tests cover partial case-load failure, cancellation, and
+  scene close without restoring stale input nodes.
+- **Fresh local quality:** **537 portable tests / 400 subtests** pass with 100% scoped
+  coverage, Ruff, Mypy (15 files), syntax checks, actionlint 1.7.12, and whitespace
+  checks. The new installed-application run passed **all 41 Slicer 5.12.4
+  integration tests with no skips** (471.565 seconds, successful exit), including
+  six real extraction checks against a disposable 0.5.1 environment. This includes
+  real batch/crop/ROI-feedback/YAML workflows, plain MRML scenes, Scene View
+  isolation, and observer replacement. Earlier checks also passed all eight
+  archive-checker tests under Slicer's own Python interpreter. The application is
+  revision `4e21c19`, x86_64/Rosetta on macOS, Python 3.12.10, Qt 5.15.18.
+- **Fresh disposable lifecycle:** four separate Slicer 5.12.4 processes used only a new
+  temporary dependency root and a synthetic two-segment scene. Install-call counts
+  were **1, 0, 1, 0** for install/restart/update/restart-update. The same-version
+  replacement activated a different private directory, and both restarts reused
+  it without pip. Shared NumPy 2.4.6 and Pillow 12.2.0 were unchanged; Pictologics was
+  never imported into the GUI interpreter. Fresh extraction after the final restart
+  reproduced all **340 rows** to `1e-12` relative/absolute tolerance. **All four
+  lifecycle phases now pass:** scene reloads preserve every value with exact
+  binary64 comparison (zero mismatches), not an approximate tolerance. Each phase's
+  CSV and JSON exports were independently read back (eight files, 340 feature
+  values each) and retain every value exactly. Exports are written before the initial scene save/close. A read-only
+  PyPI check still resolves 0.5.1 as the latest stable wheel. This tests same-version
+  dependency replacement, not adoption of an unavailable newer release.
+- **Supplemental released-wheel checks:** the API/catalog/configuration gate
+  (1,020 described configuration-feature rows), real JIT/worker extraction, and
+  geometry parity all pass under Slicer's Python using the same private 0.5.1 target
+  and worker isolation. The first supplemental launch used only `PYTHONPATH`;
+  Slicer's launcher put shared NumPy 2.4.6 ahead of the private copy, so Numba
+  rejected that mixed environment. The corrected local harness calls the existing
+  worker isolation before importing anything scientific and verifies the private
+  NumPy 2.3.5/Pictologics paths. This was a test-launcher error, not a failure of the
+  41 passing application tests; no runtime fix or shared-package change was needed.
+  The initial failure and successful retry are both retained. Fresh lifecycle,
+  integration, export-readback, catalog, and source-hash evidence is kept in the
+  Git-ignored `local-output/source-acceptance-2026-09-30` directory. The normal Slicer
+  session was not cleared, closed, or modified during this verification pass.
+- **Lossless scene persistence implemented locally:** the original run exposed
+  rounding of **246 of 340 feature values** in Slicer's default table writer
+  (for example, `206.64972537299272` became `206.65`). New result tables now carry
+  exact binary64 backups, synchronized with edits and append, and validated
+  against all row identities, stored values, and a checksum before scene-load
+  restoration. Repeat saves, signed zero, and missing-value sentinels are covered.
+  Corrupt/stale backups leave loaded values unchanged and show a warning. Importing
+  another scene or restoring a Scene View does not replace existing live edits.
+  Legacy scenes warn rather than inventing lost digits. The normal Slicer window
+  was left open; its scene was empty, and earlier full-precision test exports were
+  retained. Additional copies of the synthetic exports, scene, and lifecycle reports
+  are retained in the Git-ignored `local-output` folder. No result columns or public
+  schema versions changed. After the maintainer restarted Slicer on 2026-09-30,
+  the normal session was verified to load the current checkout with one active
+  persistence observer manager. Loading the saved synthetic scene restored all
+  340 values exactly, with no persistence warnings. The GUI details panel displayed
+  the full mean `206.64972537299272`; new CSV/JSON exports independently read back
+  identically. The normal session was not cleared or closed.
+  A fresh normal-session GUI run then completed in 45 seconds with 340 successful
+  feature rows across two ROIs, zero bitwise differences from the baseline, and
+  the same private dependency target. It created a new table, preserving the
+  restored one. Full-precision exports and a second scene backup were saved before
+  handing the open session back to the maintainer.
+- **Package auditing prepared:** the new read-only checker verifies the exact 23
+  runtime files, source hashes, layout, and unwanted content in ZIP/tar packages.
+  Its fixtures are synthetic checker tests, not installable packages. This machine
+  has no matching Slicer build tree, so a real CMake/Factory package and clean
+  packaged-install acceptance remain unverified. A fresh local search on 2026-09-30
+  still found no SlicerConfig.cmake/build tree. The Docker
+  client is installed, but its desktop daemon is not running; no containers or
+  build images were started/downloaded.
+- **Private packaging stopped / retained as optional tooling:** the previously
+  prepared checksum-pinned CMake/CTest/CPack 3.31.10 environment, lock, runner,
+  and [historical guide](private-packaging.md) remain intact. No Qt/Slicer SDK was
+  built, no Xcode/Qt license was accepted, and no actual archive or packaged
+  installation is claimed. Their synthetic regression tests remain useful, but
+  the proposed packaging-tools installation step has been removed from normal CI.
+  A workflow contract now verifies that the quality gate does not require those
+  tools or an Xcode build while retaining the real installed-Linux-Slicer tests.
+  All 15 optional runner tests previously passed under Slicer's Python (1.226
+  seconds); they use synthetic metadata/mocked build commands, not a real SDK.
+  Further SDK provisioning requires a new explicit request and is not next work.
+- **Coverage reporting prepared:** both workflow callers now explicitly pass an
+  optional `CODECOV_TOKEN` into the reusable upload step. No secret was created or
+  changed. The prior tokenless upload was rejected for the protected branch; the
+  enforced coverage gate passed independently. Local workflow tests cover the new
+  wiring. At this pre-push review it has not yet been exercised on GitHub; verify
+  the upload step for the exact published revision before claiming dashboard success.
+
+### Remaining gates and authorization boundaries
+
+1. Publish this reviewed source milestone under the maintainer's 2026-09-30
+   authorization and assess all jobs for its exact commit. An earlier green run
+   does not validate these changes. Source publication is not catalog deployment.
+2. Additional actual application acceptance on Preview and Windows remains useful
+   but unverified: this machine supplies Stable macOS. Windows wheel CI is not
+   Windows Slicer, and no cross-platform packaged-build qualification is claimed.
+3. Optional repository-presentation cleanup and Codecov authentication require
+   authorization to change public settings. Coverage upload is not the enforced
+   test/coverage gate and is not a blocker for the local milestone.
+4. Open the prepared ExtensionsIndex submission only after explicit registration
+   approval. Then follow Factory builds, audit the actual archives, and verify
+   installation/restarts/extraction/export/lossless scenes without source paths.
+   No local SDK build is required to reach submission. Until these later gates
+   pass, do not announce availability in Extensions Manager.
+
+## Historical pre-publication consolidation snapshot (2026-09-29)
 
 - **Published versus local at review:** GitHub's live `main`, read on 2026-09-28, was
   [`7a912cc`](https://github.com/martonkolossvary/SlicerPictologics/commit/7a912cc0ac4b6686753e96e7b148217921bdc208).

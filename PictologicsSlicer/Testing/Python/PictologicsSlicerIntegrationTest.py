@@ -11,6 +11,7 @@ import math
 import os
 import platform
 import shutil
+import struct
 import sys
 import tempfile
 import time
@@ -34,6 +35,7 @@ from PictologicsLib.inline_config import (
     preset_configuration_document,
 )
 from PictologicsLib.memory import BYTES_PER_VOXEL, largest_voxel_count
+from PictologicsLib.persistence import SNAPSHOT_ATTRIBUTE, WARNING_ATTRIBUTE, decode_values
 from PictologicsLib.profiles import build_profile
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
@@ -742,6 +744,152 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(browser.rows, [])
         self.assertFalse(browser.dialog.visible)
 
+    def _persistence_table(self, values, table=None, run="persistence-a"):
+        rows = []
+        for index, value in enumerate(values):
+            row = dict.fromkeys(LONG_RESULT_COLUMNS, "")
+            row.update(run_id=run, timestamp="2026-09-29", image_name="Synthetic precision test",
+                       roi_id="synthetic", roi_name="Synthetic ROI", roi_source="segmentation",
+                       config="test", family="intensity", feature_name=f"feature_{index}",
+                       feature_key=f"feature_{index}_Q4LE", pictologics_feature_name=f"test__feature_{index}_Q4LE",
+                       ibsi_code="Q4LE", pictologics_ibsi_code="Q4LE", value=value, status="ok")
+            rows.append(row)
+        payload = {"schema_version": RESULT_PAYLOAD_SCHEMA_VERSION, "run_id": run, "rows": rows,
+                   "provenance": {}, "errors": []}
+        table = self.logic.commitRows(table, rows, append=table is not None, payload=payload,
+                                      manifest={"configuration_sha256": "synthetic-hash"})
+        table.SetName("Persistence test")
+        return table
+
+    def test_persistence_scene_roundtrip_keeps_exact_doubles_and_exports(self) -> None:
+        values = [206.64972537299272, -math.pi, -0.0, 1.2345678901234567e-100, 1e100, float("nan")]
+        table = self._persistence_table(values)
+        self.assertTrue(table.GetAttribute(SNAPSHOT_ATTRIBUTE))
+        # Export before closing the synthetic scene, too.
+        export = self.temporary_directory / "before.json"
+        self.logic.exportTable(table, export)
+        expected = self.logic.rowsFromTable(table)
+        scene = self.temporary_directory / "precision.mrb"
+        self.assertTrue(slicer.util.saveScene(str(scene)))
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(scene)))
+        loaded = slicer.mrmlScene.GetFirstNodeByName("Persistence test")
+        self.assertIsNone(loaded.GetAttribute(WARNING_ATTRIBUTE))
+        actual = loaded.GetTable().GetColumnByName("value")
+        self.assertEqual(struct.pack(">6d", *values), struct.pack(">6d", *(actual.GetValue(i) for i in range(6))))
+        self.assertEqual(self.logic.rowsFromTable(loaded), expected)
+        after = self.temporary_directory / "after.json"
+        self.logic.exportTable(loaded, after)
+        self.assertEqual(json.loads(after.read_text()), json.loads(export.read_text()))
+        # Repeated save/reload must not accumulate quantization error.
+        self.assertTrue(slicer.util.saveScene(str(self.temporary_directory / "again.mrb")))
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(self.temporary_directory / "again.mrb")))
+        self.assertEqual(self.logic.rowsFromTable(slicer.mrmlScene.GetFirstNodeByName("Persistence test")), expected)
+
+    def test_persistence_keeps_user_edits_and_appended_runs(self) -> None:
+        table = self._persistence_table([math.pi])
+        value_index = list(LONG_RESULT_COLUMNS).index("value")
+        edited = 123.45678901234567
+        table.SetCellText(0, value_index, repr(edited))
+        table.SetCellText(0, list(LONG_RESULT_COLUMNS).index("roi_name"), "Edited ROI")
+        manager = gui_module._resultPersistence()
+        identity, current = manager._contents(table)
+        self.assertEqual(decode_values(table.GetAttribute(SNAPSHOT_ATTRIBUTE), identity, current), (edited,))
+        self._persistence_table([math.e], table, run="persistence-b")
+        expected = self.logic.rowsFromTable(table)
+        scene = self.temporary_directory / "edited.mrb"
+        self.logic.exportTable(table, self.temporary_directory / "edited-before.json")
+        self.assertTrue(slicer.util.saveScene(str(scene)))
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(scene)))
+        loaded = slicer.mrmlScene.GetFirstNodeByName("Persistence test")
+        self.assertEqual(self.logic.rowsFromTable(loaded), expected)
+        self.assertEqual(len(self.logic.provenanceHistory(loaded)), 2)
+
+    def test_persistence_rejects_corrupt_or_stale_backup_without_partial_restore(self) -> None:
+        table = self._persistence_table([math.pi, math.e])
+        manager = gui_module._resultPersistence()
+        original = table.GetAttribute(SNAPSHOT_ATTRIBUTE)
+        for damaged in ("not-json", original.replace('"version":1', '"version":99')):
+            table.SetAttribute(SNAPSHOT_ATTRIBUTE, damaged)
+            before = self.logic.rowsFromTable(table)
+            with self.assertLogs(gui_module.LOGGER, "WARNING"):
+                manager._restore(table)
+            self.assertEqual(self.logic.rowsFromTable(table), before)
+            self.assertIn("left unchanged", table.GetAttribute(WARNING_ATTRIBUTE))
+        # A changed row identity is rejected even if rounded numeric values match.
+        table.SetCellText(0, list(LONG_RESULT_COLUMNS).index("roi_name"), "Another ROI")
+        table.SetAttribute(SNAPSHOT_ATTRIBUTE, original)
+        with self.assertLogs(gui_module.LOGGER, "WARNING"):
+            manager._restore(table)
+        self.assertIn("different table rows", table.GetAttribute(WARNING_ATTRIBUTE))
+
+    def test_persistence_legacy_scene_warns_without_inventing_digits(self) -> None:
+        table = self._persistence_table([math.pi])
+        table.SetAttribute(SNAPSHOT_ATTRIBUTE, None)
+        scene = self.temporary_directory / "legacy.mrb"
+        self.logic.exportTable(table, self.temporary_directory / "legacy-before.json")
+        self.assertTrue(slicer.util.saveScene(str(scene)))
+        slicer.mrmlScene.Clear()
+        with self.assertLogs(gui_module.LOGGER, "WARNING"):
+            self.assertTrue(slicer.util.loadScene(str(scene)))
+        loaded = slicer.mrmlScene.GetFirstNodeByName("Persistence test")
+        self.assertEqual(self.logic.rowsFromTable(loaded)[0]["value"], float(format(math.pi, ".6g")))
+        self.assertIn("cannot be recovered", loaded.GetAttribute(WARNING_ATTRIBUTE))
+        widget = self._feedback_widget()
+        widget.ui.outputTableSelector.setCurrentNode(loaded)
+        widget.onBrowseResults()
+        self.assertIn("cannot be recovered", widget._resultsBrowser.source.text)
+
+    def test_persistence_import_does_not_overwrite_existing_live_edits(self) -> None:
+        scene = self.temporary_directory / "other.mrb"
+        self.assertTrue(slicer.util.saveScene(str(scene)))
+        table = self._persistence_table([206.64972537299272])
+        old_snapshot = table.GetAttribute(SNAPSHOT_ATTRIBUTE)
+        # Deliberately create the ambiguous case: user chose the rounded value.
+        table.SetCellText(0, list(LONG_RESULT_COLUMNS).index("value"), "206.65")
+        table.SetAttribute(SNAPSHOT_ATTRIBUTE, old_snapshot)
+        self.assertTrue(slicer.util.loadScene(str(scene), {"clear": False}))
+        self.assertEqual(self.logic.rowsFromTable(table)[0]["value"], 206.65)
+
+    def test_persistence_plain_mrml_scene_view_restore_and_observer_replacement(self) -> None:
+        slicer.mrmlScene.Clear()
+        table = self._persistence_table([math.pi])
+        expected = self.logic.rowsFromTable(table)
+        self.logic.exportTable(table, self.temporary_directory / "plain-before.json")
+        self.assertTrue(slicer.util.saveNode(table, str(self.temporary_directory / "table.tsv")))
+        scene = self.temporary_directory / "plain.mrml"
+        self.assertTrue(slicer.util.saveScene(str(scene)))
+        slicer.mrmlScene.Clear()
+        # The plain MRML reader returns no node on success (unlike the MRB reader).
+        slicer.util.loadScene(str(scene))
+        loaded = slicer.mrmlScene.GetFirstNodeByName("Persistence test")
+        self.assertIsNotNone(loaded)
+        self.assertEqual(self.logic.rowsFromTable(loaded), expected)
+        view = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSceneViewNode")
+        view.StoreScene()
+        old_snapshot = loaded.GetAttribute(SNAPSHOT_ATTRIBUTE)
+        loaded.SetCellText(0, list(LONG_RESULT_COLUMNS).index("value"), "3.14159")
+        edited = self.logic.rowsFromTable(loaded)
+        # Slicer Scene Views exclude table data. Even an ambiguous stale backup
+        # must not replace a deliberate edit when only the view is restored.
+        loaded.SetAttribute(SNAPSHOT_ATTRIBUTE, old_snapshot)
+        self.assertTrue(view.RestoreScene())
+        restored = slicer.mrmlScene.GetFirstNodeByName("Persistence test")
+        self.assertEqual(self.logic.rowsFromTable(restored), edited)
+        manager = gui_module._resultPersistence()
+        manager.close()
+        slicer.modules._pictologicsResultPersistence = None
+        replacement = gui_module._resultPersistence()
+        self.assertIsNot(replacement, manager)
+        self.assertFalse(manager.nodes)
+        self.assertFalse(manager.observers)
+        self.assertEqual(len(replacement.nodes), 1)
+        restored.SetCellText(0, list(LONG_RESULT_COLUMNS).index("value"), repr(math.e))
+        identity, values = replacement._contents(restored)
+        self.assertEqual(decode_values(restored.GetAttribute(SNAPSHOT_ATTRIBUTE), identity, values), (math.e,))
+
     def test_append_with_other_settings_goes_to_a_new_table(self) -> None:
         def payload(run: str, steps: list[dict[str, str]]) -> dict[str, Any]:
             row = dict.fromkeys(LONG_RESULT_COLUMNS, "")
@@ -886,6 +1034,94 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         ) as error:
             widget.onRunBatch()
         self.assertIn("Could not read the study folder", error.call_args.args[0])
+
+    def test_batch_load_failure_continues_and_removes_partial_case_nodes(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.segmentationSelector.setCurrentNode(self.fixture.segmentation_node)
+        widget.ui.wholeVolumeCheckBox.setChecked(False)
+        widget.ui.subjectIdLineEdit.setText("original subject")
+        widget.ui.batchFolderLineEdit.setText(str(self._write_batch_study()))
+        scene_before = _scene_node_ids()
+        real_load = slicer.util.loadSegmentation
+        seen = []
+
+        def load_segmentation(path):
+            if Path(path).parent.name == "case-a":
+                raise RuntimeError("synthetic unreadable segmentation")
+            return real_load(path)
+
+        def fake_run():
+            seen.append(str(widget.ui.subjectIdLineEdit.text))
+            widget._batch["completed"] += 1
+
+        with patch.object(slicer.util, "loadSegmentation", side_effect=load_segmentation), patch.object(
+            widget, "onRun", side_effect=fake_run
+        ), patch.object(slicer.util, "confirmOkCancelDisplay", return_value=True), patch.object(
+            slicer.util, "warningDisplay"
+        ) as warning:
+            widget.onRunBatch()
+            self._wait_for_batch_end(widget, 30)
+        self.assertEqual(seen, ["case-b"])
+        warning.assert_called_once()
+        self.assertIn("case-a: Could not load the case files", warning.call_args.args[0])
+        self.assertIn("1 of 2 case(s) added rows. 1 case(s) failed", widget.ui.statusLabel.text)
+        self.assertEqual(_scene_node_ids() - scene_before, set())
+        self.assertEqual(widget.ui.subjectIdLineEdit.text, "original subject")
+        self.assertEqual(widget.ui.inputVolumeSelector.currentNode(), self.fixture.volume_node)
+        self.assertEqual(widget.ui.segmentationSelector.currentNode(), self.fixture.segmentation_node)
+
+    def test_batch_cancellation_stops_before_loading_next_case(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.batchFolderLineEdit.setText(str(self._write_batch_study()))
+        scene_before = _scene_node_ids()
+        seen = []
+
+        def fake_run():
+            seen.append(str(widget.ui.subjectIdLineEdit.text))
+            node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLCommandLineModuleNode")
+            widget._cliNode = node
+            widget._activeJob = {"manifest": {"rois": [{"roi_name": "Synthetic region"}]}}
+            widget._startRunFeedback()
+            widget._cliObserverTag = node.AddObserver(vtk.vtkCommand.ModifiedEvent, widget.onCliModified)
+            node.SetStatus(node.Running)
+
+        with patch.object(widget, "onRun", side_effect=fake_run), patch.object(
+            slicer.util, "confirmOkCancelDisplay", return_value=True
+        ), patch.object(widget.logic, "cleanupJob"), patch.object(widget, "_acceptCompletedJob") as accept:
+            widget.onRunBatch()
+            node = widget._cliNode
+            widget.onCancel()
+            # Exercise actual MRML cancellation events; no worker is launched here.
+            node.SetStatus(node.Cancelled)
+            self._wait_for_batch_end(widget, 30)
+        accept.assert_not_called()
+        self.assertEqual(seen, ["case-a"])
+        self.assertIn("Batch stopped after 1 of 2 case(s)", widget.ui.statusLabel.text)
+        self.assertEqual(_scene_node_ids() - scene_before, set())
+        self.assertIsNone(widget._activeJob)
+        self.assertFalse(widget._runFeedbackTimer.isActive())
+
+    def test_batch_scene_close_discards_queued_case_and_original_input_restore(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.batchFolderLineEdit.setText(str(self._write_batch_study()))
+        seen = []
+
+        def fake_run():
+            seen.append(str(widget.ui.subjectIdLineEdit.text))
+            widget._batch["completed"] += 1
+
+        with patch.object(widget, "onRun", side_effect=fake_run), patch.object(
+            slicer.util, "confirmOkCancelDisplay", return_value=True
+        ), patch.object(slicer.util, "warningDisplay") as warning:
+            widget.onRunBatch()
+            self.assertTrue(widget._batch["pending"])
+            slicer.mrmlScene.Clear()
+            self._wait_for_batch_end(widget, 30)
+        self.assertEqual(seen, ["case-a"])
+        self.assertIsNone(widget.ui.inputVolumeSelector.currentNode())
+        self.assertIsNone(widget.ui.segmentationSelector.currentNode())
+        self.assertEqual(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLVolumeNode"), 0)
+        warning.assert_not_called()
 
     def test_memory_warning_allows_crop_fallback_and_rechecks_larger_batch_cases(self) -> None:
         widget = self._feedback_widget()
@@ -1128,8 +1364,26 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         widget.onSceneStartClose()
         self.assertFalse(widget._runFeedbackTimer.isActive())
         self.assertIsNone(widget._runStartedAt)
-        widget._startRunFeedback()
-        widget.cleanup()
+        widget.initializeParameterNode()
+        widget.ui.batchFolderLineEdit.setText(str(self._write_batch_study()))
+        scene_before = _scene_node_ids()
+        seen = []
+
+        def fake_run():
+            seen.append(str(widget.ui.subjectIdLineEdit.text))
+            widget._batch["completed"] += 1
+
+        with patch.object(widget, "onRun", side_effect=fake_run), patch.object(
+            slicer.util, "confirmOkCancelDisplay", return_value=True
+        ), patch.object(slicer.util, "warningDisplay"):
+            widget.onRunBatch()
+            widget._startRunFeedback()
+            widget.cleanup()
+            # Deliver the already queued callback after teardown.
+            _pump_slicer_events()
+        self.assertEqual(seen, ["case-a"])
+        self.assertIsNone(widget._batch)
+        self.assertEqual(_scene_node_ids() - scene_before, set())
         self.assertIsNone(widget._runFeedbackTimer)
         self.assertIsNone(widget._runStartedAt)
 

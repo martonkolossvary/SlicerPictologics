@@ -48,6 +48,13 @@ from PictologicsLib.inline_config import (
 )
 from PictologicsLib.jobs import build_job_manifest, sha256_file, write_job_manifest
 from PictologicsLib.memory import BYTES_PER_VOXEL, largest_voxel_count
+from PictologicsLib.persistence import (
+    SNAPSHOT_ATTRIBUTE,
+    WARNING_ATTRIBUTE,
+    decode_values,
+    encode_values,
+    table_identity,
+)
 from PictologicsLib.profiles import build_profile, validate_profile
 from PictologicsLib.progress import current_roi_index, elapsed_text
 from PictologicsLib.result_columns import (
@@ -235,11 +242,149 @@ class _DeferredJobCleanup:
             _DEFERRED_JOB_CLEANUPS.pop(self.key, None)
 
 
+class _ResultScenePersistence:
+    """Keep snapshots current and restore only imported scene tables.
+
+    Slicer's MRB writer does not emit StartSaveEvent. Observe table changes instead
+    of relying on a save hook, and never interpret cached values during normal
+    browsing/export (which could overwrite a user's subsequent edits).
+    """
+
+    def __init__(self):
+        self.scene = slicer.mrmlScene
+        self.observers = []
+        self.nodes = {}
+        self.revisions = {}
+        self.busy = False
+        self.beforeImport = set()
+        for event, callback in (
+            (self.scene.NodeAddedEvent, self._added),
+            (self.scene.NodeRemovedEvent, self._removed),
+            (self.scene.StartImportEvent, self._startImport),
+            (self.scene.EndImportEvent, self._endImport),
+        ):
+            self.observers.append(self.scene.AddObserver(event, callback))
+        for node in slicer.util.getNodesByClass("vtkMRMLTableNode"):
+            self._watch(node)
+
+    def close(self):
+        for tag in self.observers:
+            self.scene.RemoveObserver(tag)
+        for node, tag in self.nodes.values():
+            node.RemoveObserver(tag)
+        self.observers.clear()
+        self.nodes.clear()
+        self.revisions.clear()
+
+    @vtk.calldata_type(vtk.VTK_OBJECT)
+    def _added(self, caller, event, node):
+        if node.IsA("vtkMRMLTableNode"):
+            self._watch(node)
+
+    @vtk.calldata_type(vtk.VTK_OBJECT)
+    def _removed(self, caller, event, node):
+        key = node.GetID()
+        if key in self.nodes:
+            watched, tag = self.nodes.pop(key)
+            watched.RemoveObserver(tag)
+            self.revisions.pop(key, None)
+
+    def _watch(self, node):
+        key = node.GetID()
+        if key not in self.nodes:
+            self.nodes[key] = (node, node.AddObserver(vtk.vtkCommand.ModifiedEvent, self._changed))
+        self._changed(node)
+
+    @staticmethod
+    def _contents(node):
+        table = node.GetTable()
+        columns = [str(table.GetColumnName(index)) for index in range(table.GetNumberOfColumns())]
+        if not is_result_table_columns(columns):
+            raise ValueError("The table no longer has the Pictologics result columns")
+        text_columns = [name for name in columns if name != "value"]
+        text_rows = [[str(table.GetColumnByName(name).GetValue(row)) for name in text_columns]
+                     for row in range(table.GetNumberOfRows())]
+        values = [float(table.GetColumnByName("value").GetValue(row)) for row in range(table.GetNumberOfRows())]
+        return table_identity(text_columns, text_rows), values
+
+    @staticmethod
+    def _revision(node):
+        table = node.GetTable()
+        return (table.GetAddressAsString(""), table.GetMTime())
+
+    @staticmethod
+    def _isResult(node):
+        return node.GetAttribute("Pictologics.ResultSchemaVersion") == str(RESULT_PAYLOAD_SCHEMA_VERSION)
+
+    def _warning(self, node, message):
+        node.SetAttribute(WARNING_ATTRIBUTE, message)
+        LOGGER.warning("Pictologics scene persistence: %s", message)
+
+    def _changed(self, node, event=None):
+        if self.busy or self.scene.IsImporting() or self.scene.IsRestoring() or self.scene.IsClosing():
+            return
+        if not self._isResult(node) or self.revisions.get(node.GetID()) == self._revision(node):
+            return
+        self.busy = True
+        try:
+            identity, values = self._contents(node)
+            node.SetAttribute(SNAPSHOT_ATTRIBUTE, encode_values(values, identity))
+        except (ValueError, TypeError) as exc:
+            node.SetAttribute(SNAPSHOT_ATTRIBUTE, None)
+            self._warning(node, f"Exact-value backup unavailable: {exc}")
+        finally:
+            self.revisions[node.GetID()] = self._revision(node)
+            self.busy = False
+
+    def _startImport(self, caller=None, event=None):
+        self.beforeImport = set(self.nodes)
+
+    def _endImport(self, caller=None, event=None):
+        # Importing another scene must not restore stale backups into live tables.
+        for key, (node, _) in list(self.nodes.items()):
+            if key not in self.beforeImport:
+                self._restore(node)
+        self.beforeImport.clear()
+
+    def _restore(self, node):
+        if not self._isResult(node):
+            return
+        self.busy = True
+        try:
+            snapshot = node.GetAttribute(SNAPSHOT_ATTRIBUTE)
+            if not snapshot:
+                self._warning(node, "This older scene has no exact-value backup; previously rounded digits cannot be recovered.")
+                return
+            identity, current = self._contents(node)
+            exact = decode_values(snapshot, identity, current)
+            column = node.GetTable().GetColumnByName("value")
+            for row, value in enumerate(exact):
+                column.SetValue(row, value)
+            column.Modified()
+            node.GetTable().Modified()
+        except (ValueError, TypeError) as exc:
+            self._warning(node, f"Exact values were not restored; the loaded table was left unchanged: {exc}")
+        finally:
+            self.revisions[node.GetID()] = self._revision(node)
+            self.busy = False
+
+
+def _resultPersistence():
+    previous = getattr(slicer.modules, "_pictologicsResultPersistence", None)
+    if not isinstance(previous, _ResultScenePersistence) or previous.scene != slicer.mrmlScene:
+        if previous is not None:
+            previous.close()
+        previous = _ResultScenePersistence()
+        slicer.modules._pictologicsResultPersistence = previous
+    return previous
+
+
 class PictologicsSlicer(ScriptedLoadableModule):
     """Module metadata shown by Slicer."""
 
     def __init__(self, parent):
         super().__init__(parent)
+        _resultPersistence()
         self.parent.title = "Pictologics"
         self.parent.categories = ["Informatics"]
         # Override Slicer's SVG-first discovery in source checkouts containing the old icon.
@@ -339,6 +484,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.refreshPackageStatus()
 
     def cleanup(self):
+        # A singleShot callback may already be queued between batch cases. Make
+        # it inert before detaching the UI; workers use staged files, not these nodes.
+        self._removeBatchNodes()
+        self._batch = None
         if self._resultsBrowser is not None:
             self._resultsBrowser.close()
         self._stopRunFeedback()
@@ -1055,6 +1204,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 history = self.logic.provenanceHistory(table)
             except ValueError as exc:
                 history, warning = [], str(exc)
+            warning = " ".join(part for part in (warning, table.GetAttribute(WARNING_ATTRIBUTE)) if part)
             self._resultsBrowser.set_data(table.GetName(), rows, history, warning)
             return True
         except Exception as exc:
@@ -1946,6 +2096,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
 class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
     """Dependency, data-conversion, CLI, and atomic table orchestration."""
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        _resultPersistence()
+
     def setDefaultParameters(self, parameterNode):
         if not parameterNode.GetParameter(PARAM_WHOLE_VOLUME):
             # Off by default: the presets resample the entire scan for a whole-volume
@@ -2766,6 +2920,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             provenanceHistory = [runRecord]
 
         attributeValues = {
+            WARNING_ATTRIBUTE: tableNode.GetAttribute(WARNING_ATTRIBUTE) if append and tableNode is not None else None,
             "Pictologics.ResultSchemaVersion": str(payload["schema_version"]),
             "Pictologics.LastRunID": str(payload["run_id"]),
             "Pictologics.ConfigurationSHA256": str(manifest["configuration_sha256"]),

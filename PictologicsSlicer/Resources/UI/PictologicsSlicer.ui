@@ -378,6 +378,7 @@
       <item row="3" column="1">
        <widget class="QPushButton" name="exportButton">
         <property name="text"><string>Export table as CSV or JSON…</string></property>
+        <property name="toolTip"><string>Export the current values at full precision as an independent archive. New Pictologics result tables also carry exact-value backups in saved scenes. Previously rounded values in older scenes cannot be recovered.</string></property>
         <property name="enabled"><bool>false</bool></property>
        </widget>
       </item>

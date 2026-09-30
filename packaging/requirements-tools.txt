@@ -1,0 +1,7 @@
+# CMake, CTest and CPack share one version. No application dependencies here.
+# Official PyPI cmake 3.31.10 wheels: macOS universal2 and Linux x86_64.
+# Install with --require-hashes --only-binary=:all: --no-deps in a private venv.
+cmake==3.31.10 \
+    --hash=sha256:ad697643a00d9ba85179590a383c4f7401169b55ebf4b8b2938daf28c6bdeb6d \
+    --hash=sha256:3c17bb24dba15f8ecc3fd706afe04264410ef88796f4115c119327c961d5dc57 \
+    --hash=sha256:2f766bb46367e5e0559fa33184653754bce044583a06014dcaebf8e6dff8a1f1

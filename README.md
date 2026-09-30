@@ -324,6 +324,14 @@ for a two-reader study.
 
 ## Current limitations
 
+- **Keep CSV/JSON exports as independent result archives.** New Pictologics result
+  tables carry an exact-value backup in saved scenes; with the extension loaded,
+  validated backups restore full numeric precision after scene reload. User edits
+  update that backup. Older scenes without a backup cannot recover digits already
+  rounded by Slicer's default table writer. Invalid/mismatched backups leave the
+  loaded table unchanged and show a warning in **Browse results and provenance…**.
+  Standalone tables saved through Slicer's generic TSV/CSV writer do not carry the
+  backup—use the module's **Export table as CSV or JSON…** for full precision.
 - One scalar 3D volume is processed per run; vector and 4D images are out of scope.
   To process many cases, use the Batch section or a script (see above).
 - A batch reads files that Slicer can load (for example NIfTI and NRRD), not DICOM

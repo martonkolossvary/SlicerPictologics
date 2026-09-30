@@ -68,6 +68,8 @@ jobs:
     needs: discover
     if: needs.discover.outputs.changed == 'true'
     uses: ./.github/workflows/compatibility.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     with:
       version: ${{ needs.discover.outputs.version }}
       revision: ${{ needs.discover.outputs.revision }}

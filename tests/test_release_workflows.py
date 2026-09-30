@@ -26,6 +26,31 @@ def test_quality_setup_declares_dependencies_and_matches_documentation():
     assert command in documentation
 
 
+def test_coverage_secret_is_optional_explicit_and_reporting_remains_nonblocking():
+    qualification = load_workflow("compatibility.yml")
+    assert qualification["on"]["workflow_call"]["secrets"]["CODECOV_TOKEN"]["required"] == "false"
+    for name, job in (("ci.yml", "compatibility"), ("adopt-pictologics-release.yml", "qualify")):
+        assert load_workflow(name)["jobs"][job]["secrets"] == {
+            "CODECOV_TOKEN": "${{ secrets.CODECOV_TOKEN }}"
+        }
+    upload = next(step for step in qualification["jobs"]["quality"]["steps"]
+                  if step.get("uses", "").startswith("codecov/codecov-action@"))
+    assert upload["with"]["token"] == "${{ secrets.CODECOV_TOKEN }}"
+    assert upload["with"]["fail_ci_if_error"] == "false"
+    assert qualification["permissions"] == {"contents": "read"}
+
+
+def test_python_extension_qualification_does_not_require_a_local_sdk_build():
+    quality = load_workflow("compatibility.yml")["jobs"]["quality"]
+    commands = "\n".join(step.get("run", "") for step in quality["steps"])
+    assert "packaging/requirements-tools.txt" not in commands
+    assert "package_extension.py" not in commands
+    assert "xcodebuild" not in commands
+    assert "python -m pytest" in commands
+    slicer = load_workflow("compatibility.yml")["jobs"]["slicer"]
+    assert "run_slicer_integration.py" in slicer["steps"][-1]["run"]
+
+
 def test_ci_and_adoption_share_qualification():
     slicer_test_registration = (
         WORKFLOWS.parents[1] / "PictologicsSlicer/Testing/Python/CMakeLists.txt"

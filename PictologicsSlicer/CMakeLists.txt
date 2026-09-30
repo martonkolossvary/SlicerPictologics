@@ -11,6 +11,7 @@ set(MODULE_PYTHON_SCRIPTS
   PictologicsLib/inline_config.py
   PictologicsLib/jobs.py
   PictologicsLib/memory.py
+  PictologicsLib/persistence.py
   PictologicsLib/progress.py
   PictologicsLib/profiles.py
   PictologicsLib/result_browser.py
