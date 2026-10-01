@@ -48,6 +48,10 @@ not the MRHead run above. Both examples are genuine Slicer captures using
 Pictologics 0.5.1 and `standard_fbn_32`.
 See [sample attribution, capture provenance, and reproduction](docs/screenshots/README.md).
 
+A [small real CT example and reproducible workload benchmarks](docs/performance.md)
+complement the MRI demonstration. The CT uses two illustrative, non-clinical ROIs;
+the image data and any new screenshots stay outside Git pending visual review.
+
 ## Modules
 
 - **Pictologics** (Informatics): the user interface. It selects the scan and the
@@ -220,6 +224,11 @@ whole axis. The values then agree
 with a whole-scan run to rounding precision. On Slicer's MRHead sample with a 12 mm
 sphere away from the center, the worker used 0.48 GB instead of 2.4 GB, and all 170
 values of `standard_fbn_32` agreed within one part in a billion (152 exactly).
+
+See [measured workloads and memory/timing guidance](docs/performance.md) for CT/MRI,
+multiple configurations, a ten-case batch, and large result tables. The 1 GB warning
+estimates one image array, **not total peak RAM**; staging, worker arrays, masks,
+result tables and the rest of Slicer require additional memory.
 
 ### Browse results and provenance
 

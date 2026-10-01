@@ -4,11 +4,41 @@ Review date: 2026-10-01. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.
 
+## Representative workloads (2026-10-01)
+
+The next development increment adds a checksum-pinned real CT example with two
+illustrative ROIs, a bounded installed-Slicer workload harness, eight portable
+fixture/sampling tests, and [measured performance guidance](performance.md).
+The maintainer authorized source publication of these validated additions; their
+GitHub qualification must be checked at the resulting commit. The measured runtime
+is unchanged from `067672f`. No new image binary or screenshot is included.
+
+The successful full matrix covered cold/warm CT, MRHead, a 50.3-million-voxel CT
+with crop parity, two configurations, 0.5 mm spacing, ten actual GUI batch cases,
+and 10,000/100,000-row result tables. All extraction statuses were `ok`; the process
+exited 0. Both large saved scenes were independently reopened and all row fields
+and binary64 values matched their prior JSON exports exactly. The first harness
+run's Qt-deletion crash and its correction are documented, not hidden by its
+completed measurements. The normal Slicer scene/settings were not modified.
+After the temporary logic's module name was corrected, the focused batch/table
+rerun also completed all ten cases and both table sizes with clean process exit.
+The CT preview produced 340 `ok` rows and remains local pending visual approval.
+
+Local quality: **555 portable tests**, 100% scoped library/worker coverage, Ruff,
+Mypy (17 source files), and whitespace checks. The eight new tests also pass under
+Slicer's bundled Python. This does not expand Windows/Preview application or package
+qualification. Next usability work should prioritize long table-operation feedback
+and persistent per-case batch outcomes; registration and new public images still
+require explicit maintainer approval.
+
 ## Diagnostics and failure-recovery source milestone (2026-10-01)
 
-**Source publication authorized; registration remains on hold.** The maintainer
-authorized commit/push of this validated milestone on 2026-10-01. Assess GitHub
-qualification for the exact pushed commit; older CI does not cover it. Added an opt-in,
+**Published and qualified; registration remains on hold.** The maintainer
+authorized commit/push of this validated milestone on 2026-10-01. Commit
+`067672f3949171a3484d408a43196a22d3976530` is on `main` and passed
+[all five GitHub qualification jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36839582292):
+lint/types/coverage, released-wheel checks on Windows/Linux/Intel macOS, and
+**49 real Linux Slicer tests, no skips** (1049.910 seconds). Added an opt-in,
 read-only diagnostic preview with explicit copying, allowlisted technical fields,
 metadata-only dependency status, session run counts and fixed failure/recovery
 codes. No scene identifiers, file paths, DICOM metadata or raw error/log text are
@@ -45,8 +75,8 @@ owned `job-*` root and therefore expected cleanup that the safety guard correctl
 refused. Correcting the fixture path resolved those assertions; cleanup safeguards
 were not loosened. Both initial and successful retry logs are retained.
 
-The prior GitHub run below qualifies only its exact published commit, not these
-local changes. No package version or existing job/result schema was changed.
+The GitHub run above qualifies the diagnostics/recovery commit, not subsequent
+local workload/benchmark development. No package version or existing job/result schema was changed.
 No normal Slicer scene/settings, shared packages, public images, GitHub settings,
 tags or catalog submissions were changed.
 
