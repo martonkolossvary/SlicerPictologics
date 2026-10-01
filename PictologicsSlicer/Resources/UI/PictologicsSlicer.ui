@@ -409,6 +409,15 @@
       <item row="2" column="1"><widget class="QLineEdit" name="batchSegmentationPatternLineEdit"><property name="text"><string>segmentation.seg.nrrd</string></property><property name="toolTip"><string>Name or pattern of the segmentation or label map file in each case folder. Leave it empty to analyze only the whole volume.</string></property></widget></item>
       <item row="3" column="0" colspan="2"><widget class="QLabel" name="batchHelpLabel"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>Each subfolder is one case, and its name becomes the subject ID. Every segment is a region. The configurations, reader, extra columns, and crop setting above apply to every case. The rows of all cases go into the results table.</string></property></widget></item>
       <item row="4" column="0" colspan="2"><widget class="QPushButton" name="runBatchButton"><property name="text"><string>Run batch…</string></property></widget></item>
+      <item row="5" column="0"><widget class="QLabel" name="batchReportLabel"><property name="text"><string>Saved batch report:</string></property></widget></item>
+      <item row="5" column="1"><widget class="QComboBox" name="batchReportCombo"><property name="toolTip"><string>Reports are saved in the Slicer scene with the case outcomes.</string></property></widget></item>
+      <item row="6" column="0" colspan="2">
+       <layout class="QHBoxLayout" name="batchReportButtonsLayout">
+        <item><widget class="QPushButton" name="viewBatchReportButton"><property name="text"><string>View report</string></property></widget></item>
+        <item><widget class="QPushButton" name="exportBatchReportButton"><property name="text"><string>Export report…</string></property></widget></item>
+       </layout>
+      </item>
+      <item row="7" column="0" colspan="2"><widget class="QLabel" name="batchReportHelpLabel"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>Reports include completed, partial, failed, skipped, cancelled, and interrupted cases. Save the scene or export JSON/CSV before closing it.</string></property></widget></item>
      </layout>
     </widget>
    </item>

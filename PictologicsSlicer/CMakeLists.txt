@@ -6,6 +6,7 @@ set(MODULE_PYTHON_SCRIPTS
   PictologicsWidgets/results_browser.py
   PictologicsLib/__init__.py
   PictologicsLib/batch.py
+  PictologicsLib/batch_reports.py
   PictologicsLib/dependency_probe.py
   PictologicsLib/dependencies.py
   PictologicsLib/diagnostics.py

@@ -18,13 +18,24 @@ import sys
 import tempfile
 import time
 import uuid
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import qt
 import slicer
 import vtk
-from PictologicsLib.batch import find_cases
+from PictologicsLib.batch import discover_cases
+from PictologicsLib.batch_reports import (
+    REPORT_ATTRIBUTE,
+    REPORT_COLUMNS,
+    REPORT_METADATA_ATTRIBUTE,
+    REPORT_SCHEMA_VERSION,
+    export_report,
+    new_report,
+    validate_report,
+)
 from PictologicsLib.dependencies import (
     activate_dependency_target,
     build_pip_install_args,
@@ -427,6 +438,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._continuousOutputNode = None
         self._lastPayload: dict[str, Any] | None = None
         self._resultsBrowser = None
+        self._tableOperationInProgress = False
+        self._sceneGeneration = 0
         self._profilePath: Path | None = None
         self._profileName = "Radiomics profile"
         self._filterParameterWidgets: dict[str, Any] = {}
@@ -479,6 +492,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.filterTypeCombo.setCurrentIndex(self.ui.filterTypeCombo.findData("log"))
         self._buildFilterParameters("log", {})
         self._connectSignals()
+        self._refreshBatchReports()
 
         self.addObserver(
             slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose
@@ -486,12 +500,17 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.addObserver(
             slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose
         )
+        self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndImportEvent, self._refreshBatchReports)
+        self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndRestoreEvent, self._refreshBatchReports)
         self.initializeParameterNode()
         self.refreshPackageStatus()
 
     def cleanup(self):
+        self._sceneGeneration += 1
         # A singleShot callback may already be queued between batch cases. Make
         # it inert before detaching the UI; workers use staged files, not these nodes.
+        if self._batch is not None:
+            self._markBatchInterrupted()
         self._removeBatchNodes()
         self._batch = None
         if self._resultsBrowser is not None:
@@ -508,6 +527,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
 
     def enter(self):
         self.initializeParameterNode()
+        self._refreshBatchReports()
         if self.logic is not None:
             try:
                 self.logic.purgeStaleJobs()
@@ -597,6 +617,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.runButton.connect("clicked()", self.onRun)
         self.ui.batchBrowseButton.connect("clicked()", self.onBrowseBatchFolder)
         self.ui.runBatchButton.connect("clicked()", self.onRunBatch)
+        self.ui.viewBatchReportButton.connect("clicked()", self.onViewBatchReport)
+        self.ui.exportBatchReportButton.connect("clicked()", self.onExportBatchReport)
+        self.ui.batchReportCombo.connect("currentIndexChanged(int)", lambda _index: self._updateRunState())
         self.ui.cancelButton.connect("clicked()", self.onCancel)
         self.ui.exportButton.connect("clicked()", self.onExport)
         self.ui.browseResultsButton.connect("clicked()", self.onBrowseResults)
@@ -645,6 +668,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.updateGUIFromParameterNode()
 
     def onSceneStartClose(self, caller=None, event=None):
+        self._sceneGeneration += 1
         if self._resultsBrowser is not None:
             self._resultsBrowser.close()
         self._profilePath = None
@@ -652,7 +676,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.profileStatusLabel.setText("Profiles contain settings only; no patient data.")
         self._stopRunFeedback()
         if self._batch is not None:
+            self._markBatchInterrupted()
             self._batch["stopped"] = True
+            self._batch["scene_closing"] = True
             self._batch["nodes"] = []
             self._batch["restore"] = None
         if self._activeJob is not None:
@@ -664,8 +690,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             if self._nodeIsBusy(self._cliNode):
                 self._cliNode.Cancel()
         self.setParameterNode(None)
+        self._refreshBatchReports()
 
     def onSceneEndClose(self, caller=None, event=None):
+        self._refreshBatchReports()
         if self._activeJob is not None and self._activeJob.get("discard_results"):
             try:
                 cliStillObserved = (
@@ -1130,6 +1158,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             or self._activeJob is not None
             or self._dependencyOperationInProgress
             or self._batch is not None
+            or self._tableOperationInProgress
         )
         error = self._validationError()
         for control in (
@@ -1157,7 +1186,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         ):
             control.setEnabled(not busy)
         self.ui.runButton.setEnabled(not busy and error is None)
-        self.ui.cancelButton.setEnabled(cliBusy and not self._cancelRequested)
+        self.ui.cancelButton.setEnabled(cliBusy and not self._cancelRequested and not self._tableOperationInProgress)
         self.ui.updatePackageButton.setEnabled(not busy)
         tableNode = self.ui.outputTableSelector.currentNode()
         self.ui.saveProfileButton.setEnabled(not busy and self._currentAdditionalSource() != "file")
@@ -1169,7 +1198,14 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             and tableNode.GetTable().GetNumberOfRows() > 0
         )
         self.ui.browseResultsButton.setEnabled(self.ui.exportButton.enabled)
-        if busy:
+        reportNode = self._selectedBatchReportNode()
+        reportEnabled = not busy and reportNode is not None
+        self.ui.batchReportCombo.setEnabled(not busy and self.ui.batchReportCombo.count > 0)
+        self.ui.viewBatchReportButton.setEnabled(reportEnabled)
+        self.ui.exportBatchReportButton.setEnabled(reportEnabled)
+        if self._tableOperationInProgress:
+            self.ui.readinessLabel.setText("Result-table operation in progress; controls are locked.")
+        elif busy:
             self.ui.readinessLabel.setText("Run or package operation in progress; inputs are locked.")
         elif error:
             self.ui.readinessLabel.setText(error)
@@ -1194,7 +1230,190 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 f"Ready: {' + '.join(regionParts)}; {' + '.join(configParts)}."
             )
 
+    def _batchReportNodes(self):
+        nodes = []
+        for index in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLTableNode")):
+            node = slicer.mrmlScene.GetNthNodeByClass(index, "vtkMRMLTableNode")
+            if node is not None and node.GetAttribute(REPORT_ATTRIBUTE) == REPORT_SCHEMA_VERSION:
+                nodes.append(node)
+        return nodes
+
+    def _refreshBatchReports(self, caller=None, event=None, *, selected_id=None):
+        if not hasattr(self, "ui"):
+            return
+        combo = self.ui.batchReportCombo
+        current = selected_id or (str(combo.itemData(combo.currentIndex)) if combo.currentIndex >= 0 else "")
+        combo.blockSignals(True)
+        combo.clear()
+        nodes = self._batchReportNodes()
+        for node in reversed(nodes):
+            combo.addItem(str(node.GetName()), node.GetID())
+        index = combo.findData(current) if current else 0
+        if combo.count:
+            combo.setCurrentIndex(max(0, index))
+        combo.blockSignals(False)
+        if hasattr(self, "ui"):
+            self._updateRunState()
+
+    def _selectedBatchReportNode(self):
+        if not hasattr(self, "ui") or self.ui.batchReportCombo.currentIndex < 0:
+            return None
+        node_id = str(self.ui.batchReportCombo.itemData(self.ui.batchReportCombo.currentIndex))
+        node = slicer.mrmlScene.GetNodeByID(node_id) if node_id else None
+        return node if node is not None and node.GetAttribute(REPORT_ATTRIBUTE) == REPORT_SCHEMA_VERSION else None
+
+    def _reportDocument(self, node):
+        if node is None or node.GetAttribute(REPORT_ATTRIBUTE) != REPORT_SCHEMA_VERSION:
+            raise ValueError("The selected batch report is unavailable or has an unsupported schema.")
+        try:
+            metadata = json.loads(str(node.GetAttribute(REPORT_METADATA_ATTRIBUTE) or "{}"))
+        except json.JSONDecodeError as exc:
+            raise ValueError("The batch report metadata is not valid JSON.") from exc
+        if not isinstance(metadata, dict):
+            raise ValueError("The batch report metadata must be a JSON object.")
+        table = node.GetTable()
+        if table is None:
+            raise ValueError("The batch report table is missing.")
+        columns = {str(table.GetColumnName(index)): index for index in range(table.GetNumberOfColumns())}
+        if not set(REPORT_COLUMNS).issubset(columns):
+            raise ValueError("The batch report is missing required columns.")
+        rows = []
+        for row_index in range(table.GetNumberOfRows()):
+            rows.append({name: str(table.GetValue(row_index, columns[name]).ToString()) for name in REPORT_COLUMNS})
+        metadata["rows"] = rows
+        document = validate_report(metadata)
+        owned = self._batch is not None and self._batch.get("report_node") is node
+        if document["state"] == "running" and not owned:
+            for row in document["rows"]:
+                if row["status"] == "running":
+                    row["status"] = "interrupted"
+                    row["reason"] = "The Slicer session ended while this case was running."
+                elif row["status"] == "not_started":
+                    row["reason"] = "The Slicer session ended before this case started."
+            document["state"] = "interrupted"
+            # The actual interruption time is unknown after recovery.
+            document["finished_at"] = ""
+            self._syncBatchReport(document, node)
+        return document
+
+    def _createBatchReport(self, cases, skipped):
+        document = new_report(
+            [case.name for case in cases],
+            [(item.name, item.reason) for item in skipped],
+        )
+        document["batch_id"] = uuid.uuid4().hex
+        document["started_at"] = datetime.now(timezone.utc).isoformat()
+        node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode", f"Pictologics batch report {document['batch_id'][:8]}")
+        node.SetHideFromEditors(True)
+        node.SetAttribute(REPORT_ATTRIBUTE, REPORT_SCHEMA_VERSION)
+        node.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps({key: document[key] for key in ("schema_version", "batch_id", "started_at", "finished_at", "state")}, sort_keys=True))
+        node.SetLocked(True)
+        self._writeBatchReportTable(node, document)
+        self._refreshBatchReports(selected_id=node.GetID())
+        return node, document
+
+    @staticmethod
+    def _writeBatchReportTable(node, document):
+        table = node.GetTable()
+        table.Initialize()
+        for name in REPORT_COLUMNS:
+            array = vtk.vtkStringArray()
+            array.SetName(name)
+            table.AddColumn(array)
+        for row in document["rows"]:
+            row_index = table.InsertNextBlankRow()
+            for column, name in enumerate(REPORT_COLUMNS):
+                table.SetValue(row_index, column, str(row.get(name, "")))
+        table.Modified()
+        node.Modified()
+
+    def _syncBatchReport(self, document, node):
+        # Keep the original node object: scene reloads may reuse an old MRML ID.
+        if node is None or node.GetScene() != slicer.mrmlScene:
+            return
+        modifying = node.StartModify()
+        try:
+            self._writeBatchReportTable(node, document)
+            node.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps({key: document[key] for key in ("schema_version", "batch_id", "started_at", "finished_at", "state")}, sort_keys=True))
+            node.SetLocked(True)
+        finally:
+            node.EndModify(modifying)
+
+    def _reportBatchCase(self, status, *, reason="", row_count=None, roi_count=None, run_id=None, result_table=None):
+        batch = self._batch
+        if not batch or not batch.get("report"):
+            return
+        index = batch.get("report_index", {}).get(batch.get("index"))
+        if index is None:
+            return
+        row = batch["report"]["rows"][index]
+        row.update(status=status, reason=str(reason))
+        if run_id is not None:
+            row["run_id"] = str(run_id)
+        if result_table is not None:
+            row["result_table"] = str(result_table)
+        if row_count is not None:
+            row["row_count"] = int(row_count)
+        if roi_count is not None:
+            row["roi_count"] = int(roi_count)
+        row["elapsed_seconds"] = max(0.0, time.monotonic() - batch.get("case_started", time.monotonic()))
+        self._syncBatchReport(batch["report"], batch["report_node"])
+
+    def _markBatchInterrupted(self):
+        batch = self._batch
+        if not batch or not batch.get("report"):
+            return
+        if (
+            0 <= batch["index"] < len(batch["cases"])
+            and batch["report"]["rows"][batch["index"]]["status"] == "running"
+        ):
+            self._reportBatchCase("interrupted", reason="Batch interrupted before this case finished.")
+        for row in batch["report"]["rows"]:
+            if row["status"] == "running":
+                row["status"] = "interrupted"
+                row["reason"] = "Scene closed while this case was running."
+            elif row["status"] == "not_started":
+                row["reason"] = "Batch stopped before this case started."
+        batch["report"]["state"] = "interrupted"
+        batch["report"]["finished_at"] = datetime.now(timezone.utc).isoformat()
+        self._syncBatchReport(batch["report"], batch["report_node"])
+
+    def onViewBatchReport(self):
+        node = self._selectedBatchReportNode()
+        if node is None or self._batch is not None or self._tableOperationInProgress:
+            return
+        try:
+            document = self._reportDocument(node)
+            node.SetLocked(True)
+            self.logic.showTable(node)
+            self.ui.statusLabel.setText(f"Showing {len(document['rows']):,} cases from {node.GetName()}.")
+        except Exception as exc:
+            slicer.util.errorDisplay(str(exc), windowTitle="Pictologics batch report")
+
+    def onExportBatchReport(self):
+        node = self._selectedBatchReportNode()
+        if node is None or self._batch is not None or self._tableOperationInProgress:
+            return
+        selected = qt.QFileDialog.getSaveFileName(self.parent, "Export batch report", "batch-report.json", "JSON (*.json);;CSV (*.csv)")
+        selected = self._dialogPath(selected)
+        if not selected:
+            return
+        path = Path(selected).expanduser()
+        if not path.suffix:
+            path = path.with_suffix(".json")
+            if path.exists() and not slicer.util.confirmYesNoDisplay(f"Replace {path}?", windowTitle="Export batch report"):
+                return
+        try:
+            with self._tableOperation(f"Exporting {node.GetNumberOfRows():,} batch-case records…", node):
+                document = self._reportDocument(node)
+                export_report(document, path)
+            self.ui.statusLabel.setText(f"Batch report exported to {path.name}.")
+        except Exception as exc:
+            slicer.util.errorDisplay(str(exc), windowTitle="Pictologics batch report")
+
     def onBrowseResults(self):
+        if self._tableOperationInProgress:
+            return
         if self._resultsBrowser is None:
             self._resultsBrowser = ResultsBrowser(self.parent, self._refreshResultsBrowser)
         if self._refreshResultsBrowser():
@@ -1202,23 +1421,60 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self._resultsBrowser.dialog.raise_()
 
     def _refreshResultsBrowser(self):
+        if self._tableOperationInProgress:
+            return False
         table = self.ui.outputTableSelector.currentNode()
         try:
             if table is None:
                 raise ValueError("Select a Pictologics results table first.")
-            rows = self.logic.rowsFromTable(table)
-            warning = ""
-            try:
-                history = self.logic.provenanceHistory(table)
-            except ValueError as exc:
-                history, warning = [], str(exc)
-            warning = " ".join(part for part in (warning, table.GetAttribute(WARNING_ATTRIBUTE)) if part)
-            self._resultsBrowser.set_data(table.GetName(), rows, history, warning)
+            count = table.GetNumberOfRows()
+            with self._tableOperation(f"Opening {count:,} result rows…", table):
+                rows = self.logic.rowsFromTable(table)
+                warning = ""
+                try:
+                    history = self.logic.provenanceHistory(table)
+                except ValueError as exc:
+                    history, warning = [], str(exc)
+                warning = " ".join(part for part in (warning, table.GetAttribute(WARNING_ATTRIBUTE)) if part)
+                self._resultsBrowser.set_data(table.GetName(), rows, history, warning)
+            self.ui.statusLabel.setText(f"Opened {len(rows):,} result rows for browsing.")
             return True
         except Exception as exc:
             self._resultsBrowser.set_data("Unavailable", [], [], str(exc))
             slicer.util.errorDisplay(str(exc), windowTitle="Pictologics results")
             return False
+
+    @contextmanager
+    def _tableOperation(self, message, table=None):
+        """Paint feedback before synchronous work, with a reentrancy/scene guard."""
+        if self._tableOperationInProgress:
+            raise RuntimeError("A result-table operation is already in progress.")
+        generation = self._sceneGeneration
+        self._tableOperationInProgress = True
+        browser = self._resultsBrowser
+        previousSource = str(browser.source.text) if browser is not None else ""
+        previousStatus = str(self.ui.statusLabel.text)
+        self.ui.statusLabel.setText(message)
+        if browser is not None:
+            browser.source.setText(message)
+            browser.dialog.setEnabled(False)
+        try:
+            self._updateRunState()
+            with slicer.util.WaitCursor():
+                # Timers/scene callbacks can still run here; user input is excluded.
+                slicer.app.processEvents(qt.QEventLoop.ExcludeUserInputEvents)
+                if generation != self._sceneGeneration or (table is not None and table.GetScene() != slicer.mrmlScene):
+                    raise RuntimeError("The scene changed; the table operation was stopped.")
+                yield
+        finally:
+            self._tableOperationInProgress = False
+            if browser is not None:
+                browser.dialog.setEnabled(True)
+                if generation == self._sceneGeneration and str(browser.source.text) == message:
+                    browser.source.setText(previousSource)
+            if generation == self._sceneGeneration and str(self.ui.statusLabel.text) == message:
+                self.ui.statusLabel.setText(previousStatus)
+            self._updateRunState()
 
     def onSaveProfile(self):
         self._saveProfile(copyProfile=False)
@@ -1447,6 +1703,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
 
     def onUpdatePackage(self):
+        if self._tableOperationInProgress:
+            return
         if self._dependencyOperationInProgress:
             self.ui.statusLabel.setText(
                 "A Pictologics dependency operation is already in progress."
@@ -1530,6 +1788,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.diagnosticsStatusLabel.setText("Preview copied to the clipboard. Share it only where you choose.")
 
     def onRun(self):
+        if self._tableOperationInProgress:
+            return
         if self._dependencyOperationInProgress:
             self.ui.statusLabel.setText(
                 "A Pictologics dependency operation is already in progress."
@@ -1608,6 +1868,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                     "discard_results": False,
                 }
             )
+            self._reportBatchCase(
+                "running", run_id=self._activeJob["manifest"]["run_id"],
+                roi_count=len(self._activeJob["manifest"]["rois"]),
+            )
             self._cliNode = self.logic.startJob(self._activeJob)
             self._cliNode.StartContinuousOutputUpdate()
             self._continuousOutputNode = self._cliNode
@@ -1623,6 +1887,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.onCliModified(self._cliNode)
         except DependencyInstallDeclined:
             self._recordDiagnosticOperation("run", "cancelled")
+            self._reportBatchCase("cancelled", reason="Dependency installation was declined.")
             self.ui.statusLabel.setText(
                 "Pictologics installation was cancelled; the run did not start."
             )
@@ -1707,7 +1972,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
     def onRunBatch(self):
         """Run every case folder of the study folder, one after the other."""
 
-        if self._batch is not None or self._activeJob is not None:
+        if self._batch is not None or self._activeJob is not None or self._tableOperationInProgress:
             return
         segmentationPattern = str(self.ui.batchSegmentationPatternLineEdit.text).strip()
         error = self._settingsError()
@@ -1719,7 +1984,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             error = "Choose a study folder that exists."
         if not error:
             try:
-                cases, skipped = find_cases(
+                cases, skipped = discover_cases(
                     folder, str(self.ui.batchImagePatternLineEdit.text).strip(), segmentationPattern
                 )
                 if not cases:
@@ -1734,9 +1999,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             "results table."
         )
         if skipped:
-            message += f"\n\n{len(skipped)} folder(s) are skipped:\n" + "\n".join(skipped[:10])
+            message += f"\n\n{len(skipped)} folder(s) are skipped:\n" + "\n".join(f"{item.name}: {item.reason}" for item in skipped[:10])
         if not slicer.util.confirmOkCancelDisplay(message, windowTitle="Pictologics batch"):
             return
+        reportNode, reportDocument = self._createBatchReport(cases, skipped)
         self._batch = {
             "cases": cases,
             "index": -1,
@@ -1746,6 +2012,11 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             "stopped": False,
             "approvedImageBytes": 0,
             "pending": False,
+            "report": reportDocument,
+            "report_node": reportNode,
+            "report_index": {index: index for index in range(len(cases))},
+            "case_started": time.monotonic(),
+            "scene_closing": False,
             "restore": {
                 "subject": str(self.ui.subjectIdLineEdit.text),
                 "append": bool(self.ui.appendResultsCheckBox.checked),
@@ -1772,6 +2043,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         case = self._batch["cases"][self._batch["index"]]
         LOGGER.error("Batch case %s: %s", case.name, message)
         self._batch["failed"].append(f"{case.name}: {message}")
+        self._reportBatchCase("failed", reason=message)
 
     def _removeBatchNodes(self):
         for node in self._batch["nodes"] if self._batch is not None else []:
@@ -1796,6 +2068,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self._finishBatch()
             return
         case = batch["cases"][batch["index"]]
+        batch["case_started"] = time.monotonic()
+        self._reportBatchCase("running")
         try:
             volume = slicer.util.loadVolume(str(case.image), {"show": False})
             batch["nodes"].append(volume)
@@ -1812,13 +2086,33 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.segmentationSelector.setCurrentNode(segmentation)
         self.ui.subjectIdLineEdit.setText(case.name)
         self.onRun()
-        if self._activeJob is None:
+        if self._batch is batch and self._activeJob is None:
+            if batch["report"]["rows"][batch["index"]]["status"] == "running":
+                if batch["stopped"]:
+                    self._reportBatchCase("cancelled", reason="Run did not start.")
+                else:
+                    self._reportRunError("The case ended without a confirmed result.", "Pictologics batch")
             self._scheduleNextBatchCase()
 
     def _finishBatch(self):
         batch, self._batch = self._batch, None
+        if batch.get("report"):
+            for row in batch["report"]["rows"]:
+                if row["status"] == "not_started":
+                    row["reason"] = (
+                        "Batch stopped before this case started."
+                        if batch["stopped"]
+                        else "Case was not reached."
+                    )
+            batch["report"]["state"] = (
+                "interrupted" if batch.get("scene_closing")
+                else ("stopped" if batch["stopped"] else "finished")
+            )
+            batch["report"]["finished_at"] = datetime.now(timezone.utc).isoformat()
+            self._syncBatchReport(batch["report"], batch["report_node"])
+            self._refreshBatchReports()
         restore = batch["restore"]
-        if restore is not None:
+        if restore is not None and not batch.get("scene_closing"):
             self.ui.inputVolumeSelector.setCurrentNode(slicer.mrmlScene.GetNodeByID(restore["volume"]))
             self.ui.segmentationSelector.setCurrentNode(slicer.mrmlScene.GetNodeByID(restore["segmentation"]))
             self._rebuildSegmentList(set(restore["segments"]))
@@ -1949,6 +2243,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 errorText = str(cliNode.GetErrorText() or "").strip()
                 if cancelled:
                     self._recordDiagnosticOperation("run", "cancelled")
+                    self._reportBatchCase("cancelled", reason="User cancelled the case.")
                     self.ui.statusLabel.setText(
                         "Pictologics was cancelled; the output table was not changed."
                     )
@@ -1963,8 +2258,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                         "Pictologics failed; the output table was not changed."
                     )
             else:
-                self.ui.statusLabel.setText("Validating and loading results…")
-                self._acceptCompletedJob()
+                with self._tableOperation("Validating and loading results…"):
+                    self._acceptCompletedJob()
         except Exception as exc:
             self._recordDiagnosticOperation("run", "failed", "result_rejected")
             LOGGER.exception("Could not commit Pictologics results")
@@ -2022,6 +2317,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
 
         selectedTable = tableNode
+        self.ui.statusLabel.setText(f"Loading {len(payload['rows']):,} result rows into the table…")
+        self.ui.statusLabel.repaint()
         tableNode = self.logic.commitRows(
             tableNode,
             payload["rows"],
@@ -2037,13 +2334,21 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 "results went to a new table."
             )
         self._lastPayload = payload
+        errorCount = len(payload.get("errors", []))
+        nonOkCount = len(payload["rows"]) - okCount
         if self._batch is not None:
             self._batch["completed"] += 1
+            self._reportBatchCase(
+                "partial" if errorCount or nonOkCount else "completed",
+                row_count=len(payload["rows"]),
+                roi_count=len(self._activeJob["manifest"].get("rois", [])),
+                run_id=payload["run_id"],
+                result_table=tableNode.GetName(),
+                reason=(f"{errorCount} ROI error(s), {nonOkCount} non-success row(s)." if errorCount or nonOkCount else ""),
+            )
         self.ui.outputTableSelector.setCurrentNode(tableNode)
         self.updateParameterNodeFromGUI()
         self._restoreCliProgress(100)
-        errorCount = len(payload.get("errors", []))
-        nonOkCount = len(payload["rows"]) - okCount
         self._diagnosticRun["feature_rows"] = len(payload["rows"])
         self._recordDiagnosticOperation(
             "run", "partial" if errorCount or nonOkCount else "completed",
@@ -2133,6 +2438,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self._finishingJob = False
 
     def onExport(self):
+        if self._tableOperationInProgress:
+            return
         tableNode = self.ui.outputTableSelector.currentNode()
         if tableNode is None or tableNode.GetTable().GetNumberOfRows() == 0:
             slicer.util.errorDisplay(
@@ -2157,9 +2464,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
             return
         try:
-            rows = self.logic.rowsFromTable(tableNode)
             wide = bool(self.ui.exportWideCheckBox.checked)
-            exportedPaths = self.logic.exportTable(tableNode, path, rows=rows, wide=wide)
+            with self._tableOperation(f"Exporting {tableNode.GetNumberOfRows():,} result rows to {path.suffix[1:].upper()}…", tableNode):
+                rows = self.logic.rowsFromTable(tableNode)
+                exportedPaths = self.logic.exportTable(tableNode, path, rows=rows, wide=wide)
             self._recordDiagnosticOperation("export", "completed")
             destinations = ", ".join(str(item) for item in exportedPaths)
             layout = "wide" if wide else "long"

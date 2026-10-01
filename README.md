@@ -307,8 +307,17 @@ skips, and asks before it starts.
 
 Each case uses the settings of the window. The folder name becomes the subject ID,
 and every segment is a region. The rows of all cases go into the results table.
-**Cancel** stops the batch after the current case. At the end, the status line shows
+**Cancel** cancels the active case and stops the batch before the next case. At the end, the status line shows
 how many cases added rows, and a message lists the cases that failed.
+
+Every batch also creates a hidden **Saved batch report** table in the scene. It keeps
+one row per eligible or skipped case, including elapsed time, ROI/feature-row counts,
+result-table name, and a reason for failed, partial, cancelled, or interrupted cases.
+Use **View report** to inspect it and **Export report…** for an atomic JSON or CSV
+copy. Save the scene or export the report before closing; a report is not written to
+an external location automatically. Reports may contain case identifiers and error
+paths; review them before sharing. A saved snapshot of a running batch is shown as
+interrupted after reload, and does not automatically resume extraction.
 
 ### Process many cases with a script
 

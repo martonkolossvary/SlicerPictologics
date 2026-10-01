@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "PictologicsSlicer"))
 
-from PictologicsLib.batch import BatchCase, find_cases
+from PictologicsLib.batch import BatchCase, discover_cases, find_cases
 
 
 class FindCasesTests(unittest.TestCase):
@@ -42,6 +42,11 @@ class FindCasesTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(skipped, ["no-image: 0 files match 'image.nii.gz'"])
+
+            discovered, structured = discover_cases(root, "image.nii.gz", "*.nii.gz")
+            self.assertEqual([item.name for item in discovered], ["case-1"])
+            self.assertEqual(structured[0].name, "case-2")
+            self.assertIn("0 files match", structured[0].reason)
 
 
 if __name__ == "__main__":

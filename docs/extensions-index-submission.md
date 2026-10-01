@@ -56,6 +56,9 @@ treat automated or agent visual checks as approval.
 1. The authorized 2026-09-30 source publication and GitHub assessment are complete
    for `9d72093`. Publication of the diagnostics/recovery milestone was authorized
    on 2026-10-01; require green qualification for its exact pushed revision.
+   The workload milestone `85d766b` also passed all five qualification jobs. Source
+   publication of the large-table feedback/batch-report milestone is authorized;
+   require green checks for its exact published revision before submission.
    No new screenshots are needed for this submission draft.
 2. Retain the maintainer's 2026-09-30 declaration of **no known related patents**;
    update it if new information becomes known. Review optional GitHub

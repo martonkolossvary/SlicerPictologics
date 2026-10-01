@@ -4,14 +4,47 @@ Review date: 2026-10-01. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.
 
+## Large-table feedback and batch reports (2026-10-01)
+
+Source publication is authorized. This milestone adds painted operation/row-count
+feedback and input locking during result loading, browsing, and export, plus a
+separate locked batch-report table saved with the scene. Reports retain case
+statuses, elapsed seconds, submitted ROI count/run ID, committed row count/table,
+and failure/skip reasons. JSON/CSV export is explicit; unsaved scenes are not a
+crash-recovery journal. Reports can contain case identifiers and error paths and
+are distinct from the allowlisted privacy-safe diagnostics preview.
+
+Pre-publication review fixed report selection/ownership across repeated batches,
+automatic discovery after scene import/restore, delayed writes to a reused MRML ID,
+and an unconfirmed-run fallback that could falsely report success. Recovery marks
+running snapshots interrupted without inventing their actual finish time. Case
+names preserve spaces, colons, and Unicode. Local checks cover these paths, report
+scene round trips, cancellation/failure, and table-operation failure/scene changes.
+The CMake runtime list contains 26 files, including the new report support module.
+
+Local quality: **560 portable tests**, **100% scoped library/worker statement
+coverage**, Ruff, Mypy (18 source files), and whitespace checks. The installed-Slicer
+fast suite passed **47 tests**, with seven opt-in real-worker checks skipped (54
+total; 4.683 seconds). Earlier in this
+milestone, the full real-worker suite passed 50 tests in 538.822 seconds; later
+review fixes require their own qualification at the published commit. Evidence is
+retained under `local-output/feedback-reports-2026-10-01/`.
+
+Remaining priorities before registration: heterogeneous/longer batch soak testing,
+actual Windows and Preview Slicer acceptance, and a final user walkthrough of the
+report UI. Resumable batches, failed-case retry, and asynchronous/chunked large-table
+operations are useful future improvements, not prerequisites to source publication.
+Official package build, archive auditing, and clean package installation remain
+post-submission gates. Registration and unreviewed imagery remain on hold.
+
 ## Representative workloads (2026-10-01)
 
-The next development increment adds a checksum-pinned real CT example with two
-illustrative ROIs, a bounded installed-Slicer workload harness, eight portable
-fixture/sampling tests, and [measured performance guidance](performance.md).
-The maintainer authorized source publication of these validated additions; their
-GitHub qualification must be checked at the resulting commit. The measured runtime
-is unchanged from `067672f`. No new image binary or screenshot is included.
+Published commit `85d766b927d385b015dc0c76cf5d99eddc83bd4e` adds a checksum-pinned
+real CT example with two illustrative ROIs, a bounded installed-Slicer workload
+harness, eight portable fixture/sampling tests, and [measured performance guidance](performance.md).
+It passed [all five GitHub qualification jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36873316872).
+The measured runtime is unchanged from `067672f`. No new image binary or screenshot
+was included.
 
 The successful full matrix covered cold/warm CT, MRHead, a 50.3-million-voxel CT
 with crop parity, two configurations, 0.5 mm spacing, ten actual GUI batch cases,
@@ -24,12 +57,11 @@ After the temporary logic's module name was corrected, the focused batch/table
 rerun also completed all ten cases and both table sizes with clean process exit.
 The CT preview produced 340 `ok` rows and remains local pending visual approval.
 
-Local quality: **555 portable tests**, 100% scoped library/worker coverage, Ruff,
-Mypy (17 source files), and whitespace checks. The eight new tests also pass under
+Local quality for that milestone: **555 portable tests**, 100% scoped library/worker coverage, Ruff,
+Mypy (17 source files), and whitespace checks. The eight added tests also passed under
 Slicer's bundled Python. This does not expand Windows/Preview application or package
-qualification. Next usability work should prioritize long table-operation feedback
-and persistent per-case batch outcomes; registration and new public images still
-require explicit maintainer approval.
+qualification. Registration and new public images still require explicit maintainer
+approval.
 
 ## Diagnostics and failure-recovery source milestone (2026-10-01)
 
@@ -42,7 +74,9 @@ lint/types/coverage, released-wheel checks on Windows/Linux/Intel macOS, and
 read-only diagnostic preview with explicit copying, allowlisted technical fields,
 metadata-only dependency status, session run counts and fixed failure/recovery
 codes. No scene identifiers, file paths, DICOM metadata or raw error/log text are
-included; no report is uploaded or saved to the scene. See the
+included; diagnostics are not uploaded or saved to the scene. Batch outcome reports
+are a separate, user-visible scene table and are only retained when the user saves
+the scene or explicitly exports them. See the
 [privacy boundary and failure matrix](diagnostics-and-recovery.md).
 
 Installer failure tests now exercise offline/interrupted resolution, bad candidate

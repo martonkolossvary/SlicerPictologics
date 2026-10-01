@@ -116,7 +116,8 @@ def _scene_node_ids() -> set[str]:
     return {
         str(node.GetID())
         for index in range(slicer.mrmlScene.GetNumberOfNodes())
-        if (node := slicer.mrmlScene.GetNthNode(index)) is not None and node.GetID() is not None
+        if (node := slicer.mrmlScene.GetNthNode(index)) is not None
+        and node.GetID() is not None
     }
 
 
@@ -973,6 +974,33 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(browser.rows, [])
         self.assertFalse(browser.dialog.visible)
 
+    def test_large_table_operation_feedback_locks_controls_and_restores_state(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.statusLabel.setText("Ready for the next operation.")
+        with widget._tableOperation("Opening 100,000 result rows…"):
+            self.assertTrue(widget._tableOperationInProgress)
+            self.assertIn("100,000", widget.ui.statusLabel.text)
+            self.assertIn("operation in progress", widget.ui.readinessLabel.text)
+            self.assertFalse(widget.ui.runButton.enabled)
+        self.assertFalse(widget._tableOperationInProgress)
+        self.assertEqual(widget.ui.statusLabel.text, "Ready for the next operation.")
+        with self.assertRaises(RuntimeError):
+            with widget._tableOperation("Exporting 100,000 result rows…"):
+                raise RuntimeError("synthetic export failure")
+        self.assertFalse(widget._tableOperationInProgress)
+        self.assertEqual(widget.ui.statusLabel.text, "Ready for the next operation.")
+
+    def test_table_operation_rejects_scene_change_before_reading_or_exporting(self) -> None:
+        widget = self._feedback_widget()
+        table = self._persistence_table([math.pi])
+        reached = False
+        qt.QTimer.singleShot(0, lambda: slicer.mrmlScene.Clear())
+        with self.assertRaisesRegex(RuntimeError, "scene changed"):
+            with widget._tableOperation("Exporting…", table):
+                reached = True
+        self.assertFalse(reached)
+        self.assertFalse(widget._tableOperationInProgress)
+
     def _persistence_table(self, values, table=None, run="persistence-a"):
         rows = []
         for index, value in enumerate(values):
@@ -1229,6 +1257,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             seen.append((str(widget.ui.subjectIdLineEdit.text), widget._selectedSegmentIDs(),
                          volume.GetImageData().GetDimensions(), widget.ui.appendResultsCheckBox.checked))
             widget._batch["completed"] += 1
+            widget._reportBatchCase("completed", row_count=10, roi_count=1)
 
         with patch.object(widget, "onRun", side_effect=fake_run), patch.object(
             slicer.util, "confirmOkCancelDisplay", return_value=True
@@ -1247,7 +1276,11 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(widget.ui.inputVolumeSelector.currentNode(), self.fixture.volume_node)
         self.assertEqual(widget.ui.segmentationSelector.currentNode(), self.fixture.segmentation_node)
         self.assertEqual(widget._selectedSegmentIDs(), original_ids)
-        self.assertEqual(_scene_node_ids() - scene_before, set())
+        report = widget._reportDocument(widget._selectedBatchReportNode())
+        self.assertEqual([row["status"] for row in report["rows"]], ["completed", "completed", "skipped"])
+        self.assertEqual(report["state"], "finished")
+        self.assertTrue(report["finished_at"])
+        self.assertEqual(_scene_node_ids() - scene_before, {widget._selectedBatchReportNode().GetID()})
         self.assertTrue(widget.ui.runBatchButton.enabled)
         widget.ui.batchFolderLineEdit.setText(str(self.temporary_directory / "missing"))
         with patch.object(slicer.util, "errorDisplay") as error:
@@ -1258,7 +1291,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             widget.onRunBatch()
         self.assertIn("study folder that exists", error.call_args.args[0])
         widget.ui.batchFolderLineEdit.setText(str(self.temporary_directory))
-        with patch.object(gui_module, "find_cases", side_effect=PermissionError("denied")), patch.object(
+        with patch.object(gui_module, "discover_cases", side_effect=PermissionError("denied")), patch.object(
             slicer.util, "errorDisplay"
         ) as error:
             widget.onRunBatch()
@@ -1282,6 +1315,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         def fake_run():
             seen.append(str(widget.ui.subjectIdLineEdit.text))
             widget._batch["completed"] += 1
+            widget._reportBatchCase("completed", row_count=10, roi_count=1)
 
         with patch.object(slicer.util, "loadSegmentation", side_effect=load_segmentation), patch.object(
             widget, "onRun", side_effect=fake_run
@@ -1294,7 +1328,10 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         warning.assert_called_once()
         self.assertIn("case-a: Could not load the case files", warning.call_args.args[0])
         self.assertIn("1 of 2 case(s) added rows. 1 case(s) failed", widget.ui.statusLabel.text)
-        self.assertEqual(_scene_node_ids() - scene_before, set())
+        self.assertEqual(_scene_node_ids() - scene_before, {widget._selectedBatchReportNode().GetID()})
+        report = widget._reportDocument(widget._selectedBatchReportNode())
+        self.assertEqual([row["status"] for row in report["rows"]], ["failed", "completed", "skipped"])
+        self.assertIn("unreadable segmentation", report["rows"][0]["reason"])
         self.assertEqual(widget.ui.subjectIdLineEdit.text, "original subject")
         self.assertEqual(widget.ui.inputVolumeSelector.currentNode(), self.fixture.volume_node)
         self.assertEqual(widget.ui.segmentationSelector.currentNode(), self.fixture.segmentation_node)
@@ -1326,7 +1363,9 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         accept.assert_not_called()
         self.assertEqual(seen, ["case-a"])
         self.assertIn("Batch stopped after 1 of 2 case(s)", widget.ui.statusLabel.text)
-        self.assertEqual(_scene_node_ids() - scene_before, set())
+        self.assertEqual(_scene_node_ids() - scene_before, {widget._selectedBatchReportNode().GetID()})
+        report = widget._reportDocument(widget._selectedBatchReportNode())
+        self.assertEqual([row["status"] for row in report["rows"]], ["cancelled", "not_started", "skipped"])
         self.assertIsNone(widget._activeJob)
         self.assertFalse(widget._runFeedbackTimer.isActive())
 
@@ -1338,6 +1377,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         def fake_run():
             seen.append(str(widget.ui.subjectIdLineEdit.text))
             widget._batch["completed"] += 1
+            widget._reportBatchCase("completed", row_count=10, roi_count=1)
 
         with patch.object(widget, "onRun", side_effect=fake_run), patch.object(
             slicer.util, "confirmOkCancelDisplay", return_value=True
@@ -1351,6 +1391,76 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertIsNone(widget.ui.segmentationSelector.currentNode())
         self.assertEqual(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLVolumeNode"), 0)
         warning.assert_not_called()
+
+    def test_batch_report_round_trips_with_scene_and_exports(self) -> None:
+        widget = self._feedback_widget()
+        from PictologicsLib.batch import BatchSkip
+
+        node, document = widget._createBatchReport([], [BatchSkip("case-missing", "no image")])
+        document["state"] = "finished"
+        widget._syncBatchReport(document, node)
+        scene_path = self.temporary_directory / "batch-report.mrb"
+        self.assertTrue(slicer.util.saveScene(str(scene_path)))
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(scene_path)))
+        loaded = widget._reportDocument(widget._selectedBatchReportNode())
+        self.assertEqual(loaded["rows"][0]["status"], "skipped")
+        self.assertEqual(loaded["rows"][0]["reason"], "no image")
+        csv_path = self.temporary_directory / "batch-report.csv"
+        from PictologicsLib.batch_reports import export_report
+
+        export_report(loaded, csv_path)
+        self.assertIn("case-missing,skipped", csv_path.read_text())
+
+    def test_batch_reports_keep_separate_histories_and_recover_interrupted_snapshot(self) -> None:
+        from PictologicsLib.batch import BatchSkip, discover_cases
+
+        widget = self._feedback_widget()
+        study = self._write_batch_study()
+        cases, _ = discover_cases(study, "image.nii.gz", "segmentation.seg.nrrd")
+        first, document = widget._createBatchReport(cases, [BatchSkip("case: with colon", "missing")])
+        document["state"] = "finished"
+        document["rows"][0].update(status="completed", roi_count=2, row_count=34)
+        widget._syncBatchReport(document, first)
+        first_snapshot = widget._reportDocument(first)
+        second, live = widget._createBatchReport(cases, [])
+        self.assertIs(widget._selectedBatchReportNode(), second)
+        widget._batch = {"report": live, "report_node": second, "report_index": {0: 0},
+                         "index": 0, "cases": cases, "nodes": [], "case_started": time.monotonic() - 2}
+        try:
+            widget._reportBatchCase("running", roi_count=2, run_id="run-2")
+            widget._reportBatchCase("partial", row_count=20, reason="1 ROI failed", result_table="Results")
+            self.assertEqual(widget._reportDocument(first), first_snapshot)
+            self.assertEqual(widget._reportDocument(second)["rows"][0]["run_id"], "run-2")
+            widget._reportBatchCase("running")
+            scene_path = self.temporary_directory / "interrupted-report.mrb"
+            self.assertTrue(slicer.util.saveScene(str(scene_path)))
+        finally:
+            widget._batch = None
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(scene_path)))
+        self.assertEqual(widget.ui.batchReportCombo.count, 2)
+        recovered = widget._selectedBatchReportNode()
+        loaded = widget._reportDocument(recovered)
+        self.assertEqual(loaded["state"], "interrupted")
+        self.assertEqual([row["status"] for row in loaded["rows"]], ["interrupted", "not_started"])
+        self.assertEqual(loaded["finished_at"], "")
+        self.assertTrue(recovered.GetLocked())
+        # A delayed update from the old scene must not write into a reused node ID.
+        widget._syncBatchReport(document, first)
+        self.assertEqual(widget._reportDocument(recovered), loaded)
+
+    def test_batch_unconfirmed_run_is_failed_instead_of_reported_as_success(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.batchFolderLineEdit.setText(str(self._write_batch_study()))
+        with patch.object(widget, "onRun"), patch.object(
+            slicer.util, "confirmOkCancelDisplay", return_value=True
+        ), patch.object(slicer.util, "warningDisplay"):
+            widget.onRunBatch()
+            self._wait_for_batch_end(widget, 30)
+        report = widget._reportDocument(widget._selectedBatchReportNode())
+        self.assertEqual([row["status"] for row in report["rows"]], ["failed", "failed", "skipped"])
+        self.assertTrue(all(row["row_count"] == 0 for row in report["rows"]))
 
     def test_memory_warning_allows_crop_fallback_and_rechecks_larger_batch_cases(self) -> None:
         widget = self._feedback_widget()
@@ -1400,6 +1510,8 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual({row["subject_id"] for row in rows}, {"case-a", "case-b"})
         self.assertEqual({row["reader"] for row in rows}, {"R1"})
         self.assertIn("ok", {row["status"] for row in rows})
+        report = widget._reportDocument(widget._selectedBatchReportNode())
+        self.assertEqual([row["status"] for row in report["rows"][:2]], ["completed", "completed"])
 
     def test_crop_switch_reaches_the_manifest(self) -> None:
         widget = self._feedback_widget()
@@ -1601,6 +1713,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         def fake_run():
             seen.append(str(widget.ui.subjectIdLineEdit.text))
             widget._batch["completed"] += 1
+            widget._reportBatchCase("completed", row_count=10, roi_count=1)
 
         with patch.object(widget, "onRun", side_effect=fake_run), patch.object(
             slicer.util, "confirmOkCancelDisplay", return_value=True
@@ -1612,7 +1725,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             _pump_slicer_events()
         self.assertEqual(seen, ["case-a"])
         self.assertIsNone(widget._batch)
-        self.assertEqual(_scene_node_ids() - scene_before, set())
+        self.assertEqual(_scene_node_ids() - scene_before, {widget._selectedBatchReportNode().GetID()})
         self.assertIsNone(widget._runFeedbackTimer)
         self.assertIsNone(widget._runStartedAt)
 

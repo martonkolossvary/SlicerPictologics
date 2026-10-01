@@ -199,11 +199,14 @@ evidence is retained under `local-output/performance-2026-10-01/final-ui-check/`
   compared with 56 seconds in the successful full repeat, showing background-host
   variability. Neither run is a controlled statistical benchmark or an unlimited
   leak/soak test. Hundreds of heterogeneous cases remain unqualified.
-- **Large tables are usable, but several actions block the UI.** Pagination and
+- **Large tables are usable, with explicit operation feedback.** Pagination and
   search stayed fast at 100,000 rows; committing, opening and exporting took seconds.
-  The next useful performance-focused change is explicit busy/progress feedback
-  for those operations, followed by a persistent per-case batch summary and
-  heterogeneous/longer soak testing. Do not change feature precision to gain speed.
+  The module now locks controls, shows the operation and row count, and restores the
+  prior state after each synchronous table operation. A persistent per-case batch
+  report records outcomes and elapsed times; it is saved with the scene or exportable
+  as JSON/CSV. These operations remain synchronous, so the feedback is status and
+  cancellation-safe locking rather than a fabricated percentage. Do not change
+  feature precision to gain speed.
 
 The public CT preview and all generated images/data remain local. This work does
 not submit ExtensionsIndex, build a distribution archive, or authorize new catalog
