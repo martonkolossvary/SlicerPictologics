@@ -8,6 +8,8 @@ set(MODULE_PYTHON_SCRIPTS
   PictologicsLib/batch.py
   PictologicsLib/dependency_probe.py
   PictologicsLib/dependencies.py
+  PictologicsLib/diagnostics.py
+  PictologicsLib/exports.py
   PictologicsLib/inline_config.py
   PictologicsLib/jobs.py
   PictologicsLib/memory.py

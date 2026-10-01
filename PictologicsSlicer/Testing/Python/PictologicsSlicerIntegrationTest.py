@@ -6,6 +6,7 @@ must not be collected by the normal-Python pytest suite.
 
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
@@ -20,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import qt
@@ -561,6 +562,234 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         parameter_node = self.logic.getParameterNode()
         self.logic.setDefaultParameters(parameter_node)
         self.assertEqual(parameter_node.GetParameter(gui_module.PARAM_WHOLE_VOLUME), "false")
+
+    def test_diagnostics_preview_copy_and_inspection_failure_are_privacy_safe(self) -> None:
+        widget = self._feedback_widget()
+        secret = "PRIVATE-PATIENT-ALICE"
+        widget.ui.subjectIdLineEdit.setText(secret)
+        widget.ui.statusLabel.setText(f"Worker failed: /Users/{secret}/scan.nrrd")
+        widget._diagnosticRun = {"state": "failed", "roi_count": 2, "elapsed_seconds": 7,
+                                 "image_name": secret, "roi_name": secret}
+        widget._recordDiagnosticOperation("run", "failed", "worker_failed")
+        clipboard = Mock()
+        with patch.object(qt.QApplication, "clipboard", return_value=clipboard), patch.object(
+            widget.logic, "probeDependencyEnvironment", side_effect=AssertionError("No probe")
+        ), patch.object(widget.logic, "ensureDependencies", side_effect=AssertionError("No install")):
+            widget.ui.refreshDiagnosticsButton.click()
+            clipboard.setText.assert_not_called()
+            preview = widget.ui.diagnosticsTextEdit.toPlainText()
+            self.assertTrue(widget.ui.diagnosticsTextEdit.readOnly)
+            self.assertNotIn(secret, preview)
+            self.assertNotIn("/Users/", preview)
+            report = json.loads(preview)
+            self.assertEqual(report["dependency"]["metadata_status"], "missing")
+            self.assertEqual(report["last_run"]["roi_count"], 2)
+            self.assertEqual(report["last_operation"]["failure_code"], "worker_failed")
+            self.assertEqual(report["runtime"]["extension_version"], EXTENSION_VERSION)
+            self.assertNotEqual(report["runtime"]["qt_version"], "unknown")
+            # A changed state must not silently replace the report being reviewed.
+            widget._recordDiagnosticOperation("export", "completed")
+            widget.ui.copyDiagnosticsButton.click()
+            clipboard.setText.assert_called_once_with(preview)
+            with patch.object(widget.logic, "inspectDependencies", side_effect=OSError(secret)):
+                widget.ui.refreshDiagnosticsButton.click()
+            report = json.loads(widget.ui.diagnosticsTextEdit.toPlainText())
+            self.assertEqual(report["dependency"]["metadata_status"], "inspection_failed")
+            self.assertNotIn(secret, widget._diagnosticsPreview)
+            self.assertEqual(report["last_operation"]["outcome"], "completed")
+
+    def test_diagnostics_distinguishes_metadata_states_without_importing_package(self) -> None:
+        widget = self._feedback_widget()
+        for status, installed, satisfied, ambiguous in (
+            ("compatible", True, True, False), ("incompatible", True, False, False),
+            ("ambiguous", True, False, True), ("missing", False, False, False),
+        ):
+            inspection = SimpleNamespace(installed_version="0.5.1" if installed else None,
+                                         installed=installed, satisfied=satisfied, ambiguous=ambiguous)
+            with self.subTest(status=status), patch.object(widget.logic, "inspectDependencies", return_value=inspection):
+                widget.onRefreshDiagnostics()
+                self.assertEqual(json.loads(widget._diagnosticsPreview)["dependency"]["metadata_status"], status)
+        self.assertNotIn("pictologics", sys.modules)
+
+    @staticmethod
+    def _fake_distribution(target, version):
+        metadata = target / f"pictologics-{version}.dist-info" / "METADATA"
+        metadata.parent.mkdir(parents=True)
+        metadata.write_text(f"Metadata-Version: 2.1\nName: pictologics\nVersion: {version}\n", encoding="utf-8")
+        (target / "sentinel.txt").write_text("Test-owned environment", encoding="utf-8")
+
+    @patch("slicer.packaging.pip_install")
+    def test_dependency_failures_preserve_active_environment_and_restart_reuses_it(self, installer) -> None:
+        # Inject failures only into synthetic candidates. No wheel downloads or
+        # changes to the normal Slicer dependency directory occur in this test.
+        version = next(iter(self.logic.pictologicsRequirement().specifier)).version
+        for phase in ("network", "interrupted", "metadata", "import_probe", "jit_probe", "activation"):
+            with self.subTest(phase=phase):
+                IsolatedPictologicsSlicerLogic.isolated_cache_root = self.cache_root / phase
+                paths = self.logic.privatePaths()
+                active = paths["environments_root"] / "previous"
+                self._fake_distribution(active, version)
+                activate_dependency_target(paths["cache_root"], active)
+                pointer_before = paths["active_pointer"].read_bytes()
+                files_before = {p.relative_to(active): p.read_bytes() for p in active.rglob("*") if p.is_file()}
+
+                def install(arguments, phase=phase, **kwargs):
+                    staging = Path(arguments[arguments.index("--target") + 1])
+                    self._fake_distribution(staging, "0.0.0" if phase == "metadata" else version)
+                    if phase == "network":
+                        raise OSError("Synthetic offline installation")
+                    if phase == "interrupted":
+                        raise KeyboardInterrupt("Synthetic interruption")
+
+                def probe(target, expected, *, warmup, phase=phase):
+                    if phase == "import_probe" and not warmup or phase == "jit_probe" and warmup:
+                        raise RuntimeError("Synthetic candidate probe failure")
+
+                replace = os.replace
+
+                def activate_replace(source, destination, phase=phase, paths=paths, replace=replace):
+                    if phase == "activation" and Path(destination) == paths["active_pointer"]:
+                        raise PermissionError("Synthetic pointer write failure")
+                    return replace(source, destination)
+
+                installer.side_effect = install
+                with patch.object(slicer.util, "confirmOkCancelDisplay", return_value=True), patch.object(
+                    self.logic, "probeDependencyEnvironment", side_effect=probe
+                ), patch.object(os, "replace", side_effect=activate_replace), self.assertRaises(
+                    (OSError, RuntimeError, ValueError, KeyboardInterrupt)
+                ):
+                    self.logic.ensureDependencies(forceUpgrade=True)
+                self.assertEqual(paths["active_pointer"].read_bytes(), pointer_before)
+                self.assertEqual({p.relative_to(active): p.read_bytes() for p in active.rglob("*") if p.is_file()}, files_before)
+                self.assertEqual(list(paths["environments_root"].iterdir()), [active])
+                self.assertFalse(list(paths["cache_root"].glob(".*.tmp")))
+                installer.reset_mock()
+                installer.side_effect = AssertionError("Restart must not reinstall")
+                restarted = IsolatedPictologicsSlicerLogic()
+                self.assertEqual(restarted.ensureDependencies(forceUpgrade=False).target, active)
+                installer.assert_not_called()
+
+    @patch("slicer.packaging.pip_install")
+    def test_fresh_install_failure_decline_and_retry_recover(self, installer) -> None:
+        version = next(iter(self.logic.pictologicsRequirement().specifier)).version
+        with patch.object(slicer.util, "confirmOkCancelDisplay", return_value=False), self.assertRaises(DependencyInstallDeclined):
+            self.logic.ensureDependencies(forceUpgrade=False)
+        installer.assert_not_called()
+        installer.side_effect = OSError("Synthetic unavailable network")
+        with patch.object(slicer.util, "confirmOkCancelDisplay", return_value=True), self.assertRaises(OSError):
+            self.logic.ensureDependencies(forceUpgrade=False)
+        paths = self.logic.privatePaths()
+        self.assertFalse(paths["active_pointer"].exists())
+        self.assertEqual(list(paths["environments_root"].iterdir()), [])
+
+        def install(arguments, **kwargs):
+            self._fake_distribution(Path(arguments[arguments.index("--target") + 1]), version)
+
+        installer.side_effect = install
+        with patch.object(slicer.util, "confirmOkCancelDisplay", return_value=True), patch.object(
+            self.logic, "probeDependencyEnvironment"
+        ) as probe:
+            inspection = self.logic.ensureDependencies(forceUpgrade=False)
+        self.assertTrue(inspection.satisfied)
+        self.assertEqual([call.kwargs["warmup"] for call in probe.call_args_list], [False, True])
+        self.assertEqual(self.logic.inspectDependencies().target, inspection.target)
+
+    def test_failed_or_invalid_worker_output_preserves_completed_results(self) -> None:
+        widget = self._feedback_widget()
+        table = self._persistence_table([math.pi, -0.0])
+        widget.ui.outputTableSelector.setCurrentNode(table)
+        before = table.GetAttribute(SNAPSHOT_ATTRIBUTE)
+        history = table.GetAttribute("Pictologics.ProvenanceHistoryJSON")
+        for outcome in ("failed", "cancelled", "missing", "malformed", "mismatched"):
+            with self.subTest(outcome=outcome):
+                work = self.logic.jobsRoot() / f"job-{outcome}"
+                work.mkdir(parents=True)
+                output = work / "results.json"
+                if outcome == "malformed":
+                    output.write_text("{incomplete", encoding="utf-8")
+                elif outcome == "mismatched":
+                    output.write_text(json.dumps({"schema_version": RESULT_PAYLOAD_SCHEMA_VERSION,
+                        "run_id": "other", "rows": [], "provenance": {}, "errors": []}), encoding="utf-8")
+                node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLCommandLineModuleNode")
+                widget._cliNode = node
+                widget._activeJob = {"work_dir": str(work), "output_path": str(output),
+                    "manifest": {"run_id": "expected", "rois": [{"roi_name": "PRIVATE-NAME"}]},
+                    "output_table_id": table.GetID(), "output_table_mtime": self.logic.tableModificationTime(table),
+                    "append_results": True}
+                widget._startRunFeedback()
+                status = node.CompletedWithErrors if outcome == "failed" else node.Cancelled if outcome == "cancelled" else node.Completed
+                node.SetStatus(status, False)
+                with patch.object(slicer.util, "errorDisplay"):
+                    widget.onCliModified(node)
+                self.assertEqual(table.GetAttribute(SNAPSHOT_ATTRIBUTE), before)
+                self.assertEqual(table.GetAttribute("Pictologics.ProvenanceHistoryJSON"), history)
+                self.assertEqual([row["value"] for row in self.logic.rowsFromTable(table)], [math.pi, -0.0])
+                self.assertFalse(work.exists())
+                self.assertTrue(widget.ui.runButton.enabled)
+                self.assertTrue(widget.ui.exportButton.enabled)
+                self.assertIsNone(widget._activeJob)
+                self.assertIsNone(widget._cliNode)
+                widget.onRefreshDiagnostics()
+                report = json.loads(widget._diagnosticsPreview)
+                expected_code = "worker_failed" if outcome == "failed" else "none" if outcome == "cancelled" else "result_rejected"
+                self.assertEqual(report["last_operation"]["failure_code"], expected_code)
+                self.assertNotIn("PRIVATE-NAME", widget._diagnosticsPreview)
+        # A subsequent successful result can still be appended after these failures.
+        self._persistence_table([42.0], table, run="recovery")
+        self.assertEqual(len(self.logic.rowsFromTable(table)), 3)
+
+    def test_export_write_failure_preserves_archive_table_and_allows_retry(self) -> None:
+        widget = self._feedback_widget()
+        table = self._persistence_table([math.pi, -0.0])
+        widget.ui.outputTableSelector.setCurrentNode(table)
+        archive = self.temporary_directory / "completed.json"
+        self.logic.exportTable(table, archive)
+        before = archive.read_bytes()
+        snapshot = table.GetAttribute(SNAPSHOT_ATTRIBUTE)
+        for failure in (PermissionError("Synthetic permission failure"), OSError(errno.ENOSPC, "Synthetic disk full")):
+            with self.subTest(failure=type(failure).__name__), patch.object(qt.QFileDialog, "getSaveFileName", return_value=str(archive)), patch.object(
+                gui_module.os, "replace", side_effect=failure
+            ), patch.object(slicer.util, "errorDisplay"):
+                widget.onExport()
+            self.assertEqual(archive.read_bytes(), before)
+            self.assertEqual(table.GetAttribute(SNAPSHOT_ATTRIBUTE), snapshot)
+            self.assertFalse(list(archive.parent.glob(".completed.json.*.tmp")))
+            self.assertEqual(widget._diagnosticOperation["failure_code"], "export_failed")
+        with patch.object(qt.QFileDialog, "getSaveFileName", return_value=str(archive)):
+            widget.onExport()
+        self.assertEqual(archive.read_bytes(), before)
+        self.assertEqual(widget._diagnosticOperation["outcome"], "completed")
+
+    def test_csv_sidecar_failure_rolls_back_complete_export_set(self) -> None:
+        table = self._persistence_table([math.pi])
+        root = self.temporary_directory / "archives"
+        path = root / "features.csv"
+        self.logic.exportTable(table, path)
+        before = {p.name: p.read_bytes() for p in root.iterdir()}
+        self._persistence_table([42.0], table, run="next")
+        snapshot = table.GetAttribute(SNAPSHOT_ATTRIBUTE)
+        write_json = self.logic._atomicWriteJSON
+        replace = os.replace
+        for phase in ("staging", "publication"):
+            def failing_json(target, payload, phase=phase):
+                if phase == "staging":
+                    raise OSError(errno.ENOSPC, "Synthetic sidecar disk full")
+                return write_json(target, payload)
+
+            def failing_replace(source, target):
+                if Path(target) == root / "features.provenance.json" and Path(source).parent.name == "new":
+                    raise PermissionError("Synthetic sidecar publication failure")
+                return replace(source, target)
+
+            with self.subTest(phase=phase), patch.object(self.logic, "_atomicWriteJSON", side_effect=failing_json), patch.object(
+                os, "replace", side_effect=failing_replace
+            ), self.assertRaises(OSError):
+                self.logic.exportTable(table, path)
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual(table.GetAttribute(SNAPSHOT_ATTRIBUTE), snapshot)
+        self.logic.exportTable(table, path)
+        self.assertNotEqual(path.read_bytes(), before[path.name])
+        self.assertFalse(list(root.glob(".pictologics-export-*")))
 
     def test_old_environments_are_removed_once_no_job_runs(self) -> None:
         paths = self.logic.privatePaths()
@@ -1386,6 +1615,61 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(_scene_node_ids() - scene_before, set())
         self.assertIsNone(widget._runFeedbackTimer)
         self.assertIsNone(widget._runStartedAt)
+
+    @unittest.skipUnless(
+        os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1",
+        f"Set {RUN_REAL_CLI_TEST_ENV}=1 to run the existing-dependency CLI gate.",
+    )
+    def test_real_worker_failure_preserves_table_and_next_run_succeeds(self) -> None:
+        dependency_path, _ = _qualified_dependency_target(self.logic)
+        widget = self._feedback_widget()
+        table = self._persistence_table([math.pi])
+        widget.ui.outputTableSelector.setCurrentNode(table)
+        widget.ui.appendResultsCheckBox.setChecked(True)
+        before = table.GetAttribute(SNAPSHOT_ATTRIBUTE)
+        inspection = inspect_target(dependency_path, self.logic.pictologicsRequirement())
+        prepare = self.logic.prepareJob
+
+        def prepare_invalid(**kwargs):
+            job = prepare(**kwargs)
+            document = dict(job["manifest"], schema_version=999)
+            Path(job["manifest_path"]).write_text(json.dumps(document), encoding="utf-8")
+            return job
+
+        for fail in (True, False):
+            with patch.object(self.logic, "ensureDependencies", return_value=inspection), patch.object(
+                self.logic, "prepareJob", side_effect=prepare_invalid if fail else prepare
+            ), patch.object(self.logic, "showTable"), patch.object(slicer.util, "errorDisplay") as errors:
+                widget.onRun()
+                node, job = widget._cliNode, widget._activeJob
+                self.assertIsNotNone(node)
+                self.assertIsNotNone(job)
+                try:
+                    observation = _wait_for_cli_terminal(node, self.logic, job, timeout_seconds=CLI_TIMEOUT_SECONDS)
+                except BaseException:
+                    if self.logic.jobWorkerIsAlive(job):
+                        self.retain_temporary_directory = True
+                        type(self).retained_async_failure = "Recovery-test worker still owns staging."
+                    raise
+                deadline = time.monotonic() + 5
+                while widget._activeJob is not None and time.monotonic() < deadline:
+                    _pump_slicer_events()
+                self.assertIsNone(widget._activeJob)
+                self.assertTrue(widget.ui.runButton.enabled)
+                self.assertFalse(widget._runFeedbackTimer.isActive())
+                if fail:
+                    self.assertTrue(observation.terminal_state.failed)
+                    self.assertEqual(table.GetAttribute(SNAPSHOT_ATTRIBUTE), before)
+                    self.assertEqual(widget._diagnosticOperation["failure_code"], "worker_failed")
+                    errors.assert_called_once()
+                else:
+                    self.assertFalse(observation.terminal_state.failed)
+                    self.assertTrue(observation.terminal_state.completed)
+                    self.assertGreater(table.GetNumberOfRows(), 1)
+                    self.assertEqual(self.logic.rowsFromTable(table)[0]["value"], math.pi)
+                    self.assertEqual(widget._diagnosticRun["state"], "completed")
+                    self.assertGreater(widget._diagnosticRun["feature_rows"], 0)
+                    errors.assert_not_called()
 
     @unittest.skipUnless(
         os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1",

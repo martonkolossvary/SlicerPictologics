@@ -50,8 +50,8 @@ class PackageAuditTest(unittest.TestCase):
             with self.subTest(format=path.suffix):
                 report = audit.audit_package(path, ROOT)
                 self.assertTrue(report["success"])
-                self.assertEqual(report["expected_runtime_files"], 23)
-                self.assertEqual(report["archive_files"], 23)
+                self.assertEqual(report["expected_runtime_files"], len(self.entries))
+                self.assertEqual(report["archive_files"], len(self.entries))
                 self.assertEqual(len(report["archive_sha256"]), 64)
                 self.assertIn("NOT Slicer installation", report["scope"])
                 self.assertEqual(len(report["module_directories"]), 2)

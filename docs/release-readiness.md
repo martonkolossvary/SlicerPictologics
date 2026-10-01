@@ -1,10 +1,73 @@
 # Release readiness
 
-Review date: 2026-09-30. Extension version remains **0.1.0**; the existing job
+Review date: 2026-10-01. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.
 
-## Current pre-catalog source milestone (2026-09-30)
+## Diagnostics and failure-recovery source milestone (2026-10-01)
+
+**Source publication authorized; registration remains on hold.** The maintainer
+authorized commit/push of this validated milestone on 2026-10-01. Assess GitHub
+qualification for the exact pushed commit; older CI does not cover it. Added an opt-in,
+read-only diagnostic preview with explicit copying, allowlisted technical fields,
+metadata-only dependency status, session run counts and fixed failure/recovery
+codes. No scene identifiers, file paths, DICOM metadata or raw error/log text are
+included; no report is uploaded or saved to the scene. See the
+[privacy boundary and failure matrix](diagnostics-and-recovery.md).
+
+Installer failure tests now exercise offline/interrupted resolution, bad candidate
+metadata, import/JIT rejection, activation failure, fresh-install decline/failure,
+and successful retry. All pip calls are mocked and all environments are test-owned.
+Worker failure/cancellation and invalid/incomplete result tests retain exact prior
+values/provenance and unlock the controls. A real CLI failure/retry gate supplements
+the simulated terminal-state checks.
+
+Export recovery also exposed and fixed a CSV companion-file gap. All files are now
+staged before publication, previous files are copied with their permissions, and
+caught publication failures roll back earlier replacements. Failed rollback retains
+recovery copies and warns explicitly. JSON remains the single-file archival option;
+multi-file power-loss/forced-termination/concurrent-edit guarantees are not claimed.
+The runtime file list now contains 25 files; no branding/test/private-environment
+content was added to that list.
+
+Local verification passed: **547 portable tests**, **100% scoped library/worker
+statement coverage**, Ruff, Mypy (17 source files), syntax and whitespace checks.
+The full installed **Slicer 5.12.4** suite passed **49 tests, no skips** (522.041
+seconds), including the real failure/retry. After final rollback-permission and
+diagnostic wording refinements, the fast suite passed again (42 tests; seven
+opt-in real-worker checks skipped, 3.794 seconds). The two new portable modules
+also passed all ten `unittest` methods under Slicer's bundled Python without
+installing tooling. Logs are in the ignored
+`local-output/diagnostics-recovery-2026-10-01` directory.
+
+The first fast-run fixture placed synthetic failed jobs outside the extension's
+owned `job-*` root and therefore expected cleanup that the safety guard correctly
+refused. Correcting the fixture path resolved those assertions; cleanup safeguards
+were not loosened. Both initial and successful retry logs are retained.
+
+The prior GitHub run below qualifies only its exact published commit, not these
+local changes. No package version or existing job/result schema was changed.
+No normal Slicer scene/settings, shared packages, public images, GitHub settings,
+tags or catalog submissions were changed.
+
+## Published baseline (assessed 2026-10-01)
+
+Commit `9d72093f889486c9e96d255814178235803912b5` was pushed to `main` and passed
+[all five GitHub jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36767255998):
+537 portable tests / 400 subtests / 100% scoped coverage; 41 real Linux Slicer tests
+with no skips; and released-wheel API, worker and geometry checks on Linux, Windows
+and Intel macOS. The Codecov upload was accepted and queued using the already
+configured secret; no secret was changed. A scheduled
+[dependency discovery run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36784216719)
+succeeded with `0.5.1`, no change; qualification/publication were correctly skipped.
+This does not exercise an actual newer-release adoption.
+
+The official catalog validator also passed against that exact published revision
+(69.1 MiB clone; metadata/icon/both screenshot checks), not a package or catalog
+acceptance. Actual Windows/Preview Slicer and Factory-package installation remain
+unverified. The stopped local SDK build is not a pending prerequisite.
+
+## Historical pre-publication source review (2026-09-30)
 
 **ExtensionsIndex registration remains on hold.** On 2026-09-30, after the local
 acceptance run, the maintainer authorized reviewing, committing, and pushing this

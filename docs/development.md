@@ -331,6 +331,8 @@ local gate and CI:
 The CTest-compatible support tests use `unittest`, because Slicer's Python does not
 include pytest. Numerical crop tests also need NumPy, which Slicer already supplies;
 the standalone quality environment must install it explicitly.
+The diagnostics and export-recovery tests also use only `unittest` and the standard
+library, and are included by the existing CMake test discovery.
 
 From the repository root, use Python 3.12+ in a development environment (not Slicer's
 shared Python). These commands use only tracked repository files and match the
@@ -367,7 +369,11 @@ SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH=/absolute/path/to/private-target \
 
 This launches a separate process with disposable test scenes/settings; it does not
 clear or close an existing Slicer session. Require a successful exit and **no skipped
-tests** for full release qualification. The current suite contains 41 tests.
+tests** for full release qualification. The current suite contains 49 tests,
+including privacy-safe diagnostic controls, synthetic install/export failure
+recovery, and an actual worker failure followed by a successful extraction retry.
+Installer recovery tests patch pip and never download packages. See the
+[failure matrix and privacy boundary](diagnostics-and-recovery.md).
 Use the corresponding installed Slicer launcher on another platform; headless
 Linux needs a virtual display, as in the checked-in compatibility workflow.
 

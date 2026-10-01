@@ -23,18 +23,18 @@ published.
 
 ## Validation evidence
 
-On 2026-09-30, the complete upstream validator passed against a fresh clone of
-published revision `dd1c5fc6b7365022fdc54e63a093a34ba90a8a03`, including both
+On 2026-10-01, the complete upstream validator passed against a fresh clone of
+published revision `9d72093f889486c9e96d255814178235803912b5`, including both
 screenshot URLs. Its measured clone
-size was 68.9 MiB (100 MiB limit). Schema, metadata, name/category/topic, SCM,
+size was 69.1 MiB (100 MiB limit). Schema, metadata, name/category/topic, SCM,
 license, and dependency checks all passed. Validator checkout commit:
 `2a06251a679e3d5a04cccec549c5df2febc5c4b0`. The remote `main` hash was unchanged
 before and after validation. The exact published revision also passed
-[all five GitHub compatibility jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36523318487).
-Later local edits are not covered by that GitHub run.
+[all five GitHub compatibility jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36767255998).
+Later local diagnostics/recovery edits are not covered by that GitHub run.
 
 Earlier local source-lifecycle testing found numeric rounding in Slicer
-5.12.4 scene table storage. The local exact-value backup/restore fix now passes
+5.12.4 scene table storage. The published exact-value backup/restore fix passes
 all four install/restart/same-version-replacement/restart phases: 340 values across
 two ROIs survive scene reload exactly, and CSV/JSON exports retain full precision.
 This is source-checkout acceptance on Stable macOS, not package or cross-platform
@@ -53,10 +53,10 @@ treat automated or agent visual checks as approval.
 
 ### Source publication and registration approval
 
-1. The maintainer authorized review, commit/push, and GitHub assessment of this
-   milestone on 2026-09-30. Require green qualification for that exact revision.
-   The existing green run does not cover the local lossless-persistence and workflow
-   changes. No new screenshots are needed for this submission draft.
+1. The authorized 2026-09-30 source publication and GitHub assessment are complete
+   for `9d72093`. Publication of the diagnostics/recovery milestone was authorized
+   on 2026-10-01; require green qualification for its exact pushed revision.
+   No new screenshots are needed for this submission draft.
 2. Retain the maintainer's 2026-09-30 declaration of **no known related patents**;
    update it if new information becomes known. Review optional GitHub
    presentation cleanup: Wiki and Projects are currently enabled, while Discussions

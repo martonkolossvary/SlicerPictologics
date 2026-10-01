@@ -159,6 +159,10 @@ class ExtensionScaffoldTests(unittest.TestCase):
             "outlierSigmaSpinBox",
             "outlierTargetCombo",
             "preprocessingOrderLabel",
+            "diagnosticsCollapsibleButton",
+            "diagnosticsTextEdit",
+            "refreshDiagnosticsButton",
+            "copyDiagnosticsButton",
         }
         self.assertEqual(expected - names, set())
 
@@ -207,7 +211,21 @@ class ExtensionScaffoldTests(unittest.TestCase):
         self.assertIn("SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH", integration_test)
         self.assertIn("@unittest.skipUnless", integration_test)
         self.assertIn('os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1"', integration_test)
-        self.assertNotIn("ensureDependencies(", integration_test)
+        # The recovery tests exercise the real installer orchestration, but every
+        # such test must replace pip before entering it: this suite never downloads.
+        tree = ast.parse(integration_test)
+        for function in ast.walk(tree):
+            if isinstance(function, ast.FunctionDef) and any(
+                isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "ensureDependencies" for node in ast.walk(function)
+            ):
+                self.assertTrue(any(
+                    isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "patch" and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == "slicer.packaging.pip_install"
+                    for node in function.decorator_list
+                ), function.name)
         self.assertNotIn("pip_install(", integration_test)
 
 

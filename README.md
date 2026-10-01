@@ -111,6 +111,14 @@ old version is deleted automatically.
    `describe_features()`). For example, `features.csv` gets `features_catalog.csv`,
    the name that eigenradiomics finds automatically.
 
+CSV exports stage all companion files before replacing any destination. Caught
+write/replacement failures restore earlier files; if restoration itself fails,
+the error identifies a retained recovery folder. The result table is unchanged.
+Multiple files cannot be replaced as one filesystem transaction: a power loss or
+forced process termination during replacement is not covered by this rollback.
+Prefer the single-file JSON bundle for an independent archive, and avoid editing
+the destination files from another application during export.
+
 The long table keeps the official `ibsi_code` and also reports the exact native
 `feature_key`, Pictologics' disambiguated `pictologics_ibsi_code`, the package-wide
 `pictologics_feature_name`, and `preprocessing_sequence`. For example, the official
@@ -230,6 +238,30 @@ The browser is a **snapshot**: use **Refresh selected table** after a new run or
 changing the output table. Filters never change the MRML table or export behavior:
 **Export table as CSV or JSON… still exports the complete selected table**, not just
 the visible matches. Closing the scene clears the browser's snapshot.
+
+### Share privacy-safe diagnostics
+
+Open **Diagnostics (privacy-safe)** below **Pictologics package**, then select
+**Refresh diagnostics**. Review the read-only JSON and select **Copy preview**
+only if you want to share it. Copy uses exactly that preview, not a silently
+refreshed report. Nothing is uploaded automatically or saved to the scene.
+
+The report contains allowlisted software versions, OS/process architecture,
+dependency metadata status, and this module session's latest operation/run state,
+ROI/feature-row counts and elapsed seconds. Fixed failure codes include a short
+recovery suggestion. It excludes image data, subject/image/segment/configuration
+names, file paths, DICOM metadata, environment variables, raw logs and exception
+messages. Unrecognized version strings are replaced with `unknown`.
+
+The dependency status is a **metadata check**, not an import/API/JIT health test;
+refreshing never installs packages or launches a worker. For a failed installation,
+check connectivity and disk space, then retry **Install / update adopted release…**.
+A rejected candidate leaves the previous active environment intact. For export
+failure, keep the table open, check the destination and retry. Detailed errors and
+processing logs remain available locally and may contain identifying information;
+do not paste them publicly without reviewing them separately.
+
+See the [diagnostics and recovery test scope](docs/diagnostics-and-recovery.md).
 
 ### Save and reuse configuration profiles
 

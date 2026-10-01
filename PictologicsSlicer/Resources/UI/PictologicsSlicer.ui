@@ -432,6 +432,29 @@
     </widget>
    </item>
    <item>
+    <widget class="ctkCollapsibleButton" name="diagnosticsCollapsibleButton">
+     <property name="text"><string>Diagnostics (privacy-safe)</string></property>
+     <property name="collapsed"><bool>true</bool></property>
+     <layout class="QVBoxLayout" name="diagnosticsLayout">
+      <item><widget class="QLabel" name="diagnosticsPrivacyLabel">
+       <property name="text"><string>Preview versions, dependency metadata status and this session's run summary. No patient data, paths or raw logs are included. Nothing is uploaded. Refresh before copying if you need a newer snapshot.</string></property>
+       <property name="wordWrap"><bool>true</bool></property>
+       <property name="textFormat"><enum>Qt::PlainText</enum></property>
+      </widget></item>
+      <item><widget class="QPlainTextEdit" name="diagnosticsTextEdit">
+       <property name="readOnly"><bool>true</bool></property>
+       <property name="minimumHeight"><number>200</number></property>
+       <property name="placeholderText"><string>Select Refresh diagnostics to preview the report.</string></property>
+      </widget></item>
+      <item><layout class="QHBoxLayout" name="diagnosticsButtonsLayout">
+       <item><widget class="QPushButton" name="refreshDiagnosticsButton"><property name="text"><string>Refresh diagnostics</string></property></widget></item>
+       <item><widget class="QPushButton" name="copyDiagnosticsButton"><property name="text"><string>Copy preview</string></property><property name="enabled"><bool>false</bool></property></widget></item>
+      </layout></item>
+      <item><widget class="QLabel" name="diagnosticsStatusLabel"><property name="text"><string>No diagnostics copied.</string></property><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::PlainText</enum></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="readinessLabel">
      <property name="text"><string>Select an input scalar volume.</string></property>
      <property name="wordWrap"><bool>true</bool></property>

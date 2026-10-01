@@ -34,6 +34,8 @@ from PictologicsLib.dependencies import (
     parse_pictologics_requirement,
     remove_inactive_environments,
 )
+from PictologicsLib.diagnostics import diagnostics_text
+from PictologicsLib.exports import export_file_set
 from PictologicsLib.inline_config import (
     FILTER_BOUNDARIES,
     FILTER_PARAMETERS,
@@ -430,6 +432,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._filterParameterWidgets: dict[str, Any] = {}
         # A running batch: its cases, the current index, the loaded nodes, and failures.
         self._batch: dict[str, Any] | None = None
+        # Session-only, structured facts. Never store exception text or scene names.
+        self._diagnosticOperation: dict[str, Any] = {}
+        self._diagnosticRun: dict[str, Any] = {}
+        self._diagnosticsPreview = ""
 
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
@@ -586,6 +592,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.validateConfigButton.connect("clicked()", self.onValidateConfiguration)
         self.ui.browseConfigButton.connect("clicked()", self.onBrowseConfiguration)
         self.ui.updatePackageButton.connect("clicked()", self.onUpdatePackage)
+        self.ui.refreshDiagnosticsButton.connect("clicked()", self.onRefreshDiagnostics)
+        self.ui.copyDiagnosticsButton.connect("clicked()", self.onCopyDiagnostics)
         self.ui.runButton.connect("clicked()", self.onRun)
         self.ui.batchBrowseButton.connect("clicked()", self.onBrowseBatchFolder)
         self.ui.runBatchButton.connect("clicked()", self.onRunBatch)
@@ -1448,6 +1456,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.statusLabel.setText("Pictologics is already running.")
             return
         self._dependencyOperationInProgress = True
+        self._recordDiagnosticOperation("dependency_update", "in_progress")
         self._updateRunState()
         try:
             self.ui.statusLabel.setText(
@@ -1455,13 +1464,15 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
             slicer.app.processEvents()
             self.logic.ensureDependencies(forceUpgrade=True)
-            self.refreshPackageStatus()
             self.ui.statusLabel.setText("The adopted Pictologics release is installed.")
+            self._recordDiagnosticOperation("dependency_update", "completed")
         except DependencyInstallDeclined:
+            self._recordDiagnosticOperation("dependency_update", "cancelled")
             self.ui.statusLabel.setText(
                 "Package update was cancelled; no files were changed."
             )
         except Exception as exc:
+            self._recordDiagnosticOperation("dependency_update", "failed", "dependency_install_failed")
             LOGGER.exception("Pictologics dependency update failed")
             slicer.util.errorDisplay(
                 str(exc), windowTitle="Pictologics package update failed"
@@ -1469,7 +1480,54 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.statusLabel.setText("Package update failed.")
         finally:
             self._dependencyOperationInProgress = False
+            self.refreshPackageStatus()
             self._updateRunState()
+
+    def _recordDiagnosticOperation(self, kind: str, outcome: str, code: str = "none"):
+        self._diagnosticOperation = {"kind": kind, "outcome": outcome, "failure_code": code}
+        if kind == "run" and outcome != "in_progress":
+            self._diagnosticRun["state"] = outcome
+
+    def onRefreshDiagnostics(self):
+        # Metadata inspection only: no dependency imports, probes, installs or network.
+        dependency = {"metadata_status": "inspection_failed"}
+        try:
+            requirement = self.logic.pictologicsRequirement()
+            dependency["adopted_version"] = next(iter(requirement.specifier)).version
+            inspection = self.logic.inspectDependencies()
+            dependency["installed_version"] = inspection.installed_version
+            dependency["metadata_status"] = (
+                "ambiguous" if inspection.ambiguous else
+                "compatible" if inspection.satisfied else
+                "incompatible" if inspection.installed else "missing"
+            )
+        except Exception:
+            # An inspection error can contain paths or identifiers. Do not copy it.
+            pass
+        run = dict(self._diagnosticRun)
+        if self._runStartedAt is not None:
+            run["elapsed_seconds"] = max(0, int(time.monotonic() - self._runStartedAt))
+        self._diagnosticsPreview = diagnostics_text(
+            runtime={
+                "extension_version": EXTENSION_VERSION,
+                "slicer_version": slicer.app.applicationVersion,
+                "slicer_revision": slicer.app.repositoryRevision,
+                "python_version": platform.python_version(),
+                "qt_version": qt.qVersion(),
+                "os": platform.system(),
+                "process_architecture": platform.machine(),
+            },
+            dependency=dependency, operation=self._diagnosticOperation, run=run,
+        )
+        self.ui.diagnosticsTextEdit.setPlainText(self._diagnosticsPreview)
+        self.ui.copyDiagnosticsButton.setEnabled(True)
+        self.ui.diagnosticsStatusLabel.setText("Preview refreshed. Review it before copying; nothing has been uploaded.")
+
+    def onCopyDiagnostics(self):
+        if self._diagnosticsPreview:
+            # Copy exactly the previewed snapshot, never silently regenerate it.
+            qt.QApplication.clipboard().setText(self._diagnosticsPreview)
+            self.ui.diagnosticsStatusLabel.setText("Preview copied to the clipboard. Share it only where you choose.")
 
     def onRun(self):
         if self._dependencyOperationInProgress:
@@ -1482,9 +1540,13 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             return
         error = self._validationError()
         if error:
+            self._diagnosticRun = {}
+            self._recordDiagnosticOperation("run", "failed", "run_start_failed")
             self._reportRunError(error, "Pictologics")
             return
         if not self._confirmLargeRun():
+            self._diagnosticRun = {}
+            self._recordDiagnosticOperation("run", "cancelled")
             self.ui.statusLabel.setText("The run did not start.")
             if self._batch is not None:
                 self._batch["stopped"] = True
@@ -1553,18 +1615,21 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 vtk.vtkCommand.ModifiedEvent, self.onCliModified
             )
             self._beginCliProgress(len(self._activeJob["manifest"]["rois"]))
+            self._diagnosticRun.update(state="running", roi_count=len(self._activeJob["manifest"]["rois"]))
             self.ui.statusLabel.setText("Starting Pictologics worker…")
             self._updateRunState()
             # Handle a setup failure that completed between cli.run() and observer
             # registration; no later ModifiedEvent is guaranteed in that race.
             self.onCliModified(self._cliNode)
         except DependencyInstallDeclined:
+            self._recordDiagnosticOperation("run", "cancelled")
             self.ui.statusLabel.setText(
                 "Pictologics installation was cancelled; the run did not start."
             )
             if self._batch is not None:
                 self._batch["stopped"] = True
         except Exception as exc:
+            self._recordDiagnosticOperation("run", "failed", "run_start_failed")
             LOGGER.exception("Could not start Pictologics")
             if self._activeJob:
                 self.logic.cleanupJob(self._activeJob)
@@ -1781,6 +1846,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
 
     def _startRunFeedback(self):
         self._runStartedAt = time.monotonic()
+        self._diagnosticRun = {"state": "starting", "elapsed_seconds": 0}
+        self._recordDiagnosticOperation("run", "in_progress")
         self._cancelRequested = False
         self.ui.elapsedTimeLabel.show()
         self._updateRunFeedback()
@@ -1791,6 +1858,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self._runFeedbackTimer.stop()
         if self._runStartedAt is not None:
             self.ui.elapsedTimeLabel.setText(elapsed_text(time.monotonic() - self._runStartedAt))
+            self._diagnosticRun["elapsed_seconds"] = max(0, int(time.monotonic() - self._runStartedAt))
         self._runStartedAt = None
 
     def _updateRunFeedback(self):
@@ -1872,6 +1940,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._restoreCliProgress(0)
         try:
             if self._activeJob and self._activeJob.get("discard_results"):
+                self._recordDiagnosticOperation("run", "discarded")
                 self.ui.statusLabel.setText(
                     "The scene changed while Pictologics was running; its results were discarded."
                 )
@@ -1879,10 +1948,12 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             if failed or cancelled:
                 errorText = str(cliNode.GetErrorText() or "").strip()
                 if cancelled:
+                    self._recordDiagnosticOperation("run", "cancelled")
                     self.ui.statusLabel.setText(
                         "Pictologics was cancelled; the output table was not changed."
                     )
                 else:
+                    self._recordDiagnosticOperation("run", "failed", "worker_failed")
                     message = (
                         errorText or f"Pictologics CLI ended with status: {statusText}"
                     )
@@ -1895,6 +1966,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 self.ui.statusLabel.setText("Validating and loading results…")
                 self._acceptCompletedJob()
         except Exception as exc:
+            self._recordDiagnosticOperation("run", "failed", "result_rejected")
             LOGGER.exception("Could not commit Pictologics results")
             self._reportRunError(str(exc), "Could not load Pictologics results")
             self.ui.statusLabel.setText(
@@ -1972,6 +2044,11 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self._restoreCliProgress(100)
         errorCount = len(payload.get("errors", []))
         nonOkCount = len(payload["rows"]) - okCount
+        self._diagnosticRun["feature_rows"] = len(payload["rows"])
+        self._recordDiagnosticOperation(
+            "run", "partial" if errorCount or nonOkCount else "completed",
+            "partial_results" if errorCount or nonOkCount else "none",
+        )
         if errorCount or nonOkCount:
             self.ui.statusLabel.setText(
                 f"Completed with {errorCount} ROI error(s) and {nonOkCount} non-success "
@@ -2023,6 +2100,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         job = self._activeJob
         node = self._cliNode
         if job is not None:
+            self._recordDiagnosticOperation("run", "discarded")
             job["discard_results"] = True
         # Prevent a synchronous Cancel()/ModifiedEvent race from entering UI result
         # handling while the widget is being destroyed.
@@ -2082,6 +2160,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             rows = self.logic.rowsFromTable(tableNode)
             wide = bool(self.ui.exportWideCheckBox.checked)
             exportedPaths = self.logic.exportTable(tableNode, path, rows=rows, wide=wide)
+            self._recordDiagnosticOperation("export", "completed")
             destinations = ", ".join(str(item) for item in exportedPaths)
             layout = "wide" if wide else "long"
             self.ui.statusLabel.setText(
@@ -2089,8 +2168,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 f"{destinations}."
             )
         except Exception as exc:
+            self._recordDiagnosticOperation("export", "failed", "export_failed")
             LOGGER.exception("Pictologics export failed")
             slicer.util.errorDisplay(str(exc), windowTitle="Pictologics export failed")
+            self.ui.statusLabel.setText("Export failed; results remain in the table. Check the output folder and retry.")
 
 
 class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
@@ -3105,28 +3186,27 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             self._atomicWriteJSON(path, bundle)
             return [path]
 
-        export_rows(exportedRows, path, wide=wide)
-        exportedPaths = [path]
-        provenancePath = path.with_name(f"{path.stem}.provenance.json")
-        self._atomicWriteJSON(
-            provenancePath,
-            {
-                "schema_version": RESULT_PAYLOAD_SCHEMA_VERSION,
-                "table_name": str(tableNode.GetName()),
-                "provenance_history": history,
-            },
-        )
-        exportedPaths.append(provenancePath)
-        if dictionaryRows:
-            # eigenradiomics finds features_catalog.csv next to features.csv.
-            dictionaryPath = path.with_name(f"{path.stem}_catalog.csv")
-            self._atomicWriteCSV(
-                dictionaryPath,
-                dictionaryRows,
-                self._dictionaryColumns(dictionaryRows),
+        def writeSet(stagedPath: Path) -> list[Path]:
+            export_rows(exportedRows, stagedPath, wide=wide)
+            exportedPaths = [stagedPath]
+            provenancePath = stagedPath.with_name(f"{stagedPath.stem}.provenance.json")
+            self._atomicWriteJSON(
+                provenancePath,
+                {
+                    "schema_version": RESULT_PAYLOAD_SCHEMA_VERSION,
+                    "table_name": str(tableNode.GetName()),
+                    "provenance_history": history,
+                },
             )
-            exportedPaths.append(dictionaryPath)
-        return exportedPaths
+            exportedPaths.append(provenancePath)
+            if dictionaryRows:
+                # eigenradiomics finds features_catalog.csv next to features.csv.
+                dictionaryPath = stagedPath.with_name(f"{stagedPath.stem}_catalog.csv")
+                self._atomicWriteCSV(dictionaryPath, dictionaryRows, self._dictionaryColumns(dictionaryRows))
+                exportedPaths.append(dictionaryPath)
+            return exportedPaths
+
+        return export_file_set(path, writeSet)
 
     @staticmethod
     def _atomicWriteJSON(path: Path, payload: dict[str, Any]):
