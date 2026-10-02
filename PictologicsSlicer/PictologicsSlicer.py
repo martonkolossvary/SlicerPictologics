@@ -1247,6 +1247,16 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         combo.clear()
         nodes = self._batchReportNodes()
         for node in reversed(nodes):
+            # Slicer's generic TSV writer does not escape embedded newlines/tabs.
+            # Locked report tables are a view; restore their authoritative JSON
+            # rows after import (and when the module first opens on a saved scene).
+            try:
+                metadata = json.loads(str(node.GetAttribute(REPORT_METADATA_ATTRIBUTE) or "{}"))
+                if isinstance(metadata, dict) and "rows" in metadata:
+                    self._writeBatchReportTable(node, validate_report(metadata))
+                    node.SetLocked(True)
+            except (ValueError, TypeError):
+                LOGGER.warning("A saved batch report has invalid metadata; it was left unchanged.")
             combo.addItem(str(node.GetName()), node.GetID())
         index = combo.findData(current) if current else 0
         if combo.count:
@@ -1271,16 +1281,19 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             raise ValueError("The batch report metadata is not valid JSON.") from exc
         if not isinstance(metadata, dict):
             raise ValueError("The batch report metadata must be a JSON object.")
-        table = node.GetTable()
-        if table is None:
-            raise ValueError("The batch report table is missing.")
-        columns = {str(table.GetColumnName(index)): index for index in range(table.GetNumberOfColumns())}
-        if not set(REPORT_COLUMNS).issubset(columns):
-            raise ValueError("The batch report is missing required columns.")
-        rows = []
-        for row_index in range(table.GetNumberOfRows()):
-            rows.append({name: str(table.GetValue(row_index, columns[name]).ToString()) for name in REPORT_COLUMNS})
-        metadata["rows"] = rows
+        if "rows" not in metadata:
+            # Backward compatibility for older reports without JSON row storage.
+            # Do not silently fall back if an existing JSON snapshot is invalid.
+            table = node.GetTable()
+            if table is None:
+                raise ValueError("The batch report table is missing.")
+            columns = {str(table.GetColumnName(index)): index for index in range(table.GetNumberOfColumns())}
+            if not set(REPORT_COLUMNS).issubset(columns):
+                raise ValueError("The batch report is missing required columns.")
+            rows = []
+            for row_index in range(table.GetNumberOfRows()):
+                rows.append({name: str(table.GetValue(row_index, columns[name]).ToString()) for name in REPORT_COLUMNS})
+            metadata["rows"] = rows
         document = validate_report(metadata)
         owned = self._batch is not None and self._batch.get("report_node") is node
         if document["state"] == "running" and not owned:
@@ -1306,7 +1319,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode", f"Pictologics batch report {document['batch_id'][:8]}")
         node.SetHideFromEditors(True)
         node.SetAttribute(REPORT_ATTRIBUTE, REPORT_SCHEMA_VERSION)
-        node.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps({key: document[key] for key in ("schema_version", "batch_id", "started_at", "finished_at", "state")}, sort_keys=True))
+        node.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps(document, sort_keys=True, allow_nan=False))
         node.SetLocked(True)
         self._writeBatchReportTable(node, document)
         self._refreshBatchReports(selected_id=node.GetID())
@@ -1334,7 +1347,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         modifying = node.StartModify()
         try:
             self._writeBatchReportTable(node, document)
-            node.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps({key: document[key] for key in ("schema_version", "batch_id", "started_at", "finished_at", "state")}, sort_keys=True))
+            node.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps(document, sort_keys=True, allow_nan=False))
             node.SetLocked(True)
         finally:
             node.EndModify(modifying)

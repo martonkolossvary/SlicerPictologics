@@ -318,6 +318,10 @@ copy. Save the scene or export the report before closing; a report is not writte
 an external location automatically. Reports may contain case identifiers and error
 paths; review them before sharing. A saved snapshot of a running batch is shown as
 interrupted after reload, and does not automatically resume extraction.
+Report rows also have JSON storage in the scene, preserving multiline error text,
+tabs, and exact elapsed times when Slicer's generic table storage cannot. Older
+reports without this backup remain readable if their saved table is intact;
+already-corrupted legacy tables need the independently exported JSON/CSV report.
 
 ### Process many cases with a script
 

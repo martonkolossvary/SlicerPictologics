@@ -111,6 +111,117 @@ commit, results browser, filter, pagination, JSON export and scene-save paths.
 - This bounded matrix does not prove unlimited batch stability, whole-body CT
   capacity, all-filter performance, or results for other hardware/platforms.
 
+## Reproduce mixed CT/MRI batch recovery and memory testing
+
+[`soak_slicer_batches.py`](../scripts/soak_slicer_batches.py) extends the repeated-CT
+benchmark through the real GUI batch workflow. It uses five size/modality variants
+of the same two checksum-pinned public scans, not independent patients:
+
+- CT slabs: 256 × 256 × 48, 256 × 256 × 96, and 512 × 512 × 192.
+- MRHead: its native lattice and every-second-voxel decimation, with origin and
+  orientation preserved and spacing doubled.
+- Two illustrative ROIs and two all-family configurations per successful case:
+  1 mm resampling with FBN 16 and FBN 32 (680 rows for qualified Pictologics 0.5.1).
+
+```sh
+env -u PYTHONPATH -u PYTHONHOME -u PICTOLOGICS_DEV_SOURCE \
+  SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH="/absolute/path/to/existing/private/target" \
+  PICTOLOGICS_SOAK_OUTPUT="$PWD/local-output/mixed-batch-run-01" \
+  PICTOLOGICS_SAMPLE_CACHE="$PWD/local-output/public-sample-cache" \
+  /Applications/Slicer.app/Contents/MacOS/Slicer \
+  --no-splash --no-main-window --disable-settings --ignore-slicerrc \
+  --additional-module-paths "$PWD/PictologicsSlicer" "$PWD/PictologicsCLI" \
+  --python-script "$PWD/scripts/soak_slicer_batches.py"
+```
+
+The output directory must be new. The default six rounds run 30 successful cases,
+plus a malformed segmentation, a deliberately invalid worker manifest, and a
+missing-segmentation folder. Both real failures must be reported and followed by
+successful cases. A second batch completes one case, cancels an observed live
+worker, and leaves the next case unstarted. A third batch must then complete all
+five variants without restarting Slicer. `PICTOLOGICS_SOAK_ROUNDS=2` through `20`
+selects 10–100 successful mixed cases; all three phases still run.
+
+The harness requires exact agreement between reports and feature rows, full
+ROI/configuration matrices, no duplicated feature keys, unchanged prior rows and
+reports across batches, repeat-value parity within `1e-9`, worker/staging release,
+and restored controls. It exports JSON/CSV before closing and saves/reloads all
+results and reports in a scene, checking every row and the report selector.
+
+Reports retain per-case timing and scene-node counts, nominal 0.5-second RSS
+samples across all three phases, idle checkpoints, fixture attribution/hashes,
+configurations, and source hashes. Cases hard-link the read-only fixture files to
+avoid multiplying disk storage. Each phase has a 45-minute timeout and the same
+12 GiB sampled process-tree guard. These guards cannot interrupt synchronous
+staging/commit calls. RSS includes growing result/provenance tables and allocator
+retention, so growth alone is not proof of a leak. A successful `report.json` must
+also be accompanied by a clean Slicer process exit.
+
+This is opt-in developer testing, not a CI workload or clinical validation. It
+does not install dependencies, modify the user's existing Slicer scene, upload
+data, capture images, or register the extension.
+
+The first exploratory mixed run (`local-output/mixed-batch-2026-10-02/run-01/`)
+completed extraction, expected failures, cancellation, and recovery, but failed
+its final saved-report readback. Slicer's generic TSV storage did not escape the
+real multiline load-error message. Batch reports now retain authoritative JSON
+rows in their scene metadata and reconstruct the locked display table on import;
+focused tests also cover tabs, quoted/Unicode names, exact elapsed times, and
+legacy reports without JSON rows. Existing damaged legacy reports cannot be
+reconstructed from an already-corrupted TSV; retain their independent exports.
+
+That first run's memory numbers are not qualification evidence: a call-recording
+test spy retained every input image wrapper after scene cleanup. The corrected
+harness uses plain method replacements that do not retain arguments. It also
+preserves the original failure if a best-effort recovery export subsequently
+fails. Initial logs/results are retained rather than overwritten.
+
+### Mixed-batch observations on 2026-10-02
+
+The corrected full run is in `local-output/mixed-batch-2026-10-02/run-02/`, with
+its launch log alongside that directory. It used the same host/runtime documented
+below, source based on `a756dff` plus the report-persistence fix, and an initially
+empty private Numba cache. Script/runtime hashes are in `report.json`. The process
+exited **0**, with all assertions passing.
+
+| Phase | Verified outcomes | New feature rows | Seconds |
+| --- | --- | ---: | ---: |
+| Mixed CT/MRI, six rounds | 30 completed, two expected failures, one skipped | 20,400 | 243.95 |
+| Cancellation | One completed, one live worker cancelled, one not started | 680 | 15.18 |
+| Recovery without restart | All five size/modality variants completed | 3,400 | 35.01 |
+
+The phase times include verification and JSON/CSV exports; fixture preparation,
+sample loading, idle checkpoints, and final scene round trip are separate. The
+first cold case took **82.70 seconds**. Subsequent mixed-batch case timings include
+file loading, staging, worker execution and table commit, but not phase-end exports:
+
+| Reused-cache fixture | Median seconds | Observed range, seconds |
+| --- | ---: | ---: |
+| Small CT | 3.45 | 3.15–3.93 |
+| Medium CT | 3.97 | 3.55–4.43 |
+| Larger CT, 50.3 million voxels | 11.87 | 11.33–12.35 |
+| Coarse MRHead | 3.03 | 2.81–3.59 |
+| Native MRHead | 3.81 | 3.45–4.37 |
+
+All **24,480 rows** from 36 successful cases and all **three reports** survived
+scene save/reload exactly, including the multiline load error. Previous rows and
+reports were unchanged by later batches. Repeated fixture values agreed within
+`1e-9`. Workers exited and staging directories were removed before recovery began.
+Case-boundary volume, segmentation, CLI and display node counts returned to zero;
+storage-node counts stayed flat. Final owned-scene cleanup left none of the
+monitored node classes behind.
+
+There were **462 RSS samples** with one failed sampling attempt. The simultaneous
+Slicer-plus-descendant peak was **3.96 GiB**; individual Slicer and descendant
+peaks were **2.58 GiB** and **1.51 GiB** (do not add separately timed peaks).
+Slicer idle RSS was **1.86 GiB** initially, **2.43 GiB** after the mixed phase,
+**2.50 GiB** after recovery, and **2.56 GiB** after final scene release. Descendant
+RSS was zero at idle checkpoints. The retained GUI RSS is not explained solely by
+live scene nodes and must not be called a proven leak-free plateau; allocator,
+runtime, and UI retention need longer dedicated profiling to distinguish them.
+This bounded run supports several-GiB working-memory guidance, not a minimum RAM
+specification or a guarantee for hundreds of independent patients.
+
 ## Observations on 2026-10-01
 
 Host: **Apple M4 Pro, 48 GiB RAM, 14 logical CPUs**, macOS 27.0.1. The installed

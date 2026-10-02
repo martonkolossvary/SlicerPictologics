@@ -1,8 +1,45 @@
 # Release readiness
 
-Review date: 2026-10-01. Extension version remains **0.1.0**; the existing job
+Review date: 2026-10-02. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.
+
+## Mixed CT/MRI batch qualification (2026-10-02)
+
+This milestone extends the public-data benchmark with a reproducible 30-case mixed
+batch (five CT/MRI size variants, six rounds), two ROIs and two configurations,
+real load/worker failures, real-worker cancellation, and a five-case recovery
+batch without restarting Slicer. These are variants of two public scans, not
+30 independent patients. The successful repeat exited **0** and verified 36
+successful cases / **24,480 rows**, exact scene round trips for every row and
+three batch reports, unchanged prior results, repeat numerical parity, stable
+temporary node counts, and released worker/staging state.
+
+The initial run exposed a real persistence bug: multiline failure text was not
+escaped by Slicer's generic TSV report writer. The fix stores authoritative
+report rows as JSON in scene metadata and reconstructs the locked table on import
+or module setup. Regression tests cover multiline/tabbed text, quoted/Unicode
+names, exact elapsed times, invalid canonical metadata, and intact legacy reports.
+Already-corrupted legacy report tables still require their independent exports.
+
+The test harness also stopped using a call-recording spy that retained image
+arguments and inflated RSS. Qualified measurements come only from the corrected
+repeat: **3.96 GiB** sampled simultaneous process-tree peak; **2.56 GiB** GUI RSS
+after scene release versus **1.86 GiB** initially. This is bounded memory evidence,
+not proof of unlimited stability or absence of all memory retention. See the
+[workload method, timings, and limitations](performance.md#mixed-batch-observations-on-2026-10-02).
+Evidence and both runs are under `local-output/mixed-batch-2026-10-02/`.
+
+Local quality: **584 portable tests**, **100% scoped library/worker statement
+coverage**, Ruff, Mypy (18 source files), and whitespace checks. The installed-Slicer
+fast suite passed **49 tests**, with seven opt-in checks skipped (56 total,
+4.781 seconds); the separate real mixed workload is the end-to-end evidence for
+this change. Source publication was authorized on 2026-10-02. Require green GitHub
+qualification for the exact pushed revision; local results alone do not establish it.
+
+Next priorities: actual Windows and Slicer Preview application acceptance, and a final report-UI user
+walkthrough. Longer independent-patient/multi-hour memory profiling remains useful.
+Registration, official packaging, and new public imagery remain on hold.
 
 ## Large-table feedback and batch reports (2026-10-01)
 
@@ -30,9 +67,17 @@ milestone, the full real-worker suite passed 50 tests in 538.822 seconds; later
 review fixes require their own qualification at the published commit. Evidence is
 retained under `local-output/feedback-reports-2026-10-01/`.
 
-Remaining priorities before registration: heterogeneous/longer batch soak testing,
-actual Windows and Preview Slicer acceptance, and a final user walkthrough of the
-report UI. Resumable batches, failed-case retry, and asynchronous/chunked large-table
+Published `a756dfff11df747dd935ff9032662bdae19042bc` subsequently passed
+[all five GitHub jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36924124303),
+including all 54 real Linux Slicer checks with no skips (1023.149 seconds), 560
+portable tests/100% scoped coverage, and released-wheel checks on three platforms.
+The published catalog metadata also passed the upstream validator. This does not
+qualify the later mixed-batch changes described above or an installed Factory package.
+
+At publication, the next priorities included heterogeneous/longer batch testing;
+the bounded mixed-batch run above now addresses that gap. Actual Windows and
+Preview Slicer acceptance and a final user walkthrough of the report UI remain.
+Resumable batches, failed-case retry, and asynchronous/chunked large-table
 operations are useful future improvements, not prerequisites to source publication.
 Official package build, archive auditing, and clean package installation remain
 post-submission gates. Registration and unreviewed imagery remain on hold.

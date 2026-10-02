@@ -1412,6 +1412,44 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         export_report(loaded, csv_path)
         self.assertIn("case-missing,skipped", csv_path.read_text())
 
+    def test_batch_report_preserves_multiline_errors_names_and_exact_elapsed_time(self) -> None:
+        from PictologicsLib.batch_reports import REPORT_COLUMNS, REPORT_METADATA_ATTRIBUTE
+
+        widget = self._feedback_widget()
+        node, document = widget._createBatchReport([], [])
+        document["state"] = "finished"
+        document["rows"] = [{"case_name": 'case: α\t"quoted"\ncontinued', "status": "failed",
+                            "elapsed_seconds": math.pi, "roi_count": 2, "row_count": 0,
+                            "run_id": "failed-run", "result_table": "", "reason": 'Load failed:\n- line two\t"detail"\n- line three'}]
+        widget._syncBatchReport(document, node)
+        expected = widget._reportDocument(node)
+        scene_path = self.temporary_directory / "multiline-report.mrb"
+        self.assertTrue(slicer.util.saveScene(str(scene_path)))
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(scene_path)))
+        restored = widget._selectedBatchReportNode()
+        self.assertEqual(widget._reportDocument(restored), expected)
+        self.assertEqual(restored.GetNumberOfRows(), 1)
+        for column, name in enumerate(REPORT_COLUMNS):
+            self.assertEqual(restored.GetTable().GetValue(0, column).ToString(), str(expected["rows"][0][name]))
+        self.assertTrue(restored.GetLocked())
+        # Damaged canonical data must not silently fall back to its visible copy.
+        restored.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps(dict(expected, rows=[{}])))
+        with self.assertRaises(ValueError):
+            widget._reportDocument(restored)
+
+    def test_legacy_batch_report_without_json_rows_remains_readable(self) -> None:
+        from PictologicsLib.batch import BatchSkip
+        from PictologicsLib.batch_reports import REPORT_METADATA_ATTRIBUTE
+
+        widget = self._feedback_widget()
+        node, document = widget._createBatchReport([], [BatchSkip("legacy-case", "missing file")])
+        document["state"] = "finished"
+        widget._syncBatchReport(document, node)
+        expected = widget._reportDocument(node)
+        node.SetAttribute(REPORT_METADATA_ATTRIBUTE, json.dumps({key: value for key, value in document.items() if key != "rows"}))
+        self.assertEqual(widget._reportDocument(node), expected)
+
     def test_batch_reports_keep_separate_histories_and_recover_interrupted_snapshot(self) -> None:
         from PictologicsLib.batch import BatchSkip, discover_cases
 
