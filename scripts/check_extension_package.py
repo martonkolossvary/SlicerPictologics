@@ -98,7 +98,7 @@ def archive_hashes(archive: Path) -> dict[str, str]:
                 kind = stat.S_IFMT(mode)
                 regular = kind in (0, stat.S_IFREG)
                 directory = member.is_dir() and kind in (0, stat.S_IFDIR)
-                inspect(member.filename, member.file_size, directory, regular,
+                inspect(member.orig_filename, member.file_size, directory, regular,
                         lambda item=member: package.open(item))
     else:
         with tarfile.open(archive, "r:*") as package:

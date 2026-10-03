@@ -95,6 +95,22 @@ The background process sets `PICTOLOGICS_DISABLE_WARMUP=1` before importing
 Pictologics, removes that setting after import, and then calls `warmup_jit()` once.
 This keeps module discovery fast while still compiling kernels before extraction.
 
+## Windows application validation
+
+The [Windows validation report](windows-validation.md) records native Windows
+application outcomes separately from CI's Windows wheel checks. Use the reusable
+[`Invoke-SlicerValidation.ps1`](../scripts/Invoke-SlicerValidation.ps1) launcher
+with a discovered `Slicer.exe`, a qualified private dependency target and a new
+ignored output directory. It quotes each argument, preserves existing Slicer
+sessions, captures stdout/stderr separately and returns the child exit code.
+Normal GUI installation/restart and Preview qualification are separate gates.
+
+On Windows, the worker and installation probe give Numba an extended absolute cache path (`\\?\` or
+`\\?\UNC\`). Generated JIT filenames can otherwise exceed `MAX_PATH` even
+when the package environment and checkout paths are short. This keeps the same
+private cache location and does not change Windows long-path or security policy.
+Other Slicer/native-library input-path limits still require separate testing.
+
 ## Temporary files
 
 The extension serializes temporary inputs as NIfTI (`.nii.gz`) because Pictologics

@@ -15,6 +15,7 @@ import hashlib
 import importlib
 import json
 import math
+import ntpath
 import os
 import re
 import sys
@@ -797,16 +798,36 @@ def isolate_dependency_path(
     return isolated
 
 
+def _numba_cache_directory(path: Path) -> str:
+    """Keep Numba's long generated filenames usable under Windows MAX_PATH.
+
+    The manifest already contains an absolute cache path. Use the extended path
+    spelling only for Python/Numba I/O; provenance keeps the ordinary spelling.
+    This does not require a registry or machine-wide long-path policy change.
+    """
+
+    directory = str(path)
+    if sys.platform != "win32":
+        return directory
+    directory = ntpath.normpath(directory)
+    if directory.startswith("\\\\?\\"):
+        return directory
+    if directory.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + directory[2:]
+    return "\\\\?\\" + directory
+
+
 def configure_environment(manifest: JobManifest) -> None:
     """Configure Numba and suppress Pictologics' import-time JIT warmup."""
 
+    cache_directory = _numba_cache_directory(manifest.numba_cache_path)
     try:
-        manifest.numba_cache_path.mkdir(parents=True, exist_ok=True)
+        Path(cache_directory).mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise WorkerSetupError(
             f"cannot create Numba cache directory '{manifest.numba_cache_path}': {exc}"
         ) from exc
-    os.environ["NUMBA_CACHE_DIR"] = str(manifest.numba_cache_path)
+    os.environ["NUMBA_CACHE_DIR"] = cache_directory
     os.environ["PICTOLOGICS_DISABLE_WARMUP"] = "1"
 
 

@@ -266,8 +266,8 @@ class RuntimeIsolationTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {}, clear=True):
                 worker.configure_environment(manifest)
                 self.assertEqual(os.environ["PICTOLOGICS_DISABLE_WARMUP"], "1")
-                self.assertEqual(
-                    os.environ["NUMBA_CACHE_DIR"], str((root / "numba-cache").resolve())
+                self.assertTrue(
+                    Path(os.environ["NUMBA_CACHE_DIR"]).samefile(root / "numba-cache")
                 )
                 self.assertTrue((root / "numba-cache").is_dir())
 

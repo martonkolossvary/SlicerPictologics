@@ -689,10 +689,25 @@ class IsolationTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {}, clear=True):
                 worker.configure_environment(manifest)
                 self.assertEqual(os.environ["PICTOLOGICS_DISABLE_WARMUP"], "1")
-                self.assertEqual(
-                    os.environ["NUMBA_CACHE_DIR"], str(root / "numba-cache")
+                self.assertTrue(
+                    Path(os.environ["NUMBA_CACHE_DIR"]).samefile(root / "numba-cache")
                 )
                 self.assertTrue((root / "numba-cache").is_dir())
+
+    def test_numba_cache_path_preserves_location_on_each_platform(self):
+        cases = (
+            ("linux", "/private/cache", "/private/cache"),
+            ("win32", "C:/private/cache", "\\\\?\\C:\\private\\cache"),
+            ("win32", "\\\\server\\share\\cache", "\\\\?\\UNC\\server\\share\\cache"),
+            ("win32", "\\\\?\\C:\\private\\cache", "\\\\?\\C:\\private\\cache"),
+        )
+        for platform_name, source, expected in cases:
+            with self.subTest(platform=platform_name, source=source), mock.patch.object(
+                worker.sys, "platform", platform_name
+            ):
+                path = mock.Mock()
+                path.__str__ = mock.Mock(return_value=source)
+                self.assertEqual(worker._numba_cache_directory(path), expected)
 
     def test_configure_environment_mkdir_error(self):
         with tempfile.TemporaryDirectory() as directory:

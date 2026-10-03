@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import tempfile
@@ -82,6 +83,8 @@ class TargetInspectionTests(unittest.TestCase):
             f"Metadata-Version: 2.1\nName: pictologics\nVersion: {version}\n",
             encoding="utf-8",
         )
+        # NTFS directory timestamps may not advance between back-to-back probes.
+        importlib.invalidate_caches()
 
     def test_inspects_only_requested_target_and_checks_specifier(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

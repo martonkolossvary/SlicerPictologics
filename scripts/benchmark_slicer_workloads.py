@@ -37,7 +37,7 @@ from PictologicsLib.inline_config import (  # noqa: E402
 )
 from PictologicsLib.results import load_result_payload  # noqa: E402
 from PictologicsWidgets.results_browser import ResultsBrowser  # noqa: E402
-from workload_support import SAMPLES, MemorySampler  # noqa: E402
+from workload_support import SAMPLES, MemorySampler, memory_method  # noqa: E402
 
 from PictologicsSlicer import EXTENSION_VERSION, PictologicsSlicerLogic  # noqa: E402
 
@@ -72,6 +72,7 @@ def remove_fixture(*nodes):
 def guard(sampler, started, *, timeout=JOB_TIMEOUT):
     if time.perf_counter() - started > timeout:
         raise TimeoutError("Benchmark time budget exceeded")
+    sampler.ensure_recent()
     if sampler.samples and sum(sampler.samples[-1][1:]) > MAX_TREE_RSS:
         raise MemoryError("Benchmark reached its 12 GiB sampled process-tree guard")
 
@@ -122,7 +123,7 @@ class Workloads:
                 "os_release": platform.mac_ver()[0] or platform.release(), "process_architecture": platform.machine(),
                 "logical_cpus": os.cpu_count()},
             "sources": SAMPLES, "sample_loading_seconds": {}, "measurements": [], "success": False,
-            "memory_method": "0.5s POSIX ps RSS samples; descendants sum can double-count shared pages; not exact peak or unique RAM",
+            "memory_method": memory_method(),
             "max_tree_rss_bytes": MAX_TREE_RSS,
             "source_hashes": {str(p.relative_to(REPOSITORY)): hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in [Path(__file__), REPOSITORY / "scripts/workload_support.py",

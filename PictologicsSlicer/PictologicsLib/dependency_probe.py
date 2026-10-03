@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import inspect
+import ntpath
 import os
 import sys
 from importlib import metadata
@@ -114,6 +115,26 @@ def _require_origin_inside(module: Any, target: Path, label: str) -> None:
         )
 
 
+# Kept standalone like the CLI worker: neither subprocess imports GUI libraries.
+def _numba_cache_directory(path: Path) -> str:
+    """Keep Numba's long generated filenames usable under Windows MAX_PATH.
+
+    The caller resolves the supplied cache directory before this conversion.
+    Keep its location unchanged without requiring a registry or machine-wide
+    long-path policy change.
+    """
+
+    directory = str(path)
+    if sys.platform != "win32":
+        return directory
+    directory = ntpath.normpath(directory)
+    if directory.startswith("\\\\?\\"):
+        return directory
+    if directory.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + directory[2:]
+    return "\\\\?\\" + directory
+
+
 def probe(target: str | Path, expected_version: str, *, warmup: bool = True) -> int:
     """Import, validate, and optionally warm one candidate environment."""
 
@@ -125,6 +146,9 @@ def probe(target: str | Path, expected_version: str, *, warmup: bool = True) -> 
             f"version {expected_version!r}"
         )
 
+    cache_directory = os.environ.get("NUMBA_CACHE_DIR")
+    if cache_directory:
+        os.environ["NUMBA_CACHE_DIR"] = _numba_cache_directory(Path(cache_directory).resolve())
     os.environ["PICTOLOGICS_DISABLE_WARMUP"] = "1"
     isolate_target(target_path)
     try:

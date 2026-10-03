@@ -4,6 +4,34 @@ Review date: 2026-10-02. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.
 
+## Native Windows application validation (2026-10-02 to 2026-10-03)
+
+The [Windows validation report](windows-validation.md) records actual official
+Stable 5.12.4 application testing on native Windows x64, separately from GitHub's
+Windows wheel check. The corrected Stable gate passed **56 tests, zero failures,
+zero skips**, exit 0. Four source/dependency lifecycle phases passed, as did
+Unicode input/export paths, exact scene persistence, public MRHead/CTLiver widget
+runs, the 30-case mixed workload plus cancellation/recovery, and 10,000/100,000-row
+table cases. The mixed workload retained 24,480 rows and three report histories.
+
+Windows testing exposed long generated Numba cache filenames exceeding `MAX_PATH`.
+The worker and installation probe now use extended absolute cache paths without
+changing Windows policy. The public MRI demo timer also now stops with its module
+widget. The development sampler measures owned Windows process-tree working sets;
+its guard retains failures and sample gaps. Portable fixture corrections preserve
+the 100% scoped coverage requirement: 596 collected items, pytest reporting
+593 passed, five existing privilege-dependent symlink skips and 473 passed subtests.
+Ruff, Mypy, syntax and metadata checks pass.
+
+The separately installed Preview runtime is 5.13.0-2026-09-30, revision 35317,
+from the checksum-verified October 1 installer. Its four lifecycle phases pass;
+full integration and key widget checks are still running. The normal GUI setup
+has persisted Developer mode and both source paths across restart and discovered
+both modules. Package installation and the remaining interactive walkthrough
+are pending desktop access. This milestone does not yet claim full interactive
+Windows/Preview acceptance. Public registration, official package acceptance,
+new images and multi-hour/independent-patient qualification remain outstanding.
+
 ## Mixed CT/MRI batch qualification (2026-10-02)
 
 This milestone extends the public-data benchmark with a reproducible 30-case mixed
