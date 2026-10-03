@@ -17,6 +17,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "PictologicsSlicer"))
@@ -155,6 +156,7 @@ class ProbeIsolationTests(unittest.TestCase):
         }
         for name in list(self._saved_modules):
             del sys.modules[name]
+        self._saved_cache = dp.os.environ.get("NUMBA_CACHE_DIR")
         self._saved_env = dp.os.environ.get("PICTOLOGICS_DISABLE_WARMUP")
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
@@ -169,6 +171,10 @@ class ProbeIsolationTests(unittest.TestCase):
             dp.os.environ.pop("PICTOLOGICS_DISABLE_WARMUP", None)
         else:
             dp.os.environ["PICTOLOGICS_DISABLE_WARMUP"] = self._saved_env
+        if self._saved_cache is None:
+            dp.os.environ.pop("NUMBA_CACHE_DIR", None)
+        else:
+            dp.os.environ["NUMBA_CACHE_DIR"] = self._saved_cache
         importlib.invalidate_caches()
         self._tmp.cleanup()
 
@@ -246,6 +252,35 @@ class ProbeIsolationTests(unittest.TestCase):
             rows = dp.probe(target, VERSION, warmup=True)
         self.assertEqual(rows, 42)
         self.assertIn("private-environment probe passed", buffer.getvalue())
+
+    def test_numba_cache_path_is_extended_only_on_windows(self):
+        cases = (
+            ("linux", "/private/cache", "/private/cache"),
+            ("win32", "C:/private/cache", "\\\\?\\C:\\private\\cache"),
+            ("win32", "\\\\server\\share\\cache", "\\\\?\\UNC\\server\\share\\cache"),
+            ("win32", "\\\\?\\C:\\private\\cache", "\\\\?\\C:\\private\\cache"),
+        )
+        for platform_name, source, expected in cases:
+            with self.subTest(platform=platform_name, source=source), patch.object(dp.sys, "platform", platform_name):
+                path = Mock()
+                path.__str__ = Mock(return_value=source)
+                self.assertEqual(dp._numba_cache_directory(path), expected)
+
+    def test_probe_handles_supplied_and_unspecified_numba_cache(self):
+        target = _make_target(self.root)
+        sys.modules["pictologics"] = _good_module(target)
+        for cache in (None, str(self.root / "numba-cache")):
+            with self.subTest(cache=cache), patch.dict(dp.os.environ, {}, clear=True):
+                if cache is not None:
+                    dp.os.environ["NUMBA_CACHE_DIR"] = cache
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(dp.probe(target, VERSION), 42)
+                if cache is None:
+                    self.assertNotIn("NUMBA_CACHE_DIR", dp.os.environ)
+                else:
+                    canonical = str(Path(cache).resolve())
+                    expected = "\\\\?\\" + canonical if sys.platform == "win32" else canonical
+                    self.assertEqual(dp.os.environ["NUMBA_CACHE_DIR"], expected)
 
     # -- probe() metadata / distribution failures ---------------------------
 

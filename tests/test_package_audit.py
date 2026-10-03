@@ -36,7 +36,11 @@ class PackageAuditTest(unittest.TestCase):
         path = self.root / "synthetic-fixture.zip"
         with zipfile.ZipFile(path, "w") as archive:
             for name, content in (self.entries if entries is None else entries).items():
-                archive.writestr(name, content)
+                member = zipfile.ZipInfo(name)
+                # ZipInfo normalizes backslashes on Windows; retain the raw
+                # malicious fixture name exactly as received from an archive.
+                member.filename = name
+                archive.writestr(member, content)
         return path
 
     def test_zip_and_tar_match_source_and_report_hash(self):
