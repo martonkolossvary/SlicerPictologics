@@ -1,8 +1,50 @@
 # Release readiness
 
-Review date: 2026-10-02. Extension version remains **0.1.0**; the existing job
+Review date: 2026-10-04. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.
+
+## Native Windows application validation (2026-10-02 to 2026-10-04)
+
+The [Windows validation report](windows-validation.md) records actual official
+Stable 5.12.4 application testing on native Windows x64, separately from GitHub's
+Windows wheel check. The corrected Stable gate passed **56 tests, zero failures,
+zero skips**, exit 0. Four source/dependency lifecycle phases passed, as did
+Unicode input/export paths, exact scene persistence, public MRHead/CTLiver widget
+runs, the 30-case mixed workload plus cancellation/recovery, and 10,000/100,000-row
+table cases. The mixed workload retained 24,480 rows and three report histories.
+
+Windows testing exposed long generated Numba cache filenames exceeding `MAX_PATH`.
+The worker and installation probe now use extended absolute cache paths without
+changing Windows policy. The public MRI demo timer also now stops with its module
+widget. The development sampler measures owned Windows process-tree working sets;
+its guard retains failures and sample gaps. Portable fixture corrections preserve
+the 100% scoped coverage requirement: 596 collected items, pytest reporting
+593 passed, five existing privilege-dependent symlink skips and 473 passed subtests.
+Ruff, Mypy, syntax and metadata checks pass.
+
+The separately installed Preview runtime is **5.13.0-2026-09-30**, revision 35317,
+from the checksum-verified October 1 installer. Its **56-test integration gate**,
+all four lifecycle phases, Unicode paths and both public widget demonstrations
+passed with exit 0, zero integration failures/skips, and exact scene persistence.
+Its private environment is separate and the adopted release remains **0.5.1**.
+
+Stable's native walkthrough completed normal GUI installation/restart, 340/680-row
+MRI runs, single-ROI busy feedback, live cancellation and recovery, range/sigma
+refinement, profiles, result browsing, Unicode CSV/sidecars, 680-value exact scene
+reload, a 340-row CT run, and privacy-safe diagnostics. Extractions after normal
+restart succeeded with pip explicitly forbidden; shared NumPy/Pillow stayed
+unchanged. The final public CT scene is open and exported on the original machine.
+
+The code revision `1d4ef6f8d064990e2944c68629875e424ac91fcb` passed all five
+[GitHub jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/37120085011);
+[PR #6](https://github.com/martonkolossvary/SlicerPictologics/pull/6) contains the
+fixes and final evidence. Those wheel/Linux jobs remain distinct from these actual
+Windows application results. Preview's full native walkthrough and workload/table
+benchmark were not repeated. Official package acceptance, ARM/emulation,
+multi-hour/independent-patient qualification and privilege-dependent symlink checks
+remain outside the completed scope. Registration, release publication and new
+images remain on hold.
 
 ## Mixed CT/MRI batch qualification (2026-10-02)
 

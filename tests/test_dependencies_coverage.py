@@ -206,7 +206,6 @@ class LocalDevelopmentSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fifo = root / "pipe"
-            os.mkfifo(fifo)
             cases = [
                 ("empty", "   "),
                 ("null-byte", "some\x00path"),
@@ -214,12 +213,21 @@ class LocalDevelopmentSourceTests(unittest.TestCase):
                 ("url", "https://example.invalid/pictologics"),
                 ("vcs", "git+https://example.invalid/pictologics.git"),
                 ("missing", str(root / "does-not-exist")),
-                ("special-file", str(fifo)),
             ]
             for label, value in cases:
                 with self.subTest(label=label):
                     with self.assertRaises(DependencyConfigurationError):
                         _local_development_source(value)
+            if hasattr(os, "mkfifo"):
+                os.mkfifo(fifo)
+                with self.assertRaises(DependencyConfigurationError):
+                    _local_development_source(fifo)
+            else:
+                fifo.touch()
+                with mock.patch.object(Path, "is_dir", return_value=False), mock.patch.object(
+                    Path, "is_file", return_value=False
+                ), self.assertRaises(DependencyConfigurationError):
+                    _local_development_source(fifo)
 
 
 class PipArgumentTests(unittest.TestCase):

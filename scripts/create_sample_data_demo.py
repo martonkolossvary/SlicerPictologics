@@ -129,7 +129,8 @@ def create_demo() -> None:
     )
 
     # Observe the real GUI workflow; never create or alter calculated values.
-    completion_timer = qt.QTimer(slicer.util.mainWindow())
+    # Stop with the module widget, before its controls disappear during shutdown.
+    completion_timer = qt.QTimer(widget.parent)
     completion_timer.setInterval(500)
 
     def review_completed_run() -> None:

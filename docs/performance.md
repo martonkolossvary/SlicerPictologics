@@ -54,8 +54,12 @@ visually reviewed and approved them; the existing catalog screenshots are unchan
 
 [`benchmark_slicer_workloads.py`](../scripts/benchmark_slicer_workloads.py) uses an
 existing qualified private dependency target, with a separate, initially empty
-Numba cache. It refuses package installation or updates. The current RSS sampler
-requires **macOS or Linux** (`ps`); Windows memory benchmarking is not implemented.
+Numba cache. It refuses package installation or updates. macOS/Linux use `ps` RSS;
+Windows uses the owned process tree's PSAPI `WorkingSetSize` counters, with no
+shared Python package installation. These are sampled resident/working-set bytes,
+not an exact peak of unique physical RAM. Startup monitoring failures and samples
+older than ten seconds stop the memory guard; reports retain transient errors and
+sample gaps. See [Windows method, commands and outcomes](windows-validation.md).
 
 ```sh
 env -u PYTHONPATH -u PYTHONHOME -u PICTOLOGICS_DEV_SOURCE \

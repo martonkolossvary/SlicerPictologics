@@ -80,14 +80,17 @@ class ProcessIsAliveTests(unittest.TestCase):
             child.terminate()
             child.wait()
 
+    @mock.patch.object(staging.os, "name", "posix")
     def test_process_lookup_error_means_dead(self) -> None:
         with mock.patch.object(staging.os, "kill", side_effect=ProcessLookupError):
             self.assertFalse(process_is_alive(os.getpid() + 1))
 
+    @mock.patch.object(staging.os, "name", "posix")
     def test_permission_error_means_alive(self) -> None:
         with mock.patch.object(staging.os, "kill", side_effect=PermissionError):
             self.assertTrue(process_is_alive(os.getpid() + 1))
 
+    @mock.patch.object(staging.os, "name", "posix")
     def test_other_os_error_means_dead(self) -> None:
         with mock.patch.object(staging.os, "kill", side_effect=OSError):
             self.assertFalse(process_is_alive(os.getpid() + 1))
