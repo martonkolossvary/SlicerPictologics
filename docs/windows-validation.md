@@ -1,6 +1,6 @@
 # Windows application validation
 
-Validation dates: 2026-10-02 to 2026-10-03. This report separates installed Windows Slicer
+Validation dates: 2026-10-02 to 2026-10-04. This report separates installed Windows Slicer
 application tests from GitHub's Windows wheel and Linux Slicer jobs. It is not
 ExtensionsIndex registration, Extension Factory package-install acceptance, or
 clinical validation. New images, raw logs, downloads, environments, scenes and
@@ -17,6 +17,10 @@ exports remain in ignored local storage.
   No fetch/pull occurred during measurement runs. Local tooling fixes are
   described below. The worker and standalone dependency probe additionally fix
   Windows Numba cache paths; all requirements and constraints remain unchanged.
+  The corrected source was committed as
+  `1d4ef6f8d064990e2944c68629875e424ac91fcb`; subsequent changes only complete
+  this report and readiness documentation. Preview and the normal GUI walkthrough
+  used that exact commit. Earlier corrected Stable runs used the file hashes below.
 - Stable: official Slicer 5.12.4, revision 34645 (`4e21c19`), built 2026-09-09;
   bundled Python 3.12.10, AMD64. Actual executable was located in the existing
   per-user installation; personal absolute paths are omitted from this report.
@@ -54,7 +58,7 @@ library/worker statement coverage**, with no failed tests. Five real-symlink
 checks remain skipped under the account's existing privilege policy; injected
 contract tests supplement them and do not represent actual symlink creation.
 The final portable run collected **596 items**; pytest 9.1.1 reported
-**593 passed, 5 skipped, 473 subtests passed** (7.48 s), exit **0**, with all
+**593 passed, 5 skipped, 473 subtests passed** (9.12 s on the October 4 repeat), exit **0**, with all
 **2,619 scoped statements covered**. Pytest's subtest outcomes are reported
 verbatim rather than treating their totals as mutually exclusive collected tests.
 The syntax, Ruff, Mypy (18 source files), and metadata JSON checks returned **0**.
@@ -117,7 +121,70 @@ Shared NumPy **2.4.6** and Pillow **12.2.0** were unchanged in every phase.
 The lifecycle root is `local-output/win-lifecycle-01`; the dependency target was
 read from the successful report, not inferred from an AppData convention.
 This is disposable source/dependency acceptance with same-version replacement.
-It does not substitute for the normal GUI installation/restart walkthrough.
+The normal GUI installation/restart walkthrough below independently checks the
+ordinary per-user installation.
+
+## Normal Stable installation and visible walkthrough
+
+Developer mode and both source module paths were saved through Application
+Settings. A normal restart discovered **Pictologics** and **Pictologics Worker
+(internal)**. The GUI's **Install / update adopted release...** action installed
+and qualified **0.5.1** in the extension's private environment. Its import/API and
+JIT probes completed before the active target was inspected. No development-source
+override or sibling checkout was used. Shared NumPy **2.4.6** and Pillow **12.2.0**
+were identical before and after. An inspection attempted before atomic activation
+completed was retried after the installer finished; that early harness assertion
+is not treated as an installation failure.
+
+The owned empty session was closed normally and reopened with saved settings.
+The same qualified target remained active. In this owned process, a temporary
+assertion guard rejected any call to Slicer's pip installer; all following
+extractions passed without invoking it. The guard was restored before handoff.
+The private target was read from `inspectDependencies()`, recorded locally, and
+not guessed from an AppData path.
+
+Native Windows controls and application-console assertions were used on exported,
+test-owned public scenes. This complements the automated Qt integration suite;
+these observations are not the maintainer's approval of new images.
+
+| Visible check | Result |
+| --- | --- |
+| MRHead, two selected demonstration ROIs, whole volume off, `standard_fbn_32` | 340 successful rows; displayed elapsed 9 s |
+| MRHead, same two ROIs, FBN 16 and FBN 32 presets | 680 successful rows; displayed elapsed 6 s; separate configuration identities |
+| One ROI and FBN 32 | 170 successful rows; displayed elapsed 4 s; indeterminate busy feedback while the worker was active |
+| Cancellation and recovery | A 100 ms Qt observer waited for a live worker, invoked the Cancel handler, and verified all earlier 170 rows were unchanged; a subsequent native Run completed 170 rows in 4 s |
+| Invalid refinement | Minimum 501 and maximum 500 disabled Run and displayed the specific minimum/maximum explanation |
+| Valid refinement | Minimum 0, maximum 500, sigma 1.5, both mask targets, 0.5 mm resampling and FBN 32 produced 170 successful `in_app` rows in 5 s |
+| Public CTLiver-derived slab, two ROIs, crop enabled, whole volume off, FBN 32 | 340 successful rows; displayed elapsed 3 s |
+| MRI scene round trip | All 680 saved values restored with zero binary64 mismatches |
+
+The rounded GUI times include the reused private/JIT environment and are not
+isolated benchmark measurements. An initial manual Cancel click arrived after a
+four-second run had completed; only the later live-worker observer check is counted
+as cancellation evidence. Deliberate worker-failure recovery, invalid sigma
+settings and saved batch histories are covered by the full real-application gate
+and mixed-workload check, rather than being claimed as separate mouse-driven tests.
+
+The native results browser advanced from rows 1-200 to 201-340 and filtered
+`GBPN_10` to two matching ROI rows. Details showed official IBSI code **GBPN**,
+Pictologics-specific code **GBPN_10**, full name
+`intensity_at_volume_fraction_0.10_GBPN_10`, the configuration-qualified key,
+preprocessing, configuration hash and software provenance. Two-configuration
+numerical independence is asserted by the separate Unicode-path gate, not inferred
+merely from the 680-row count.
+
+Profile Save, Save copy and Load were exercised through native dialogs, including
+a filename containing spaces and `árvíz Ω`. Loading the saved single-preset profile
+restored that selection after a second preset had been added. A native CSV export
+used the same Unicode characters; both required sidecars were verified. Each
+result checkpoint also exported standalone JSON and CSV with sidecars and saved
+an MRB before its scene was replaced. The final CT scene remains open and exported.
+
+**Refresh diagnostics** displayed the local allowlisted preview and the explicit
+nothing-uploaded status. Assertions excluded the current subject/ROI names, local
+paths, private target and Windows username. No diagnostics were copied or uploaded.
+The existing sample-cache warning about a missing `.slicer-cache` sentinel was
+retained; destructive cache operations stayed disabled.
 
 ## Preview (separate installation and environment)
 
@@ -142,7 +209,28 @@ and profile readback passed, and same-version replacement selected a new qualifi
 target. Pictologics stayed at **0.5.1**. Shared NumPy **2.4.6** and Pillow **12.2.0**
 remained unchanged; Preview did not reuse Stable's private environment.
 
-Preview full integration, public-widget and Unicode export checks are in progress.
+The full Preview integration gate passed **56 tests, zero failures, zero skips**
+in **599.837 s**, process exit **0**, on the corrected source commit. An earlier
+launch was interrupted when the desktop session was lost and has no final process
+report; it is not counted as a passing run. The completed repeat is
+`local-output/windows-validation/preview-integration-02`.
+
+The separate Unicode-path check passed with exit **0**: 680 successful rows for
+two configurations and two ROIs, agreement with the independent configuration
+runs, both CSV sidecars, and zero binary64 mismatches after scene reload. Public
+MRHead and CTLiver demonstrations each produced **340 successful rows** through
+the actual widget Run handler in separate visible Preview processes. They used
+`standard_fbn_32`, two ROIs and whole-volume mode off, exported CSV/JSON and saved
+MRB scenes before exiting **0**. Their elapsed observations were 102.159 s and
+97.617 s, respectively; both had zero sampler errors. Stable remained open and
+some interactive work overlapped, so these are functional observations, not
+isolated Preview performance benchmarks.
+
+Preview therefore passed the integration, key automated GUI, restart, export and
+persistence checks with a separate qualified environment. No Preview-only defect
+was found. The detailed native mouse/keyboard walkthrough was performed on Stable;
+Preview's widget assertions and visible automated runs are identified separately.
+The 30-case soak and 10,000/100,000-row benchmark were not repeated on Preview.
 
 ## Reproduction in PowerShell
 
@@ -337,21 +425,51 @@ below the unchanged 12 GiB guard. The largest observed gap across cases was
 individual operations. These table scenes were saved; exact scene readback was
 separately tested by the integration, Unicode-path, lifecycle and mixed-batch gates.
 
-## Evidence and remaining application checks
+## Evidence, limits and machine handoff
 
-Raw evidence is under `local-output/windows-validation/`; result roots include
-`b1`, `s1`, `p1`, `d3-MRHead` and `d2-CTLiver` under `local-output/`.
-Installer/downloads, private dependencies, logs, public images and derived scenes
-stay ignored. Machine usernames, personal absolute paths and raw failure messages
-are not publication evidence. Only curated aggregate values and source hashes
-belong here.
+Raw evidence is under `local-output/windows-validation/`; Stable result roots
+include `b1`, `s1`, `p1`, `d3-MRHead`, `d2-CTLiver` and `normal-gui-01` under
+`local-output/`. Preview roots include `preview-lifecycle-01`, `preview-p1`,
+`preview-d1-MRHead` and `preview-d1-CTLiver`. Native walkthrough assertions and
+checkpoints are in `normal-gui-01/observations.json`; the final saved CT scene is
+`normal-gui-01/CT-two-ROI/scene.mrb`. These local paths are handoff references,
+not tracked artifacts.
 
-Normal GUI installation/restart and separate Preview results are still being
-gathered. Desktop interaction resumed long enough to enable Developer mode, add
-both source-module paths, restart normally, and discover the GUI module and
-internal worker. A later Windows input access-denied error paused further clicks;
-the existing empty session was preserved. This is an intermediate report and does
-not claim complete interactive acceptance.
+The Stable source paths and Developer mode remain configured. Its final public
+CT scene is open, with no active extraction; all results are exported and the
+local pip assertion guard has been removed. Preview is installed alongside Stable.
+For new disposable launches, discover the appropriate qualified target from the
+normal installation or that runtime's lifecycle report and choose new output
+roots. Do not overwrite the retained evidence or reuse an existing scene for
+failure tests. The normal installation and lifecycle targets are distinct.
+
+Only curated aggregate values, reproducible commands and source hashes are
+published. Downloads, dependencies, raw logs, public images, derived scenes and
+exports remain ignored. Published additions were reviewed for personal paths,
+usernames and credentials. No new screenshots or tutorial images are included.
+
+Remaining scope limits are explicit:
+
+- Five real-symlink portable checks require privileges this account does not have;
+  policy was unchanged and the skips are not claimed as passes.
+- Source loading and private-dependency replacement passed. Extension Factory or
+  Extensions Manager package installation/update was not tested.
+- Native x64 and ASCII Slicer installation paths were tested. ARM/emulation and
+  Unicode Slicer installation directories are not qualified.
+- Stable memory observations cover bounded repeated variants of two public scans,
+  with sampled working sets and documented sample gaps. They do not establish
+  multi-hour, independent-patient or exact physical-peak qualification.
+- Preview did not repeat the full manual walkthrough or Stable workload/table
+  benchmark. Its completed application gates are enumerated above.
+- Public extension registration, releases/tags and new image publication remain
+  on hold. No repository settings were changed.
+
+The changes are submitted in [PR #6](https://github.com/martonkolossvary/SlicerPictologics/pull/6).
+All five jobs passed for the code commit in
+[GitHub run 37120085011](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/37120085011).
+GitHub checks the released wheel on three operating systems and actual Slicer on
+Linux; it does not replace the local Windows application evidence in this report.
+The PR checks identify the latest documentation commit independently.
 
 ## Tested local source hashes
 
