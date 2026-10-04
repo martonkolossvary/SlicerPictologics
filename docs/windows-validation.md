@@ -19,7 +19,7 @@ exports remain in ignored local storage.
   Windows Numba cache paths; all requirements and constraints remain unchanged.
   The corrected source was committed as
   `1d4ef6f8d064990e2944c68629875e424ac91fcb`; subsequent changes only complete
-  this report and readiness documentation. Preview and the normal GUI walkthrough
+  the validation documentation. Preview and the normal GUI walkthrough
   used that exact commit. Earlier corrected Stable runs used the file hashes below.
 - Stable: official Slicer 5.12.4, revision 34645 (`4e21c19`), built 2026-09-09;
   bundled Python 3.12.10, AMD64. Actual executable was located in the existing

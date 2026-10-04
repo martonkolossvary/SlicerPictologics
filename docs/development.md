@@ -420,8 +420,9 @@ to [Codecov](https://codecov.io/gh/martonkolossvary/SlicerPictologics) (`codecov
 `CODECOV_TOKEN` repo secret, with a tokenless attempt when absent),
 then runs the real API / worker-smoke / geometry-parity checks against the adopted
 Pictologics wheel. The real in-Slicer CLI method stays opt-in under CTest and is explicitly enabled
-in the shared Linux CI/adoption gate. Slicer Preview, real Windows Slicer, and
-interactive-workflow qualification remain manual.
+in the shared Linux CI/adoption gate. Windows Stable/Preview application and
+interactive-workflow qualification run separately from GitHub CI; the completed
+native x64 results and their limits are in [windows-validation.md](windows-validation.md).
 On the validated `dd1c5fc` run, Codecov rejected the tokenless upload because the
 branch is protected. Repository-secret configuration is still needed for that
 external dashboard; the enforced local/CI 100% coverage gate passed independently.
@@ -436,6 +437,10 @@ coverage dashboard as configured.
 Pictologics 0.5.1 has passed private PyPI installation, API and full-JIT probes,
 and the integration suite in the reinstalled Slicer 5.12.4 (CPython 3.12,
 x86_64 under Rosetta on macOS). CI additionally requires real Slicer on Linux and
-released-wheel checks on all three desktop platforms. Interactive acceptance,
-Slicer Preview, real Windows Slicer, and Extension Factory packaging remain
-catalog-release gates; normal-Python checks do not establish those results.
+released-wheel checks on all three desktop platforms. Actual Windows x64 Stable
+5.12.4 and Preview 5.13.0-2026-09-30 each passed 56 integration tests, four
+source/dependency lifecycle processes, Unicode exports and exact persistence.
+The [Windows report](windows-validation.md) separately records the native Stable
+walkthrough, Preview widget checks, bounded workloads and remaining limits.
+Extension Factory/Extensions Manager package acceptance remains outstanding;
+normal-Python checks do not establish application or package-install results.
