@@ -1,28 +1,27 @@
-# Tested versions of Pictologics and its dependencies (Python 3.12 wheels).
-# The installer and CI pass this file to pip with --constraint. The adoption
-# workflow writes it again for each new Pictologics release; do not edit it.
-contourpy==1.4.0
-cycler==0.12.1
-fonttools==4.65.0
-highdicom==0.28.1
-kiwisolver==1.5.1
-llvmlite==0.45.1
-matplotlib==3.11.2
+# Generated from wheel-only resolutions; publish only after all gates pass.
+# Qualified wrapper revision: 5b207a7341982634dfb141b4c73f693a27af652b
+# slicerpictologics-runtime: cpython|3.12|linux|x86_64
+# slicerpictologics-runtime: cpython|3.12|win32|AMD64
+# slicerpictologics-runtime: cpython|3.12|darwin|x86_64
+colorama==0.4.6; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
+llvmlite==0.45.1; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "darwin" and platform_machine == "x86_64")
+llvmlite==0.50.0; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
 nibabel==5.4.2
-numba==0.62.1
-numpy==2.3.5
+numba==0.62.1; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "darwin" and platform_machine == "x86_64")
+numba==0.68.0; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
+numpy==2.3.5; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "darwin" and platform_machine == "x86_64")
+numpy==2.5.3; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
 packaging==26.3
 pandas==3.0.6
-pictologics==0.5.1
-pillow==11.3.0
+pictologics==0.7.0
+pillow==12.3.0
 pydicom==3.0.2
-pyjpegls==1.5.1
-PyMCubes==0.1.6
-pyparsing==3.3.2
 python-dateutil==2.9.0.post0
-PyWavelets==1.10.0
-PyYAML==6.0.3
+python-gdcm==3.2.6
+pywavelets==1.10.0
+pyyaml==6.0.3
 scipy==1.18.1
 six==1.17.0
 tqdm==4.70.1
-typing_extensions==4.16.0
+typing-extensions==4.16.0
+tzdata==2026.5; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
