@@ -50,9 +50,7 @@ records the work completed toward them and the evidence that exists.
 
 ## 3. Extension checkout and Git state
 
-Workspace:
-
-`/Users/mjk2/Library/CloudStorage/OneDrive-Personal/Python/Pictologics/SlicerPictologics`
+Workspace: this repository, the SlicerPictologics checkout.
 
 Current extension branch:
 
@@ -117,9 +115,7 @@ for 0.6.0, 0.6.1 or 0.7.0.
 
 ## 5. Local upstream package workspaces
 
-The original sibling checkout is:
-
-`/Users/mjk2/Library/CloudStorage/OneDrive-Personal/Python/Pictologics/Pictologics`
+The original sibling checkout is `../Pictologics`, next to this repository.
 
 It was left unchanged and clean. No upstream commit or push was made.
 
@@ -333,7 +329,7 @@ qualification workflow succeeds. It has not published anything in this milestone
 
 Developer Python:
 
-`/Users/mjk2/Library/CloudStorage/OneDrive-Personal/Python/Pictologics/Pictologics/.venv/bin/python`
+`../Pictologics/.venv/bin/python`
 
 Installed Slicer Python:
 
