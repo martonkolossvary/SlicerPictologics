@@ -635,8 +635,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             item.setData(ITEM_VALUE_ROLE, configuration)
             if "_fbs_" in configuration:
                 item.setToolTip(
-                    "CT preset: fixed bin start -1000 HU in Pictologics 0.6+. "
-                    "Pictologics 0.5.1 uses the legacy ROI minimum; values can differ after adoption."
+                    "CT preset: fixed bin start -1000 HU (Pictologics 0.6 and later). "
+                    "Pictologics 0.5.1 started at the ROI minimum, so older results can differ."
                 )
             item.setFlags(item.flags() | qt.Qt.ItemIsUserCheckable)
             item.setCheckState(

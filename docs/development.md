@@ -16,7 +16,8 @@ are retained separately from the installed module resources.
 
 The baseline is **3D Slicer 5.12+**. The adopted requirement is recorded in
 [`requirements-pictologics.txt`](../PictologicsSlicer/requirements-pictologics.txt).
-**Pictologics 0.5.1** is the baseline for automatic adoption. Normal install/update
+The adopted release is **Pictologics 0.7.0** (5 October 2026), and automatic adoption
+only moves forward from it. Normal install/update
 retrieves the adopted binary wheel from [PyPI](https://pypi.org/project/pictologics/);
 the sibling-source override is only for unpublished development changes.
 
@@ -25,13 +26,17 @@ The actual imported version is recorded in result provenance. The extension neve
 imports or upgrades Pictologics during Slicer startup.
 
 [`constraints-pictologics.txt`](../PictologicsSlicer/constraints-pictologics.txt) pins
-Pictologics and every dependency to the tested versions. The installer and the CI
-gates give this file to pip with `--constraint`, so a user gets the versions that CI
-tested. A development source (`PICTOLOGICS_DEV_SOURCE`) does not use it. The file must
-pin the same Pictologics version as the requirement; a contract test and the
-installer check this. After a manual change of the pin, write the file again with the
-commands of the adoption workflow's resolve step: install the requirement into an
-empty folder, then keep the comment lines and add `python -m pip freeze --path <folder>`.
+Pictologics and every dependency to the tested versions, with one set for each
+qualified runtime: CPython 3.12 on Linux x86_64, Windows AMD64 and macOS x86_64.
+Environment markers select the set; for example, macOS x86_64 gets Numba 0.62.1 and
+the other two get Numba 0.68.0. The installer and the CI gates give this file to pip
+with `--constraint`, so a user gets the versions that CI tested. A development source
+(`PICTOLOGICS_DEV_SOURCE`) does not use it. The file must pin the same Pictologics
+version as the requirement on each listed runtime; a contract test and the installer
+check this. The installer refuses a runtime that the file does not list. Only the
+adoption workflow writes the file: each runtime resolves on its own runner with
+[`platform_constraints.py`](../scripts/platform_constraints.py), and the merged file
+is published only after all gates pass.
 
 Every push, pull request, and candidate release uses the same reusable
 [`compatibility.yml`](../.github/workflows/compatibility.yml) gates:
@@ -48,8 +53,9 @@ every six hours. It can also be run manually (empty version means latest) or rec
 an optional `pictologics-release` repository dispatch. Scheduled discovery needs no
 cross-repository secret or upstream sender. Prereleases, entirely yanked releases,
 sdist-only candidates, invalid version strings, and downgrades are never adopted.
-All gates run against one exact wrapper revision. The discovery job resolves the
-tested versions for the candidate once, and every gate installs with them. A separate
+All gates run against one exact wrapper revision. Three resolve jobs find the
+candidate's dependency versions on Linux, Windows and Intel macOS, and one job merges
+them into the constraints file. Every gate installs with that file. A separate
 write-enabled job rechecks publication status and automatically publishes only the
 requirement and tested-version changes to the default branch. Failed checks leave the
 last qualified pin unchanged.
@@ -178,7 +184,7 @@ boundaries, cubic interpolation (whose spline prefilter is nonlocal), explicit
 filter-spacing overrides, or non-leading/repeated resampling. These either use the
 whole image or fall outside the supported crop model. Memory warnings conservatively
 use the full-volume estimate; batch confirmation covers only cases no larger than
-the previously accepted estimate. Pictologics 0.5.1 centers the resampling grid on the image that it gets,
+the previously accepted estimate. Pictologics (0.5.1 to 0.7.0) centers the resampling grid on the image that it gets,
 so a plain crop moves the grid: in a test, texture values then changed by up to 20%.
 The worker therefore grows the box along each axis until the grid error, in new
 voxels, is below 1e-9 for every resample spacing (`aligned_range`). It searches
@@ -434,11 +440,11 @@ coverage dashboard as configured.
 
 ## Validation status
 
-Pictologics 0.5.1 has passed private PyPI installation, API and full-JIT probes,
-and the integration suite in the reinstalled Slicer 5.12.4 (CPython 3.12,
-x86_64 under Rosetta on macOS). CI additionally requires real Slicer on Linux and
-released-wheel checks on all three desktop platforms. Actual Windows x64 Stable
-5.12.4 and Preview 5.13.0-2026-09-30 each passed 56 integration tests, four
+Pictologics 0.7.0 passed the adoption run on 5 October 2026: released-wheel checks on
+Linux, Windows and Intel macOS, and real Slicer on Linux. With the published wheel,
+the installed Slicer 5.12.4 on macOS (CPython 3.12, x86_64 under Rosetta) passed the
+release checks and all 57 integration tests. With Pictologics 0.5.1, actual Windows
+x64 Stable 5.12.4 and Preview 5.13.0-2026-09-30 each passed 56 integration tests, four
 source/dependency lifecycle processes, Unicode exports and exact persistence.
 The [Windows report](windows-validation.md) separately records the native Stable
 walkthrough, Preview widget checks, bounded workloads and remaining limits.

@@ -57,7 +57,7 @@ def main():
                               customConfigurationPath=str(config_path), subjectID="synthetic-path-test")
         table.SetName("Path acceptance results")
         rows = logic.rowsFromTable(table)
-        assert workload.inspection.installed_version == "0.5.1"
+        assert workload.inspection.installed_version == logic.adoptedPictologicsVersion()
         assert len(rows) == 680 and all(row["status"] == "ok" for row in rows)
         assert len({row["roi_id"] for row in rows}) == 2
         assert {row["config"] for row in rows} == set(document["configs"])

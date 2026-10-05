@@ -177,9 +177,10 @@ For an in-app **FBS** configuration, also enter **FBS minimum**: a fixed first b
 edge in the image's units *after* any filter. This value is explicit in the saved
 profile, scene settings and effective configuration. Old custom FBS settings
 without a minimum require review; the extension never guesses a new value. FBN
-settings do not use this field. Pictologics 0.6+ standard FBS presets are intended
-for CT and start at **−1000 HU**; 0.5.1 presets retain their legacy ROI-minimum
-behavior until adoption. Do not assume HU or a CT minimum for MRI/filtered images.
+settings do not use this field. The standard FBS presets of Pictologics 0.6 and later
+are intended for CT and start at **−1000 HU**. Pictologics 0.5.1 started them at the
+ROI minimum, so older FBS results can differ. Do not assume HU or a CT minimum for
+MRI/filtered images.
 Effective steps, mask targets, and parameters are retained in result provenance.
 
 ### Filter the image (IBSI 2)
@@ -403,8 +404,8 @@ for a two-reader study.
   labelmap selection.
 - Nonlinear parent transforms are rejected. Resample with an explicit interpolation
   choice before running. Linear transforms are hardened into temporary geometry.
-- Cancellation is at the CLI-process/job boundary. The current Pictologics 0.5.1 API
-  has no cooperative progress/cancellation callback, so a running native kernel cannot
+- Cancellation is at the CLI-process/job boundary. The Pictologics 0.7.0 API has no
+  cooperative progress/cancellation callback, so a running native kernel cannot
   report fine-grained progress. Multi-ROI jobs report completed-ROI percentages;
   single-ROI jobs display an indeterminate busy indicator until the package returns.
 - The in-app builder composes a single configuration with a fixed step order
@@ -417,15 +418,15 @@ for a two-reader study.
   with fine resampling spacing can then need several gigabytes of memory. With the
   crop, an axis whose voxel size is not a whole multiple of the new spacing can need a
   wide box, or the whole axis, to keep the grid (see "Use less memory").
-- Each configuration is computed on its own, because Pictologics 0.5.1 can copy wrong
-  values between configurations when it reuses shared results. Runs with several
-  presets therefore take longer.
+- Each configuration is computed on its own: the extension turns off the Pictologics
+  reuse of shared results. This reuse copied wrong values in Pictologics 0.5.1, and
+  0.6.0 fixed it. Runs with several presets therefore take longer.
 - The long table adds provenance columns (run, ROI, status, and versions) to the
-  Pictologics names. Pictologics 0.5.1 calls the full key `feature_name` in its long
-  `format_results` layout; 0.6.0 calls it `feature_key`, matching the extension.
-  Wide feature names match Pictologics exactly.
-- Pictologics 0.6 normalization and independent mask-growth steps can be supplied
-  by file when that version is qualified and adopted; they have no new GUI controls.
+  Pictologics names. Pictologics 0.6 and later call the full key `feature_key` in the
+  long `format_results` layout, as the extension does (0.5.1 called it
+  `feature_name`). Wide feature names match Pictologics exactly.
+- The normalization and independent mask-growth steps of Pictologics 0.6 and later
+  can be supplied by file; they have no window controls.
   `grow_mask(nearest_roi=true)` is rejected because this extension processes ROIs
   independently and cannot enforce nonoverlapping rings between them.
 
@@ -433,8 +434,9 @@ The [0.6 compatibility review](docs/pictologics-060-compatibility.md) records th
 candidate checks and the macOS Intel wheel blocker. Slicer for macOS runs as Intel
 code, and Numba 0.63 and later have no Intel Mac builds. Pictologics 0.7.0 lets Intel
 Mac Python use Numba 0.62.x, so the extension can install it on every platform. The
-adopted requirement remains 0.5.1 until 0.7.0 passes the complete cross-platform
-qualification.
+extension adopted 0.7.0 on 5 October 2026, after the adoption run passed on Linux,
+Windows and Intel macOS. Intel macOS uses Numba 0.62.1 and NumPy 2.3.5; Linux and
+Windows use Numba 0.68.0 and NumPy 2.5.3.
 
 ## For developers
 

@@ -820,5 +820,11 @@ tests passed with it. Native Apple-silicon Python resolves to Numba 0.68.0, and 
 same release checks passed. The real-GUI ROI test no longer depends on CLI event
 timing. The [handoff record](macos-compatibility-handoff.md#13-update-after-the-upstream-dependency-change)
 lists the evidence and the remaining steps. The published PyPI wheel passed the same
-checks in the installed Slicer. The adopted requirement stays 0.5.1 until the
-cross-platform adoption run passes.
+checks in the installed Slicer.
+
+Adoption run 37331419353 then passed all jobs: the three resolve jobs, the merge of
+the runtime constraints, the unit tests, the released-wheel checks on Linux, Windows
+and Intel macOS, and real Slicer on Linux. Its publish job committed the 0.7.0 pin as
+`d6e2bed`. The pull-request CI run on the same files as `main` (`61a4b3f`) passed all
+five jobs. The Windows Slicer application check and the catalog images still use
+0.5.1 evidence.

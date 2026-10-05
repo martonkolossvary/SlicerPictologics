@@ -7,7 +7,7 @@ qualification/publication requirements. It is not a release announcement and doe
 not claim that the candidate has been adopted or published.
 
 **Update:** [Section 13](#13-update-after-the-upstream-dependency-change) replaces
-Sections 3, 5 and 7 and adds to Section 8.
+Sections 1, 3, 5 and 7 and adds to Section 8.
 
 ## 1. Current release state
 
@@ -362,9 +362,11 @@ authorize any commit, push, release, registration or publication.
 
 ### Extension state
 
-- The extension changes are on the local branch `pictologics-070-compatibility`.
-  Nothing is pushed. GitHub `main` (`b3376c7`) still has the old adoption workflow
-  and checks, so its adoption runs for 0.7.0 fail.
+- Pull request #7 merged the extension changes into `main` as `5b207a7`.
+- Adoption run 37331419353 then qualified Pictologics 0.7.0 on Linux, Windows and
+  Intel macOS, and it committed the new pin and runtime constraints as `d6e2bed`.
+- Pull request #8 (`61a4b3f`) removed the local folder paths from this record. Its
+  CI run passed all five jobs on the same files as `main`.
 
 ### Upstream package state
 
@@ -440,11 +442,12 @@ checks are in a temporary folder and are not kept.
   only for the computer that runs it, so it failed on Apple silicon. The test now
   checks each runtime that the file lists.
 
-### Remaining before adoption
+### Remaining before publication
 
-1. Merge the extension changes into `main`. Pictologics 0.7.0 is on PyPI.
-2. Let the adoption workflow resolve and qualify 0.7.0 on Linux, Windows and Intel
-   macOS. It writes the pin and the runtime constraints only after all jobs pass.
-3. Run the installed-Slicer suite with the published wheel on Windows.
-4. The release notice from Pictologics needs the `SLICER_EXTENSION_DISPATCH_TOKEN`
-   secret. Without it, only the six-hourly schedule starts the adoption run.
+1. Run the installed-Slicer suite with the published wheel on Windows and on Slicer
+   Preview.
+2. Install a built extension package, restart Slicer and run it.
+3. Replace the catalog screenshots after maintainer approval.
+4. Submit the ExtensionsIndex entry for Preview and Stable.
+- The release notice from Pictologics needs the `SLICER_EXTENSION_DISPATCH_TOKEN`
+  secret. Without it, only the six-hourly schedule starts the adoption run.
