@@ -260,6 +260,7 @@
             <item><widget class="QCheckBox" name="discretiseCheckBox"><property name="text"><string>Enable</string></property><property name="checked"><bool>true</bool></property></widget></item>
             <item><widget class="QComboBox" name="discretiseMethodCombo"><item><property name="text"><string>FBN</string></property></item><item><property name="text"><string>FBS</string></property></item></widget></item>
             <item><widget class="QDoubleSpinBox" name="discretiseValueSpinBox"><property name="toolTip"><string>Bin count for FBN, bin width for FBS.</string></property><property name="decimals"><number>3</number></property><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100000.0</double></property><property name="value"><double>32.0</double></property></widget></item>
+            <item><widget class="QLineEdit" name="fbsMinimumLineEdit"><property name="placeholderText"><string>FBS minimum (required)</string></property><property name="toolTip"><string>Fixed first bin edge, used only for FBS. Enter a finite value in the units of the image after filtering. CT presets in Pictologics 0.6 use -1000 HU; do not assume this value for MRI or filtered images. Older custom FBS settings require an explicit choice.</string></property></widget></item>
            </layout>
           </widget>
          </item>

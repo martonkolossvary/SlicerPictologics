@@ -17,6 +17,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import Final
 
+from packaging.markers import default_environment
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
@@ -236,8 +237,22 @@ def check_dependency_constraints(
     """
 
     constraints_path = Path(path)
+    parsed_lines = _requirement_lines(constraints_path)
+    runtime_prefix = "# slicerpictologics-runtime: "
+    qualified = [line[len(runtime_prefix):].strip() for line in
+                 constraints_path.read_text(encoding="utf-8").splitlines()
+                 if line.startswith(runtime_prefix)]
+    environment = {key: str(value) for key, value in default_environment().items()}
+    runtime = "|".join(environment[field] for field in
+                       ("implementation_name", "python_version", "sys_platform", "platform_machine"))
+    if qualified and runtime not in qualified:
+        raise DependencyConfigurationError(
+            f"This Python runtime ({runtime}) has no qualified dependency set. "
+            "Use a supported Slicer runtime; do not bypass the tested constraints."
+        )
     pictologics_version = None
-    for line_number, text in _requirement_lines(constraints_path):
+    active_names: set[str] = set()
+    for line_number, text in parsed_lines:
         try:
             pin = Requirement(text)
         except InvalidRequirement as exc:
@@ -245,12 +260,19 @@ def check_dependency_constraints(
                 f"Invalid constraint at {constraints_path}:{line_number}: {exc}"
             ) from exc
         specifiers = list(pin.specifier)
-        if len(specifiers) != 1 or specifiers[0].operator != "==":
+        if (pin.url is not None or pin.extras or len(specifiers) != 1
+                or specifiers[0].operator != "==" or "*" in specifiers[0].version):
             raise DependencyConfigurationError(
                 f"The constraint at {constraints_path}:{line_number} must pin one "
                 "version with =="
             )
-        if canonicalize_name(pin.name) == PICTOLOGICS_DISTRIBUTION:
+        if pin.marker is not None and not pin.marker.evaluate(environment):
+            continue
+        name = canonicalize_name(pin.name)
+        if name in active_names:
+            raise DependencyConfigurationError(f"Overlapping active constraints for {name}")
+        active_names.add(name)
+        if name == PICTOLOGICS_DISTRIBUTION:
             pictologics_version = specifiers[0].version
     if pictologics_version is None or not _version_satisfies(
         requirement, pictologics_version

@@ -4,6 +4,7 @@ file(GLOB _pictologics_support_tests
 # Repository workflow checks require pytest/PyYAML, not provided by a clean Slicer.
 # They run in normal-Python CI and are not application runtime tests.
 list(FILTER _pictologics_support_tests EXCLUDE REGEX "/test_release_workflows[.]py$")
+list(FILTER _pictologics_support_tests EXCLUDE REGEX "/test_platform_constraints[.]py$")
 foreach(_test_script IN LISTS _pictologics_support_tests)
   slicer_add_python_unittest(SCRIPT ${_test_script})
 endforeach()

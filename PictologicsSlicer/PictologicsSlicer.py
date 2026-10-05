@@ -583,7 +583,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.filterTypeCombo.connect("currentIndexChanged(int)", self.onFilterTypeChanged)
         self.ui.filterBoundaryCombo.connect("currentIndexChanged(int)", self.onControlsChanged)
         self.ui.outlierGroup.connect("toggled(bool)", self.onControlsChanged)
-        for control in (self.ui.rangeMinLineEdit, self.ui.rangeMaxLineEdit):
+        for control in (self.ui.rangeMinLineEdit, self.ui.rangeMaxLineEdit, self.ui.fbsMinimumLineEdit):
             control.connect("textChanged(QString)", self.onControlsChanged)
         for combo in (self.ui.resegmentTargetCombo, self.ui.outlierTargetCombo):
             combo.connect("currentIndexChanged(int)", self.onControlsChanged)
@@ -633,6 +633,11 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         for configuration in STANDARD_CONFIGURATIONS:
             item = qt.QListWidgetItem(configuration)
             item.setData(ITEM_VALUE_ROLE, configuration)
+            if "_fbs_" in configuration:
+                item.setToolTip(
+                    "CT preset: fixed bin start -1000 HU in Pictologics 0.6+. "
+                    "Pictologics 0.5.1 uses the legacy ROI minimum; values can differ after adoption."
+                )
             item.setFlags(item.flags() | qt.Qt.ItemIsUserCheckable)
             item.setCheckState(
                 qt.Qt.Checked
@@ -929,6 +934,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             "discretise": bool(self.ui.discretiseCheckBox.checked),
             "discretise_method": str(self.ui.discretiseMethodCombo.currentText),
             "discretise_value": float(self.ui.discretiseValueSpinBox.value),
+            "fbs_minimum": str(self.ui.fbsMinimumLineEdit.text).strip() or None,
             "source_mode": str(self.ui.sourceModeCombo.currentText),
             "sentinel_value": sentinel_text or None,
             "resegment": bool(self.ui.resegmentGroup.checked),
@@ -1027,6 +1033,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.discretiseValueSpinBox.setValue(
             float(state.get("discretise_value", 32.0))
         )
+        minimum = state.get("fbs_minimum")
+        self.ui.fbsMinimumLineEdit.setText("" if minimum is None else str(minimum))
         self._setComboText(self.ui.sourceModeCombo, state.get("source_mode", "full_image"))
         sentinel = state.get("sentinel_value")
         self.ui.sentinelValueLineEdit.setText("" if sentinel is None else str(sentinel))
@@ -1161,6 +1169,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             or self._tableOperationInProgress
         )
         error = self._validationError()
+        self.ui.fbsMinimumLineEdit.setEnabled(
+            not busy and self.ui.discretiseCheckBox.checked
+            and str(self.ui.discretiseMethodCombo.currentText) == "FBS"
+        )
         for control in (
             self.ui.inputVolumeSelector,
             self.ui.segmentationSelector,
@@ -1601,7 +1613,9 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         if path.suffix.lower() != ".json":
             path = path.with_suffix(".json")
         try:
-            document = preset_configuration_document(str(chosen))
+            document = preset_configuration_document(
+                str(chosen), pictologics_version=self.logic.adoptedPictologicsVersion()
+            )
             path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
         except Exception as exc:
             slicer.util.errorDisplay(str(exc), windowTitle="Pictologics")
@@ -1926,7 +1940,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
 
         volume = self.ui.inputVolumeSelector.currentNode()
         documents = [
-            preset_configuration_document(name) for name in self._selectedConfigurations()
+            preset_configuration_document(name, pictologics_version=self.logic.adoptedPictologicsVersion())
+            for name in self._selectedConfigurations()
         ]
         source = self._currentAdditionalSource()
         if source == "inline":
@@ -2540,6 +2555,9 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
 
     def pictologicsRequirement(self):
         return parse_pictologics_requirement(self.requirementsPath())
+
+    def adoptedPictologicsVersion(self):
+        return next(iter(self.pictologicsRequirement().specifier)).version
 
     @staticmethod
     def dependencyRoot() -> Path:

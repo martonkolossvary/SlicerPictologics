@@ -796,3 +796,17 @@ create-pull-request action is no longer used.
 References: [Slicer distribution guide](https://slicer.readthedocs.io/en/latest/developer_guide/extensions.html#distribute-an-extension),
 [submission checklist](https://github.com/Slicer/ExtensionsIndex/blob/main/.github/PULL_REQUEST_TEMPLATE.md),
 [Pictologics changelog](https://github.com/martonkolossvary/pictologics/blob/main/CHANGELOG.md).
+
+## 2026-10-04: Windows milestone merged; 0.6 adoption held
+
+PR #6 is merged at `b3376c7`; all five post-merge GitHub jobs passed. Windows
+application qualification remains specific to 0.5.1 and the runtimes documented
+in [windows-validation.md](windows-validation.md).
+
+The focused local 0.6 compatibility update adds explicit FBS minima and safe
+profile migration, version-correct templates, new API/file-option checks and
+conservative crop/joint-ROI safeguards. See the [compatibility review](pictologics-060-compatibility.md)
+for evidence and limits. The committed requirement and constraints still adopt
+0.5.1: 0.6.0 requires Numba 0.67, which has no Python 3.12 macOS Intel wheel for
+the installed Slicer. Native ARM developer checks do not override this blocker.
+No public registration, release/tag or new image publication is authorized.

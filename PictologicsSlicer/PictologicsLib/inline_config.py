@@ -8,8 +8,8 @@ templates for the "new configuration from preset" authoring aid, and performs a 
 when Pictologics is not installed yet. It also reads the result of the worker's
 configuration check, which loads a file with Pictologics as a run does.
 
-The step/parameter names below mirror the adopted Pictologics contract
-(``RadiomicsPipeline._VALID_STEPS`` and the standard templates). The worker's
+The step/parameter names below cover the adopted 0.5.1 and candidate 0.6 contracts
+(``RadiomicsPipeline._VALID_STEPS``, filter signatures and standard templates). The worker's
 ``load_configs(validate=True)`` remains the authoritative validator; this lint only
 catches obvious mistakes before a job is submitted.
 """
@@ -225,6 +225,19 @@ _VALID_STEP_PARAMS: dict[str, frozenset[str]] = {
     ),
 }
 
+# Keep the adopted 0.5.1 gate running while qualifying 0.6.0. Do not weaken the
+# exact contract comparison: a later API change must still stop adoption.
+LEGACY_STEP_PARAMS = dict(_VALID_STEP_PARAMS)
+_VALID_STEP_PARAMS.update({
+    "grow_mask": frozenset({"to_mm", "from_mm", "nearest_roi", "apply_to"}),
+    "normalise": frozenset({"method", "region", "percentiles", "range_min", "range_max"}),
+    "extract_features": _VALID_STEP_PARAMS["extract_features"]
+    | {"local_intensity_params", "spatial_intensity_params"},
+})
+# In 0.6.0 the package validates filters from their function signatures, not just
+# _VALID_STEPS. These valid arguments are absent from that legacy dispatch table.
+FILTER_EXTRA_PARAMS = frozenset({"padding_value", "response"})
+
 
 def default_inline_state() -> dict[str, Any]:
     """Builder state matching ``standard_fbn_32`` (a sensible starting point)."""
@@ -237,6 +250,7 @@ def default_inline_state() -> dict[str, Any]:
         "discretise": True,
         "discretise_method": "FBN",
         "discretise_value": 32.0,
+        "fbs_minimum": None,
         "source_mode": "full_image",
         "sentinel_value": None,
         **ROI_REFINEMENT_DEFAULTS,
@@ -324,6 +338,12 @@ def build_inline_configuration_document(state: Mapping[str, Any]) -> dict[str, A
             params["n_bins"] = int(value)
         else:
             params["bin_width"] = value
+            if state.get("fbs_minimum") is None:
+                raise ValueError(
+                    "FBS requires an explicit fixed minimum intensity. Enter the bin start "
+                    "in image units (CT presets use -1000 HU); older FBS settings need review."
+                )
+            params["min_val"] = finite_number(state["fbs_minimum"], "FBS minimum intensity")
         steps.append({"step": "discretise", "params": params})
     elif needs_discretisation:
         offenders = sorted(DISCRETISATION_REQUIRED_FAMILIES.intersection(families))
@@ -363,11 +383,16 @@ def preset_names() -> tuple[str, ...]:
     return tuple(_PRESET_DISCRETISATION)
 
 
-def preset_configuration_document(name: str) -> dict[str, Any]:
-    """Editable starter document reproducing a standard preset by name."""
+def preset_configuration_document(
+    name: str, *, pictologics_version: str = "0.6.0"
+) -> dict[str, Any]:
+    """Editable starter for the given release; GUI callers pass the adopted version."""
 
     if name not in _PRESET_DISCRETISATION:
         raise ValueError(f"Unknown standard preset: {name}")
+    discretisation = dict(_PRESET_DISCRETISATION[name])
+    if discretisation["method"] == "FBS" and pictologics_version != "0.5.1":
+        discretisation["min_val"] = -1000.0
     return {
         "schema_version": CONFIG_SCHEMA_VERSION,
         "configs": {
@@ -383,7 +408,7 @@ def preset_configuration_document(name: str) -> dict[str, Any]:
                     },
                     {
                         "step": "discretise",
-                        "params": dict(_PRESET_DISCRETISATION[name]),
+                        "params": discretisation,
                     },
                     {
                         "step": "extract_features",
@@ -415,8 +440,13 @@ def _lint_steps(config_name: str, steps: Sequence[Any]) -> list[str]:
         if params and not isinstance(params, Mapping):
             issues.append(f"{location} 'params' must be a mapping")
             params = {}
+        allowed = _VALID_STEP_PARAMS[step_name]
+        if step_name == "filter":
+            allowed = allowed | FILTER_EXTRA_PARAMS
+        if step_name == "grow_mask" and params.get("nearest_roi"):
+            issues.append(f"{location}: nearest_roi requires joint-ROI execution, unsupported by this extension")
         for param in params:
-            if param not in _VALID_STEP_PARAMS[step_name]:
+            if param not in allowed:
                 issues.append(f"{location} ({step_name}) has unknown parameter '{param}'")
         if step_name == "discretise":
             discretised = True
@@ -445,8 +475,9 @@ def _lint_steps(config_name: str, steps: Sequence[Any]) -> list[str]:
 def lint_configuration_document(document: Any) -> list[str]:
     """Return a list of structural problems (empty means the shape looks valid).
 
-    This is a pre-submission convenience check only. It does not validate parameter
-    *values*; the worker's ``load_configs(validate=True)`` is authoritative.
+    This is a pre-submission convenience check only. Apart from rejecting unsupported
+    joint-ROI growth, it does not validate parameter *values*; the worker's
+    ``load_configs(validate=True)`` is authoritative.
     """
 
     if not isinstance(document, Mapping):

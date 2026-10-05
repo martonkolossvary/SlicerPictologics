@@ -1041,6 +1041,14 @@ def _describe_configurations(
         raise WorkerSetupError(
             f"cannot serialize effective configurations: {exc}"
         ) from exc
+    configurations = configuration_document.get("configs")
+    for config in configurations.values() if isinstance(configurations, Mapping) else ():
+        for step in config.get("steps", []):
+            if step.get("step") == "grow_mask" and (step.get("params") or {}).get("nearest_roi"):
+                raise WorkerSetupError(
+                    "nearest_roi=true requires joint-ROI execution. This extension runs ROIs "
+                    "independently; use nearest_roi=false or omit it."
+                )
     return selected_records, catalog_by_config, configuration_document
 
 
@@ -1135,6 +1143,11 @@ def crop_margin_mm(
         needed = 0.0
         for index, step in enumerate(config.get("steps", [])):
             name, params = step.get("step"), step.get("params") or {}
+            if name in ("grow_mask", "normalise"):
+                # Whole-image normalization needs uncropped statistics. Growth
+                # (including rings/multiple steps) needs context beyond the old ROI.
+                # Use the full image until each new operation has a proven bound.
+                return None
             if name == "resample":
                 if index != 0 or params.get("interpolation", "linear") not in ("linear", "nearest"):
                     return None
@@ -1167,6 +1180,11 @@ def crop_margin_mm(
                 or params.get("include_local_intensity")
             ):
                 needed += _LOCAL_INTENSITY_RADIUS_MM + step_spacing
+            elif name not in (
+                "resegment", "filter_outliers", "binarize_mask", "keep_largest_component",
+                "round_intensities", "discretise", "extract_features",
+            ):
+                return None  # Unknown future operations cannot silently truncate context.
         margin = max(margin, needed)
     return margin
 

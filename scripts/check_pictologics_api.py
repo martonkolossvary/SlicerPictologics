@@ -7,6 +7,7 @@ import inspect
 import os
 import sys
 import tempfile
+import warnings
 from importlib.metadata import version
 from itertools import product
 from pathlib import Path
@@ -60,7 +61,12 @@ def _check_inline_builder_round_trip() -> None:
 
     documents = {INLINE_CONFIG_NAME: build_inline_configuration_document(default_inline_state())}
     for preset in preset_names():
-        documents[preset] = preset_configuration_document(preset)
+        documents[preset] = preset_configuration_document(preset, pictologics_version=version("pictologics"))
+    fbs_state = default_inline_state()
+    fbs_state.update(discretise_method="FBS", discretise_value=16.0, fbs_minimum=-1000.0)
+    document = build_inline_configuration_document(fbs_state)
+    document["configs"]["explicit_fbs"] = document["configs"].pop(INLINE_CONFIG_NAME)
+    documents["explicit_fbs"] = document
     for range_target, outlier_target in product(MASK_TARGETS, repeat=2):
         state = default_inline_state()
         state.update(
@@ -84,9 +90,11 @@ def _check_inline_builder_round_trip() -> None:
         for expected_name, document in documents.items():
             path = Path(directory) / f"{expected_name}.yaml"
             path.write_text(yaml.safe_dump(document), encoding="utf-8")
-            loaded = pictologics.RadiomicsPipeline.load_configs(
-                path, validate=True, load_standard=False
-            )
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)
+                loaded = pictologics.RadiomicsPipeline.load_configs(
+                    path, validate=True, load_standard=False
+                )
             names = list(loaded.list_configs())
             if expected_name not in names:
                 raise RuntimeError(
@@ -107,18 +115,19 @@ def _check_mirrored_step_parameters() -> None:
     ones, so it must stop adoption until the copy is updated.
     """
 
-    from PictologicsLib.inline_config import _VALID_STEP_PARAMS
+    from PictologicsLib.inline_config import _VALID_STEP_PARAMS, LEGACY_STEP_PARAMS
 
     package_steps = getattr(pictologics.RadiomicsPipeline, "_VALID_STEPS", None)
     if not isinstance(package_steps, dict):
         raise RuntimeError("RadiomicsPipeline._VALID_STEPS is unavailable; update the lint copy")
     actual = {step: frozenset(params) for step, params in package_steps.items()}
-    if actual != _VALID_STEP_PARAMS:
+    expected = LEGACY_STEP_PARAMS if version("pictologics") == "0.5.1" else _VALID_STEP_PARAMS
+    if actual != expected:
         empty: frozenset[str] = frozenset()
         differences = {
-            step: sorted(actual.get(step, empty) ^ _VALID_STEP_PARAMS.get(step, empty))
-            for step in sorted(set(actual) | set(_VALID_STEP_PARAMS))
-            if actual.get(step) != _VALID_STEP_PARAMS.get(step)
+            step: sorted(actual.get(step, empty) ^ expected.get(step, empty))
+            for step in sorted(set(actual) | set(expected))
+            if actual.get(step) != expected.get(step)
         }
         raise RuntimeError(
             "PictologicsLib.inline_config._VALID_STEP_PARAMS differs from "
@@ -243,6 +252,8 @@ def main() -> int:
     for name in ("load_image", "warmup_jit"):
         if not callable(getattr(pictologics, name, None)):
             raise RuntimeError(f"pictologics.{name} is unavailable")
+    if installed != "0.5.1" and not callable(getattr(pipeline, "get_log", None)):
+        raise RuntimeError("RadiomicsPipeline.get_log is unavailable in the candidate release")
 
     _check_mirrored_step_parameters()
     _check_inline_builder_round_trip()

@@ -841,6 +841,7 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         widget.ui.resampleXSpinBox.setValue(2.0)
         widget.ui.discretiseMethodCombo.setCurrentIndex(1)
         widget.ui.discretiseValueSpinBox.setValue(25.5)
+        widget.ui.fbsMinimumLineEdit.setText("-1000.125")
         widget.ui.sourceModeCombo.setCurrentIndex(2)
         widget.ui.sentinelValueLineEdit.setText("-3024")
         widget.ui.resegmentGroup.setChecked(True)
@@ -1833,7 +1834,8 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         profile_path = self.temporary_directory / "real-run.pictologics-profile.json"
         state = default_inline_state()
         state.update(resample=False, resegment=True, range_min=-50.0, range_max=500.0,
-                     filter_outliers=True, outlier_sigma=1.0)
+                     filter_outliers=True, outlier_sigma=1.0,
+                     discretise_method="FBS", discretise_value=16.0, fbs_minimum="-1000")
         profile_path.write_text(json.dumps(build_profile(
             "Real extraction profile", ["standard_fbn_32"], state
         )), encoding="utf-8")
@@ -1916,6 +1918,8 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             actual = {row["feature_key"]: row["value"] for row in rows
                       if row["roi_name"] == roi_name and row["config"] == "in_app"}
             self.assertAlmostEqual(actual["mean_intensity_Q4LE"], float(values.mean()), places=6)
+            self.assertAlmostEqual(actual["mean_discretised_intensity_X6K6"],
+                                   float((np.floor((values + 1000.0) / 16.0) + 1).mean()), places=6)
             self.assertAlmostEqual(actual["volume_voxel_counting_YEKZ"],
                                    len(values) * voxel_volume, places=3)
         np.testing.assert_array_equal(slicer.util.arrayFromVolume(self.fixture.volume_node),
@@ -1949,6 +1953,35 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual({(row["reader"], row["center"], row["modality"]) for row in rows}, {("R1", "A", "")})
         self.assertEqual(_scene_node_ids() - scene_before, {table.GetID()})
         self.assertEqual(list(self.logic.jobsRoot().glob("job-*")), [])
+
+    def test_fbs_minimum_readiness_and_scene_migration(self) -> None:
+        widget = self._feedback_widget()
+        widget.ui.additionalConfigCombo.setCurrentIndex(1)
+        self.assertFalse(widget.ui.fbsMinimumLineEdit.enabled)
+        widget.ui.discretiseMethodCombo.setCurrentIndex(1)
+        self.assertTrue(widget.ui.fbsMinimumLineEdit.enabled)
+        self.assertFalse(widget.ui.runButton.enabled)
+        self.assertIn("FBS requires", widget.ui.readinessLabel.text)
+        for value in ("nan", "inf", "invalid"):
+            widget.ui.fbsMinimumLineEdit.setText(value)
+            self.assertFalse(widget.ui.runButton.enabled)
+        widget.ui.fbsMinimumLineEdit.setText("-1000.1256789")
+        self.assertTrue(widget.ui.runButton.enabled, widget.ui.readinessLabel.text)
+        self.assertEqual(widget._storedInlineState()["fbs_minimum"], "-1000.1256789")
+        # No calculated results exist in this scene; persist the actual parameter node.
+        scene = self.temporary_directory / "fbs-settings.mrb"
+        self.assertTrue(slicer.util.saveScene(str(scene)))
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(scene)))
+        widget.initializeParameterNode()
+        self.assertEqual(widget.ui.fbsMinimumLineEdit.text, "-1000.1256789")
+        self.assertEqual(widget._storedInlineState()["fbs_minimum"], "-1000.1256789")
+        legacy = widget._storedInlineState()
+        del legacy["fbs_minimum"]
+        widget._parameterNode.SetParameter(gui_module.PARAM_INLINE_CONFIG, json.dumps(legacy))
+        self.assertEqual(widget.ui.fbsMinimumLineEdit.text, "")
+        self.assertFalse(widget.ui.runButton.enabled)
+        self.assertIn("older FBS settings need review", widget.ui.readinessLabel.text)
 
     def test_roi_refinement_controls_validate_persist_and_load_legacy_profiles(self) -> None:
         widget = self._feedback_widget()

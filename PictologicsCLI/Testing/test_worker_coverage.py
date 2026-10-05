@@ -952,6 +952,16 @@ class CatalogTests(unittest.TestCase):
 
 
 class CreatePipelineTests(unittest.TestCase):
+    def test_joint_roi_growth_is_rejected_before_execution(self):
+        class GrowthPipeline(FakePipeline):
+            def to_dict(self, config_names):
+                return {"configs": {config_names[0]: {"steps": [
+                    {"step": "grow_mask", "params": {"to_mm": 3, "nearest_roi": True}}
+                ]}}}
+
+        with self.assertRaisesRegex(worker.WorkerSetupError, "joint-ROI"):
+            worker.create_pipeline(pic(GrowthPipeline), make_manifest(self.root))
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
@@ -1295,6 +1305,9 @@ class CropTests(unittest.TestCase):
             with self.subTest(configuration=configuration):
                 self.assertAlmostEqual(worker.crop_margin_mm(configuration, (1.0, 1.0, 2.0)), expected)
         for configuration in (
+            document({"step": "grow_mask", "params": {"to_mm": 4}}),
+            document({"step": "normalise", "params": {"region": "image"}}),
+            document({"step": "future_unknown_operation"}),
             document(cubic),
             document(resample, resample),
             document(filter_step(type="mean", support=5), resample),

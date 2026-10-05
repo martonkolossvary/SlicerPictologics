@@ -89,9 +89,10 @@ class BuildInlineConfigTests(unittest.TestCase):
         state = default_inline_state()
         state["discretise_method"] = "FBS"
         state["discretise_value"] = 16.0
+        state["fbs_minimum"] = -1000.0
         document = build_inline_configuration_document(state)
         params = document["configs"][INLINE_CONFIG_NAME]["steps"][1]["params"]
-        self.assertEqual(params, {"method": "FBS", "bin_width": 16.0})
+        self.assertEqual(params, {"method": "FBS", "bin_width": 16.0, "min_val": -1000.0})
 
     def test_discretise_value_not_positive_is_rejected(self) -> None:
         state = default_inline_state()

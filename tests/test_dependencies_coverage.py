@@ -287,6 +287,32 @@ class PipArgumentTests(unittest.TestCase):
 
 
 class ConstraintTests(unittest.TestCase):
+    def test_runtime_markers_use_interpreter_not_hardware(self) -> None:
+        # Rosetta and Intel hardware deliberately have identical marker values.
+        environment = {"implementation_name": "cpython", "python_version": "3.12",
+                       "sys_platform": "darwin", "platform_machine": "x86_64"}
+        content = ("# slicerpictologics-runtime: cpython|3.12|darwin|x86_64\n"
+                   "pictologics==0.6.1\n"
+                   "numba==0.62.1; sys_platform == 'darwin'\n"
+                   "numba==0.67.0; sys_platform != 'darwin'\n")
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            dependencies, "default_environment", return_value=environment
+        ):
+            path = self._write(directory, content)
+            requirement = Requirement("pictologics==0.6.1")
+            self.assertEqual(check_dependency_constraints(path, requirement), path)
+            environment["platform_machine"] = "arm64"
+            with self.assertRaisesRegex(DependencyConfigurationError, "no qualified dependency set"):
+                check_dependency_constraints(path, requirement)
+
+    def test_rejects_ambiguous_or_nonexact_runtime_pins(self) -> None:
+        for content in ("numpy==2.3.5\nnumpy==2.3.5\n", "numpy==2.*\n",
+                        "numpy[extra]==2.3.5\n", "numpy @ https://example.invalid/numpy.whl\n"):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(DependencyConfigurationError):
+                    check_dependency_constraints(self._write(directory, content + "pictologics==0.6.1\n"),
+                                                 Requirement("pictologics==0.6.1"))
+
     @staticmethod
     def _write(directory: str, text: str) -> Path:
         path = Path(directory, "constraints.txt")
