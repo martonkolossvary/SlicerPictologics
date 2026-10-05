@@ -172,6 +172,14 @@ features**; disabled steps are skipped. These controls affect only `in_app`, not
 standard presets. ROI refinement removes voxels from calculation masks; it does
 not clip or overwrite image intensities. If a required mask becomes empty, the
 worker reports the ROI error instead of falling back to the original mask.
+
+For an in-app **FBS** configuration, also enter **FBS minimum**: a fixed first bin
+edge in the image's units *after* any filter. This value is explicit in the saved
+profile, scene settings and effective configuration. Old custom FBS settings
+without a minimum require review; the extension never guesses a new value. FBN
+settings do not use this field. Pictologics 0.6+ standard FBS presets are intended
+for CT and start at **−1000 HU**; 0.5.1 presets retain their legacy ROI-minimum
+behavior until adoption. Do not assume HU or a CT minimum for MRI/filtered images.
 Effective steps, mask targets, and parameters are retained in result provenance.
 
 ### Filter the image (IBSI 2)
@@ -212,7 +220,8 @@ region** to give Pictologics only a box around each region. The box has a margin
 interpolation, the filter, and the local-intensity features. The worker does not
 crop for the *auto* voxel-validity mode, FFT-based filters (Simoncelli and Riesz),
 periodic filter boundaries, cubic interpolation, an explicit filter-spacing
-override, or resampling after another step. These need the whole image or a crop
+override, resampling after another step, normalization, mask growth, or an unknown
+future operation. These need the whole image or a crop
 model not yet supported. The provenance of each region keeps the crop box, or no
 box when the worker did not crop. Memory warnings use the full-scan estimate because
 cropping can fall back to the whole image or an entire axis.
@@ -412,10 +421,20 @@ for a two-reader study.
   values between configurations when it reuses shared results. Runs with several
   presets therefore take longer.
 - The long table adds provenance columns (run, ROI, status, and versions) to the
-  Pictologics names. The long `format_results` layout of Pictologics 0.5.1 still
-  calls the full key `feature_name`; a planned Pictologics release renames it to
-  `feature_key`, so that all names agree. Wide feature names match Pictologics
-  exactly.
+  Pictologics names. Pictologics 0.5.1 calls the full key `feature_name` in its long
+  `format_results` layout; 0.6.0 calls it `feature_key`, matching the extension.
+  Wide feature names match Pictologics exactly.
+- Pictologics 0.6 normalization and independent mask-growth steps can be supplied
+  by file when that version is qualified and adopted; they have no new GUI controls.
+  `grow_mask(nearest_roi=true)` is rejected because this extension processes ROIs
+  independently and cannot enforce nonoverlapping rings between them.
+
+The [0.6 compatibility review](docs/pictologics-060-compatibility.md) records the
+candidate checks and the macOS Intel wheel blocker. Slicer for macOS runs as Intel
+code, and Numba 0.63 and later have no Intel Mac builds. Pictologics 0.7.0 lets Intel
+Mac Python use Numba 0.62.x, so the extension can install it on every platform. The
+adopted requirement remains 0.5.1 until 0.7.0 passes the complete cross-platform
+qualification.
 
 ## For developers
 

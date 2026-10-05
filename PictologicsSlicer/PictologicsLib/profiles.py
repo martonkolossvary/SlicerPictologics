@@ -57,6 +57,8 @@ def validate_profile(document: Any) -> dict[str, Any]:
         # Earlier version-1 profiles predate ROI refinement and the image filter. Keep
         # their effective configuration identical by adding the disabled defaults.
         if isinstance(state, dict):
+            # Missing means unchosen, never silently substitute a new bin start.
+            state = {"fbs_minimum": None, **state}
             for group in (ROI_REFINEMENT_DEFAULTS, FILTER_DEFAULTS):
                 if not set(group) & set(state):
                     state = {**state, **group}
@@ -110,7 +112,7 @@ def validate_profile(document: Any) -> dict[str, Any]:
                 valid_sentinel = False
             if not valid_sentinel:
                 raise ValueError("Sentinel must be a finite number or null.")
-        for key in ("range_min", "range_max"):
+        for key in ("range_min", "range_max", "fbs_minimum"):
             if state[key] is not None:
                 finite_number(state[key], key)
         for key in ("resegment_apply_to", "outlier_apply_to"):

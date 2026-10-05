@@ -17,6 +17,18 @@ from PictologicsLib.inline_config import (
 
 
 class BuildInlineConfigTests(unittest.TestCase):
+    def test_fbs_requires_explicit_finite_start_even_after_resegmentation(self):
+        state = default_inline_state()
+        state.update(discretise_method="FBS", resegment=True, range_min=-500)
+        for minimum in (None, True, float("nan"), float("inf"), "not a number"):
+            state["fbs_minimum"] = minimum
+            with self.subTest(minimum=minimum), self.assertRaisesRegex(ValueError, "FBS"):
+                build_inline_configuration_document(state)
+        for minimum in (0, -1000, 3.5, "-12.25"):
+            state["fbs_minimum"] = minimum
+            steps = build_inline_configuration_document(state)["configs"][INLINE_CONFIG_NAME]["steps"]
+            self.assertEqual(steps[-2]["params"]["min_val"], float(minimum))
+
     def test_default_state_reproduces_fbn32_shape(self) -> None:
         document = build_inline_configuration_document(default_inline_state())
         config = document["configs"][INLINE_CONFIG_NAME]
@@ -61,9 +73,10 @@ class BuildInlineConfigTests(unittest.TestCase):
         state = default_inline_state()
         state["discretise_method"] = "FBS"
         state["discretise_value"] = 16.0
+        state["fbs_minimum"] = -1000.0
         document = build_inline_configuration_document(state)
         discretise = document["configs"][INLINE_CONFIG_NAME]["steps"][1]["params"]
-        self.assertEqual(discretise, {"method": "FBS", "bin_width": 16.0})
+        self.assertEqual(discretise, {"method": "FBS", "bin_width": 16.0, "min_val": -1000.0})
 
     def test_sentinel_kept_only_for_non_full_image(self) -> None:
         state = default_inline_state()
@@ -80,6 +93,20 @@ class BuildInlineConfigTests(unittest.TestCase):
 
 
 class LintConfigTests(unittest.TestCase):
+    def test_new_file_steps_and_filter_options_are_known_but_joint_roi_is_rejected(self):
+        steps = [
+            {"step": "grow_mask", "params": {"to_mm": 2, "nearest_roi": False}},
+            {"step": "normalise", "params": {"method": "zscore", "region": "image"}},
+            {"step": "filter", "params": {"type": "gaussian", "sigma_mm": 1, "padding_value": 0}},
+            {"step": "filter", "params": {"type": "gabor", "response": "real"}},
+            {"step": "extract_features", "params": {"families": ["intensity"],
+                "local_intensity_params": {"enabled": True}, "spatial_intensity_params": {"enabled": True}}},
+        ]
+        document = {"configs": {"new": {"steps": steps}}}
+        self.assertEqual(lint_configuration_document(document), [])
+        steps[0]["params"]["nearest_roi"] = True
+        self.assertIn("joint-ROI", lint_configuration_document(document)[0])
+
     def test_valid_document_has_no_issues(self) -> None:
         document = build_inline_configuration_document(default_inline_state())
         self.assertEqual(lint_configuration_document(document), [])
@@ -127,6 +154,11 @@ class LintConfigTests(unittest.TestCase):
 
 
 class PresetTemplateTests(unittest.TestCase):
+    def test_legacy_preset_is_preserved_until_candidate_adoption(self):
+        for release, expected in (("0.5.1", None), ("0.6.0", -1000.0)):
+            document = preset_configuration_document("standard_fbs_16", pictologics_version=release)
+            self.assertEqual(document["configs"]["standard_fbs_16"]["steps"][1]["params"].get("min_val"), expected)
+
     def test_preset_names_are_the_six_standard_presets(self) -> None:
         self.assertEqual(
             set(preset_names()),
@@ -144,7 +176,7 @@ class PresetTemplateTests(unittest.TestCase):
         document = preset_configuration_document("standard_fbs_16")
         self.assertEqual(lint_configuration_document(document), [])
         discretise = document["configs"]["standard_fbs_16"]["steps"][1]["params"]
-        self.assertEqual(discretise, {"method": "FBS", "bin_width": 16.0})
+        self.assertEqual(discretise, {"method": "FBS", "bin_width": 16.0, "min_val": -1000.0})
 
     def test_unknown_preset_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unknown standard preset"):

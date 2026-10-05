@@ -61,7 +61,7 @@ def test_ci_and_adoption_share_qualification():
     shared = "./.github/workflows/compatibility.yml"
     assert ci["jobs"]["compatibility"]["uses"] == shared
     assert adoption["jobs"]["qualify"]["uses"] == shared
-    assert adoption["jobs"]["publish"]["needs"] == ["discover", "qualify"]
+    assert adoption["jobs"]["publish"]["needs"] == ["discover", "constraints", "qualify"]
     assert adoption["jobs"]["qualify"]["if"] == "needs.discover.outputs.changed == 'true'"
     assert adoption["on"]["schedule"] == [{"cron": "17 */6 * * *"}]
     assert adoption["permissions"] == {"contents": "read"}
@@ -75,21 +75,27 @@ def test_ci_and_adoption_share_qualification():
     ) in publication
     assert WRITE_CONSTRAINTS in publication
     assert adoption["jobs"]["publish"]["steps"][-1]["env"]["CONSTRAINTS"] == (
-        "${{ needs.discover.outputs.constraints }}"
+        "${{ needs.constraints.outputs.constraints }}"
     )
 
 
 def test_adoption_resolves_tested_versions_once_for_every_gate():
     adoption = load_workflow("adopt-pictologics-release.yml")
-    discover = adoption["jobs"]["discover"]
-    resolve = next(step for step in discover["steps"] if step.get("id") == "constraints")
-    assert resolve["if"] == "steps.release.outputs.changed == 'true'"
-    assert '--only-binary=:all: --target "$RUNNER_TEMP/resolve"' in resolve["run"]
-    assert 'pip freeze --path "$RUNNER_TEMP/resolve"' in resolve["run"]
-    assert discover["outputs"]["constraints"] == "${{ steps.constraints.outputs.constraints }}"
+    resolve = adoption["jobs"]["resolve"]
+    assert resolve["needs"] == "discover"
+    assert resolve["if"] == "needs.discover.outputs.changed == 'true'"
+    assert {row["runtime"] for row in resolve["strategy"]["matrix"]["include"]} == {"linux", "windows", "macos"}
+    commands = "\n".join(step.get("run", "") for step in resolve["steps"])
+    assert "--ignore-installed --only-binary=:all:" in commands
+    assert '--report "$RUNNER_TEMP/resolution.json"' in commands
+    assert "platform_constraints.py" in commands
+    assert "pip freeze" not in commands
+    assert adoption["jobs"]["constraints"]["needs"] == ["discover", "resolve"]
+    assert adoption["jobs"]["constraints"]["outputs"]["constraints"] == "${{ steps.constraints.outputs.constraints }}"
     assert adoption["jobs"]["qualify"]["with"]["constraints"] == (
-        "${{ needs.discover.outputs.constraints }}"
+        "${{ needs.constraints.outputs.constraints }}"
     )
+    assert adoption["jobs"]["qualify"]["needs"] == ["discover", "constraints"]
 
 
 def test_all_candidate_gates_use_the_validated_revision_and_pin():

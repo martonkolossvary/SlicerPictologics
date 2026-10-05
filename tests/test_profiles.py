@@ -17,6 +17,20 @@ def example():
 
 
 class ProfileTests(unittest.TestCase):
+    def test_legacy_fbn_migrates_but_fbs_requires_user_choice(self):
+        document = example()
+        del document["inline_state"]["fbs_minimum"]
+        self.assertIsNone(validate_profile(document)["inline_state"]["fbs_minimum"])
+        self.assertNotIn("fbs_minimum", document["inline_state"])
+        document["inline_state"]["discretise_method"] = "FBS"
+        with self.assertRaisesRegex(ValueError, "older FBS settings need review"):
+            validate_profile(document)
+        document["inline_state"]["fbs_minimum"] = "-123.456789"
+        self.assertEqual(validate_profile(document)["inline_state"]["fbs_minimum"], "-123.456789")
+        document["inline_state"]["fbs_minimum"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "finite"):
+            validate_profile(document)
+
     def test_profile_json_round_trip_and_defensive_copy(self) -> None:
         profile = example()
         restored = validate_profile(json.loads(json.dumps(profile)))
@@ -105,6 +119,7 @@ class ProfileTests(unittest.TestCase):
             sentinel_value="-3024",
             discretise_method="FBS",
             discretise_value=25.5,
+            fbs_minimum=-1000.0,
         )
         self.assertEqual(build_profile("Sentinel", [], state)["inline_state"], state)
 

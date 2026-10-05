@@ -796,3 +796,29 @@ create-pull-request action is no longer used.
 References: [Slicer distribution guide](https://slicer.readthedocs.io/en/latest/developer_guide/extensions.html#distribute-an-extension),
 [submission checklist](https://github.com/Slicer/ExtensionsIndex/blob/main/.github/PULL_REQUEST_TEMPLATE.md),
 [Pictologics changelog](https://github.com/martonkolossvary/pictologics/blob/main/CHANGELOG.md).
+
+## 2026-10-04: Windows milestone merged; 0.6 adoption held
+
+PR #6 is merged at `b3376c7`; all five post-merge GitHub jobs passed. Windows
+application qualification remains specific to 0.5.1 and the runtimes documented
+in [windows-validation.md](windows-validation.md).
+
+The focused local 0.6 compatibility update adds explicit FBS minima and safe
+profile migration, version-correct templates, new API/file-option checks and
+conservative crop/joint-ROI safeguards. See the [compatibility review](pictologics-060-compatibility.md)
+for evidence and limits. The committed requirement and constraints still adopt
+0.5.1: 0.6.0 requires Numba 0.67, which has no Python 3.12 macOS Intel wheel for
+the installed Slicer. Native ARM developer checks do not override this blocker.
+No public registration, release/tag or new image publication is authorized.
+
+## 2026-10-05: Intel Mac path with Pictologics 0.7.0
+
+Pictologics 0.7.0 lets macOS x86_64 Python use Numba 0.62.x. The first checks used
+a local build of `b96af63`. In the installed Slicer 5.12.4 on macOS, the wheel resolves to
+Numba 0.62.1 and NumPy 2.3.5. All extension release checks and all 57 installed-Slicer
+tests passed with it. Native Apple-silicon Python resolves to Numba 0.68.0, and the
+same release checks passed. The real-GUI ROI test no longer depends on CLI event
+timing. The [handoff record](macos-compatibility-handoff.md#13-update-after-the-upstream-dependency-change)
+lists the evidence and the remaining steps. The published PyPI wheel passed the same
+checks in the installed Slicer. The adopted requirement stays 0.5.1 until the
+cross-platform adoption run passes.

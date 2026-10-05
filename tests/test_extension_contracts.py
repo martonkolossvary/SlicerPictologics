@@ -16,7 +16,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "PictologicsSlicer"))
 
-from PictologicsLib import results  # noqa: E402
+from PictologicsLib import dependencies, results  # noqa: E402
 from PictologicsLib.dependencies import (  # noqa: E402
     check_dependency_constraints,
     parse_pictologics_requirement,
@@ -186,9 +186,20 @@ class ExtensionScaffoldTests(unittest.TestCase):
         requirement = parse_pictologics_requirement(
             ROOT / "PictologicsSlicer/requirements-pictologics.txt"
         )
-        check_dependency_constraints(
-            ROOT / "PictologicsSlicer/constraints-pictologics.txt", requirement
-        )
+        constraints = ROOT / "PictologicsSlicer/constraints-pictologics.txt"
+        prefix = "# slicerpictologics-runtime: "
+        runtimes = [line[len(prefix):].split("|") for line in
+                    constraints.read_text(encoding="utf-8").splitlines() if line.startswith(prefix)]
+        fields = ("implementation_name", "python_version", "sys_platform", "platform_machine")
+        # Check each qualified runtime, not the developer's own computer.
+        for runtime in runtimes or [None]:
+            environment = dict(dependencies.default_environment())
+            if runtime:
+                environment.update(zip(fields, runtime, strict=True))
+            with self.subTest(runtime=runtime), mock.patch.object(
+                dependencies, "default_environment", return_value=environment
+            ):
+                check_dependency_constraints(constraints, requirement)
         cmake = GUI_CMAKE.read_text(encoding="utf-8")
         resources = cmake.split("set(MODULE_PYTHON_RESOURCES", 1)[1].split(")", 1)[0]
         self.assertIn("requirements-pictologics.txt", resources)
