@@ -6,6 +6,9 @@ pre-publication goal. This document records completed work and outstanding
 qualification/publication requirements. It is not a release announcement and does
 not claim that the candidate has been adopted or published.
 
+**Update:** [Section 13](#13-update-after-the-upstream-dependency-change) replaces
+Sections 3, 5 and 7 and adds to Section 8.
+
 ## 1. Current release state
 
 - The extension currently adopts **Pictologics 0.5.1** on every platform.
@@ -356,3 +359,77 @@ bundled NumPy can otherwise shadow the candidate target.
 
 This document is the handoff record. It does not change the adopted version or
 authorize any commit, push, release, registration or publication.
+
+## 13. Update after the upstream dependency change
+
+**Record date:** 2026-10-05, later the same day.
+
+### Extension state
+
+- The extension changes are on the local branch `pictologics-070-compatibility`,
+  in three commits: the compatibility work of Sections 6 and 8, the timing-test fix
+  and this record. Nothing is pushed.
+
+### Upstream package state
+
+- The sibling checkout `../Pictologics` is at `b96af63` on `main`, version 0.7.0.
+  It is 22 commits ahead of `origin/main`. Nothing is pushed or released.
+- `6dd5504` makes the tests work with pandas 3 and allows the SciPy 1.18 FFT thread
+  split in the warm-up test.
+- `fab59c6` sets the Numba rules below. It removes the upper limits of SciPy,
+  Pillow, PyWavelets and tqdm, and it adds an Intel Mac CI job and a weekly
+  workflow with the newest versions.
+- `b96af63` makes Matplotlib the optional extra `viz`. The extension does not use
+  Matplotlib, so it installs the plain package.
+
+| Runtime | Numba requirement |
+|---|---|
+| macOS x86_64 Python, including Rosetta Slicer | `>=0.62.1,<0.63` |
+| Other runtimes, Python 3.12 and 3.13 | `>=0.62.1` |
+| Other runtimes, Python 3.14 | `>=0.63.0` |
+
+- NumPy stays `>=2.0` (`>=2.3.2` on Python 3.14). Numba 0.62.1 itself limits NumPy
+  to `<2.4`.
+- These rules replace the candidate metadata of Section 7. The adoption does not
+  need the two clones in `local-output/`.
+- After `adc6972`, the package code changes only a docstring, a CSV column
+  selection and the Matplotlib import. The feature code is the same.
+
+### Evidence on this Mac
+
+The wheel was built from `b96af63` and was not uploaded. Its SHA-256 is
+`49518b74b81a2ca9aede6a7bb7beb09300b12586fb7d28ea997684871504802c`.
+
+| Check | Result |
+|---|---|
+| Installed Slicer 5.12.4 Python (x86_64), binary-only resolution | 17 distributions: Numba 0.62.1, llvmlite 0.45.1, NumPy 2.3.5, SciPy 1.18.1, pandas 3.0.6, Pillow 12.3.0, no Matplotlib; 459 MB |
+| Native Apple-silicon Python 3.12, binary-only resolution | Numba 0.68.0, llvmlite 0.50.0, NumPy 2.5.3 |
+| Dependency closure audit, Slicer Python | Passed: 17 exact distributions |
+| API, worker smoke, geometry parity and expanded checks, Slicer Python with the isolated target | All passed: 1,020 described rows, 170 rows, 170 features |
+| The same four checks, native Python with Numba 0.68.0 | All passed |
+| Full installed-Slicer suite with the timing-test fix | 57 of 57 passed |
+| 1,885 feature values from 13 settings, Slicer Python | Identical to the earlier 0.7.0 candidate, bit for bit |
+| The same values, Numba 0.68.0 against Numba 0.67.0 (Apple silicon) | Identical, bit for bit |
+| The same values, Numba 0.62.1 against Numba 0.68.0 (Apple silicon) | 14 values differ, only in the 16th digit |
+
+The Linux and Windows wheel jobs did not run with this candidate. The logs of these
+checks are in a temporary folder and are not kept.
+
+### Timing-test fix
+
+- `test_real_gui_run_reports_roi_and_freezes_elapsed_time` required a short status
+  line. A fast second ROI can start and end between two CLI events, so the line can
+  be missing. The test failed on Linux CI with 0.6.0 and on this Mac with 0.7.0. It
+  passed on this Mac with 0.6.1.
+- The test now reads the worker's own ROI marker with the GUI's parser.
+  `test_elapsed_roi_feedback_and_cancellation_preserve_terminal_state` still checks
+  each status line with a controlled CLI node.
+
+### Remaining before adoption
+
+1. Publish Pictologics 0.7.0 after its own CI passes, including the Intel Mac job.
+2. Merge the extension changes into `main`.
+3. Let the adoption workflow resolve and qualify 0.7.0 on Linux, Windows and Intel
+   macOS. It writes the pin and the runtime constraints only after all jobs pass.
+4. Run the installed-Slicer suite again with the published wheel on macOS and
+   Windows.
