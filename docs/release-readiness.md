@@ -811,13 +811,14 @@ for evidence and limits. The committed requirement and constraints still adopt
 the installed Slicer. Native ARM developer checks do not override this blocker.
 No public registration, release/tag or new image publication is authorized.
 
-## 2026-10-05: Intel Mac path with the Pictologics 0.7.0 candidate
+## 2026-10-05: Intel Mac path with Pictologics 0.7.0
 
-The local Pictologics 0.7.0 line (`b96af63`, not released) lets macOS x86_64 Python
-use Numba 0.62.x. In the installed Slicer 5.12.4 on macOS, the wheel resolves to
+Pictologics 0.7.0 lets macOS x86_64 Python use Numba 0.62.x. The first checks used
+a local build of `b96af63`. In the installed Slicer 5.12.4 on macOS, the wheel resolves to
 Numba 0.62.1 and NumPy 2.3.5. All extension release checks and all 57 installed-Slicer
 tests passed with it. Native Apple-silicon Python resolves to Numba 0.68.0, and the
 same release checks passed. The real-GUI ROI test no longer depends on CLI event
 timing. The [handoff record](macos-compatibility-handoff.md#13-update-after-the-upstream-dependency-change)
-lists the evidence and the remaining steps. The adopted requirement stays 0.5.1
-until 0.7.0 is published and the cross-platform adoption run passes.
+lists the evidence and the remaining steps. The published PyPI wheel passed the same
+checks in the installed Slicer. The adopted requirement stays 0.5.1 until the
+cross-platform adoption run passes.

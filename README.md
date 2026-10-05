@@ -431,10 +431,10 @@ for a two-reader study.
 
 The [0.6 compatibility review](docs/pictologics-060-compatibility.md) records the
 candidate checks and the macOS Intel wheel blocker. Slicer for macOS runs as Intel
-code, and Numba 0.63 and later have no Intel Mac builds. Pictologics 0.7.0 (not yet
-released) lets Intel Mac Python use Numba 0.62.x, so the extension can install it on
-every platform. The adopted requirement remains 0.5.1 until 0.7.0 is published and
-passes the complete cross-platform qualification.
+code, and Numba 0.63 and later have no Intel Mac builds. Pictologics 0.7.0 lets Intel
+Mac Python use Numba 0.62.x, so the extension can install it on every platform. The
+adopted requirement remains 0.5.1 until 0.7.0 passes the complete cross-platform
+qualification.
 
 ## For developers
 

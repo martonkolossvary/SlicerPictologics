@@ -1,11 +1,11 @@
 # Pictologics 0.6 compatibility update
 
-Follow-up (2026-10-05): the Pictologics 0.7.0 development line (local commit
-`b96af63`, not yet released) gives Intel Mac Python Numba 0.62.x. Other runtimes get
-Numba 0.62.1 or newer, and 0.63.0 or newer on Python 3.14. This candidate passes the
-extension checks in the installed Slicer. The adopted release stays 0.5.1 until 0.7.0
-is published and qualified. See the [handoff record](macos-compatibility-handoff.md).
-The 0.6.0 blocker and evidence below stay accurate for 0.6.0.
+Follow-up (2026-10-05): Pictologics 0.7.0 (released from `8787cb2`) gives Intel Mac
+Python Numba 0.62.x. Other runtimes get Numba 0.62.1 or newer, and 0.63.0 or newer on
+Python 3.14. The published wheel passes the extension checks in the installed Slicer.
+The adopted release stays 0.5.1 until the cross-platform adoption run qualifies 0.7.0.
+See the [handoff record](macos-compatibility-handoff.md). The 0.6.0 blocker and
+evidence below stay accurate for 0.6.0.
 
 Review date: 2026-10-04. Windows acceptance PR #6 was merged as
 `b3376c725f98cf67c7efbce7be22b54eaba63505`. Its application evidence remains

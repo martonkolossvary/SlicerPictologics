@@ -366,9 +366,9 @@ authorize any commit, push, release, registration or publication.
 
 ### Extension state
 
-- The extension changes are on the local branch `pictologics-070-compatibility`,
-  in three commits: the compatibility work of Sections 6 and 8, the timing-test fix
-  and this record. Nothing is pushed.
+- The extension changes are on the local branch `pictologics-070-compatibility`.
+  Nothing is pushed. GitHub `main` (`b3376c7`) still has the old adoption workflow
+  and checks, so its adoption runs for 0.7.0 fail.
 
 ### Upstream package state
 
@@ -425,11 +425,30 @@ checks are in a temporary folder and are not kept.
   `test_elapsed_roi_feedback_and_cancellation_preserve_terminal_state` still checks
   each status line with a controlled CLI node.
 
+### Evidence with the published 0.7.0
+
+- PyPI publishes the 0.7.0 wheel from tag `v0.7.0` (`8787cb2`). Its SHA-256 is
+  `2585cc293249f950507d08dcf559a5e22711b4751486ef2175e65e4397fac655`.
+- Its 42 package files are identical to the tested local build. Only the `WHEEL`
+  file differs: it names poetry-core 2.2.1, not 2.5.0.
+- Slicer's pip installed it from PyPI with 17 distributions, Numba 0.62.1 and NumPy
+  2.3.5. The dependency audit, the 4 release checks and all 57 installed-Slicer tests
+  passed.
+- A local simulation of the new adoption pin step merged three resolutions into
+  one constraints file. The Intel Mac resolution was real. pip resolved Linux and
+  Windows on this Mac, so their runner environments were set by hand.
+- The merged file pins Numba 0.62.1 for Intel macOS and Numba 0.68.0 for Linux and
+  Windows. With it, the portable tests, the Intel-emulation install with the audit
+  and the 4 checks, and the Slicer-Python install with the audit all passed.
+- The simulation found one test fault. The contract test checked the merged file
+  only for the computer that runs it, so it failed on Apple silicon. The test now
+  checks each runtime that the file lists.
+
 ### Remaining before adoption
 
-1. Publish Pictologics 0.7.0 after its own CI passes, including the Intel Mac job.
-2. Merge the extension changes into `main`.
-3. Let the adoption workflow resolve and qualify 0.7.0 on Linux, Windows and Intel
+1. Merge the extension changes into `main`. Pictologics 0.7.0 is on PyPI.
+2. Let the adoption workflow resolve and qualify 0.7.0 on Linux, Windows and Intel
    macOS. It writes the pin and the runtime constraints only after all jobs pass.
-4. Run the installed-Slicer suite again with the published wheel on macOS and
-   Windows.
+3. Run the installed-Slicer suite with the published wheel on Windows.
+4. The release notice from Pictologics needs the `SLICER_EXTENSION_DISPATCH_TOKEN`
+   secret. Without it, only the six-hourly schedule starts the adoption run.
