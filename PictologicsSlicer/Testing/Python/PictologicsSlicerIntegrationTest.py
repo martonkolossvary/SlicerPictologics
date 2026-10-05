@@ -38,6 +38,7 @@ from PictologicsLib.inline_config import (
 from PictologicsLib.memory import BYTES_PER_VOXEL, largest_voxel_count
 from PictologicsLib.persistence import SNAPSHOT_ATTRIBUTE, WARNING_ATTRIBUTE, decode_values
 from PictologicsLib.profiles import build_profile
+from PictologicsLib.progress import current_roi_index
 from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     RESULT_PAYLOAD_SCHEMA_VERSION,
@@ -1880,7 +1881,9 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertFalse(widget._runFeedbackTimer.isActive())
         self.assertFalse(cli_node.IsContinuousOutputUpdate())
         self.assertIn("Processing ROI 1 of 2: Whole volume", messages)
-        self.assertIn(f"Processing ROI 2 of 2: {SEGMENT_NAME}", messages)
+        # A short last ROI can start and end between two CLI events, so its
+        # passing status line is not always seen. Check the worker's own marker.
+        self.assertEqual(current_roi_index(str(cli_node.GetOutputText() or ""), 2), 1)
         self.assertIn("Completed:", widget.ui.statusLabel.text)
         self.assertIn("Ready:", widget.ui.readinessLabel.text)
         self.assertTrue(widget.ui.runButton.enabled)
