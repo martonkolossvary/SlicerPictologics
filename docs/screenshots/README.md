@@ -1,20 +1,25 @@
 # Catalog screenshots
 
-Captured in 3D Slicer 5.12.4 on macOS (Intel/Rosetta), using the published
-Pictologics 0.5.1 wheel in the extension's existing private environment.
-Both PNGs are genuine, unretouched application-window captures, not mockups.
+Captured on 2026-10-05 in 3D Slicer 5.12.4 on macOS (Intel/Rosetta), using the
+published Pictologics 0.7.0 wheel with Numba 0.62.1 and NumPy 2.3.5. The extension
+installed it with its normal first-run installer into a separate, temporary package
+folder. Both PNGs are genuine, unretouched application-window captures, not mockups.
+The maintainer visually approved both on 2026-10-05.
 
 - `pictologics-workflow.png`: captured with
-  [`capture_sample_data_demo.py`](../../scripts/capture_sample_data_demo.py) and
-  visually approved by the maintainer on 2026-09-25. Real public **MRHead MRI** with
-  two selected demonstration ROIs, configuration controls, profiles, the readiness
-  line, the elapsed time, and completed extraction. Resolution: 3680 × 1990. The
-  capture shows the Slicer window contents without the macOS title bar; the view
-  annotations and segment names identify the public sample and the demonstration
-  ROIs. It replaces the 2026-09-22 image, which showed an earlier screen.
-- `pictologics-results.png`: captured on 2026-09-21 from a **separate synthetic
-  phantom run**, showing the actual result table and export controls. This image
-  is unchanged; approval of the new workflow image does not approve other revisions.
+  [`capture_sample_data_demo.py`](../../scripts/capture_sample_data_demo.py). Real
+  public **MRHead MRI** with two selected demonstration ROIs, the input fields
+  (including reader, extra columns, scanner details and crop), the configuration
+  controls, the readiness line, the elapsed time, and completed extraction.
+  Resolution: 3680 × 1916. The capture shows the Slicer window contents without the
+  macOS title bar; the view annotations and segment names identify the public sample
+  and the demonstration ROIs. It replaces the 2026-09-25 image, which showed the
+  window before the reader, extra-column, scanner, crop, batch and diagnostics controls.
+- `pictologics-results.png`: captured from a **separate synthetic phantom run** with
+  `standard_fbn_32` (340 rows, all `ok`). It shows the actual result table (columns L
+  to R, with `pictologics_version` 0.7.0) and the output controls. Resolution: 3680 ×
+  1916, without the macOS title bar. It replaces the 2026-09-21 image, which showed
+  Pictologics 0.5.1 and an earlier window.
 
 ## MRHead source and masks
 
@@ -32,8 +37,12 @@ voxels. Actual extraction produced **170 features per ROI, 340 rows total, all
 statuses `ok`**, with `standard_fbn_32`. The image contains no fabricated results.
 The sample volume itself is not included in this repository.
 
-Approved workflow PNG SHA-256:
-`39b53217849fe6fc16e6c5cc5f95c08c53532ec9eb709da1ce0985a33f9ae5e5`.
+Approved PNG SHA-256 values:
+
+- `pictologics-workflow.png`:
+  `c482097887461079c7c3023356d9ff431bc4d71704c327d3929563441956f73a`
+- `pictologics-results.png`:
+  `e4dfdebe72321afa0fd63b42e6a1a0eb5bbd1c24a5e7339f81a5859dc3fe6207`
 
 ## Synthetic results-table example
 
@@ -75,15 +84,27 @@ contents, without the operating-system title bar.
    extraction; the script does not create synthetic result values.
 3. After verifying that both ROIs have computed results, the script restores the
    Four-Up anatomy view. Keep the public-sample/demonstration-ROI title visible.
-   Only the demo's list heights and view presentation are adjusted for readability;
-   saved application preferences and calculated results are not changed.
+   The demo fits the longer panel to the window (`fit_panel`): the lists match their
+   items, the extra-columns box shows two lines, the profiles section is collapsed,
+   and the panel is a little wider. This changes only the view, not saved application
+   preferences or calculated results.
 4. Capture only the application window; exclude other applications and desktop
    content. Inspect each PNG for readability and unintended personal information.
 
 To reproduce the separate synthetic results-table screenshot, use
-`scripts/create_catalog_demo.py` instead. Keep all new captures in the Git-ignored
-`local-output/catalog-review/` folder and obtain maintainer visual approval before
-copying them into published documentation. Agent inspection is not maintainer approval.
+`scripts/create_catalog_demo.py` instead, then:
+
+1. Select **Run radiomics** with `standard_fbn_32`, and select **Continue** at the
+   large-run memory warning.
+2. Wait for **340 feature rows**. Collapse **Feature configurations**, expand
+   **Output**, and fit the panel as the MRHead demo does.
+3. Show the results table in a layout with one table view, and scroll to the
+   `ibsi_code` column.
+4. Capture only the application window.
+
+Keep new captures in a temporary folder outside the repository and outside synced
+folders. Obtain maintainer visual approval before copying them into published
+documentation. Agent inspection is not maintainer approval.
 
 Screenshots are documentation/catalog assets only. They are not included in the
 installed Python module resources. `EXTENSION_SCREENSHOTURLS` in the root CMake

@@ -43,9 +43,9 @@ Both segments were analyzed: **170 features per segment, 340 total**.
 
 ![Pictologics results from real extraction on the synthetic regions](docs/screenshots/pictologics-results.png)
 
-Results-table example: a separate run on the earlier **synthetic CT-like phantom**,
-not the MRHead run above. Both examples are genuine Slicer captures using
-Pictologics 0.5.1 and `standard_fbn_32`.
+Results-table example: a separate run on the **synthetic CT-like phantom**, not the
+MRHead run above. Both examples are genuine Slicer captures using Pictologics 0.7.0
+and `standard_fbn_32`.
 See [sample attribution, capture provenance, and reproduction](docs/screenshots/README.md).
 
 A [small real CT example and reproducible workload benchmarks](docs/performance.md)

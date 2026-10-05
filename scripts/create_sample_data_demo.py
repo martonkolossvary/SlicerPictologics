@@ -6,7 +6,7 @@ checksum. It may download MRHead but never installs Pictologics or uploads data.
 The two ellipsoidal masks are demonstration ROIs, not clinical annotations.
 Run radiomics with the normal module button; no result values are fabricated.
 Set PICTOLOGICS_DEMO_AUTORUN=1 to invoke that same module workflow on startup.
-Keep screenshots in local-output until the maintainer approves publication.
+Keep screenshots outside the repository until the maintainer approves publication.
 """
 
 from __future__ import annotations
@@ -20,6 +20,20 @@ import qt
 import SampleData
 import slicer
 import vtk
+
+
+def fit_panel(widget) -> None:
+    """Fit the longer panel to the window, without changing any setting or result.
+
+    The lists match their items, the extra-columns box shows two lines, the profiles
+    section is collapsed, and the panel is a little wider.
+    """
+    for items in (widget.ui.segmentListWidget, widget.ui.standardConfigListWidget):
+        items.setFixedHeight(items.sizeHintForRow(0) * items.count + 2 * items.frameWidth)
+    widget.ui.extraColumnsTextEdit.setFixedHeight(44)
+    widget.ui.profilesCollapsibleButton.collapsed = True
+    window = slicer.util.mainWindow()
+    window.resizeDocks([window.findChild("QDockWidget", "PanelDockWidget")], [560], qt.Qt.Horizontal)
 
 
 def create_demo() -> None:
@@ -84,8 +98,7 @@ def create_demo() -> None:
     widget.ui.configurationCollapsibleButton.collapsed = False
     widget.ui.outputCollapsibleButton.collapsed = True
     # Compact the demo's two short lists; this is only presentation, not saved settings.
-    widget.ui.segmentListWidget.setMaximumHeight(80)
-    widget.ui.standardConfigListWidget.setMaximumHeight(150)
+    fit_panel(widget)
 
     layout = slicer.app.layoutManager()
     layout.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpView)

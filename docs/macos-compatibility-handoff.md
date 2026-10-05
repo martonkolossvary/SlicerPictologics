@@ -447,7 +447,7 @@ checks are in a temporary folder and are not kept.
 1. Run the installed-Slicer suite with the published wheel on Windows and on Slicer
    Preview.
 2. Install a built extension package, restart Slicer and run it.
-3. Replace the catalog screenshots after maintainer approval.
-4. Submit the ExtensionsIndex entry for Preview and Stable.
+3. Submit the ExtensionsIndex entry for Preview and Stable.
+- The maintainer approved new catalog screenshots with 0.7.0 on 2026-10-05.
 - The release notice from Pictologics needs the `SLICER_EXTENSION_DISPATCH_TOKEN`
   secret. Without it, only the six-hourly schedule starts the adoption run.

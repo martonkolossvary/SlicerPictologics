@@ -826,5 +826,6 @@ Adoption run 37331419353 then passed all jobs: the three resolve jobs, the merge
 the runtime constraints, the unit tests, the released-wheel checks on Linux, Windows
 and Intel macOS, and real Slicer on Linux. Its publish job committed the 0.7.0 pin as
 `d6e2bed`. The pull-request CI run on the same files as `main` (`61a4b3f`) passed all
-five jobs. The Windows Slicer application check and the catalog images still use
-0.5.1 evidence.
+five jobs. The Windows Slicer application check still uses 0.5.1 evidence. The
+maintainer approved new [catalog images](screenshots/README.md) with 0.7.0 on
+2026-10-05.
