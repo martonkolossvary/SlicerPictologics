@@ -975,9 +975,8 @@ class CreatePipelineTests(unittest.TestCase):
         self.assertEqual(bundle.selected_configurations, ("standard_fbn_32",))
         self.assertEqual(len(bundle.catalog_records), 1)
         self.assertEqual(bundle.configuration_document, {"configs": ["standard_fbn_32"]})
-        # Released Pictologics can copy wrong values between configurations when it
-        # reuses results, so the worker computes each configuration on its own.
-        self.assertIs(bundle.pipeline.deduplicate, False)
+        # The adopted Pictologics reuses shared results correctly (fixed in 0.6.0).
+        self.assertIs(bundle.pipeline.deduplicate, True)
 
     def test_pipeline_init_error(self):
         class InitError(FakePipeline):

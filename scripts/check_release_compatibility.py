@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real-wheel FBS, crop safety, geometry and interchange gates (two synthetic ROIs).
+"""Real-wheel FBS, shared-result, crop safety, geometry and interchange gates (two synthetic ROIs).
 
 Runs on 0.5.1 and the 0.6+ candidate. Never installs or changes the adopted pin.
 The newer-only cases qualify file-based options, not new GUI controls.
@@ -105,6 +105,29 @@ def main():
                 bins = np.maximum(1, np.floor((data[mask != 0] - start) / width) + 1)
                 np.testing.assert_allclose(a[str(index), name, "mean_discretised_intensity_X6K6"], bins.mean())
         print("Explicit FBS: two configurations/two ROIs, independent bin oracle, crop parity and exact JSON passed.", flush=True)
+
+        # Shared results: a job with several configurations (the reuse shortcut) must
+        # give the same bits as a job with each configuration alone. "roi" differs from
+        # "full" only in voxel validity, a case that Pictologics 0.5.1 copied wrongly.
+        shared = document(
+            {"step": "resample", "params": {"new_spacing": [1.5, 1.5, 1.5], "interpolation": "linear"}},
+            {"step": "discretise", "params": {"method": "FBN", "n_bins": 16}},
+            {"step": "extract_features", "params": {"families": ["intensity", "morphology", "histogram", "texture"]}},
+        )
+        configs = shared["configs"]
+        configs["full"] = configs.pop("case")
+        configs["full_32"] = copy.deepcopy(configs["full"])
+        configs["full_32"]["steps"][1]["params"]["n_bins"] = 32
+        configs["roi"] = {**copy.deepcopy(configs["full"]), "source_mode": "roi_only"}
+        together, alone = values(evaluate(shared, False)), {}
+        for name, config in configs.items():
+            alone.update(values(evaluate({"schema_version": "1.0", "configs": {name: config}}, False)))
+        assert together.keys() == alone.keys()
+        mismatched = [key for key in together if json.dumps(together[key]) != json.dumps(alone[key])]
+        assert not mismatched, mismatched[:5]
+        assert any(json.dumps(together[key]) != json.dumps(together[(key[0], "roi", key[2])])
+                   for key in together if key[1] == "full"), "the voxel-validity case must change values"
+        print(f"Shared results: {len(together)} values of three configurations equal each configuration alone, bit for bit.", flush=True)
 
         if modern:
             # Defaults and public log provenance are part of acceptance, not just API existence.

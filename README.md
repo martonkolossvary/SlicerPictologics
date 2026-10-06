@@ -418,9 +418,6 @@ for a two-reader study.
   with fine resampling spacing can then need several gigabytes of memory. With the
   crop, an axis whose voxel size is not a whole multiple of the new spacing can need a
   wide box, or the whole axis, to keep the grid (see "Use less memory").
-- Each configuration is computed on its own: the extension turns off the Pictologics
-  reuse of shared results. This reuse copied wrong values in Pictologics 0.5.1, and
-  0.6.0 fixed it. Runs with several presets therefore take longer.
 - The long table adds provenance columns (run, ROI, status, and versions) to the
   Pictologics names. Pictologics 0.6 and later call the full key `feature_key` in the
   long `format_results` layout, as the extension does (0.5.1 called it

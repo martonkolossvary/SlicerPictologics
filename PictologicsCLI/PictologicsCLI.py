@@ -950,10 +950,10 @@ def _catalog_to_records(catalog: Any) -> list[dict[str, Any]]:
 
 def _new_pipeline(pictologics: Any) -> Any:
     try:
-        # Pictologics 0.5.1 and earlier can copy wrong values from one configuration
-        # to another when its reuse shortcut (deduplication) is on. Compute every
-        # configuration on its own until the adopted release contains the fix.
-        return pictologics.RadiomicsPipeline(deduplicate=False)
+        # Pictologics 0.6.0 fixed its reuse of shared results (deduplication); 0.5.1
+        # copied wrong values between configurations. The release checks compare a
+        # run of several configurations with runs of each configuration alone.
+        return pictologics.RadiomicsPipeline(deduplicate=True)
     except Exception as exc:
         raise WorkerSetupError(
             f"cannot initialize RadiomicsPipeline: {type(exc).__name__}: {exc}"
