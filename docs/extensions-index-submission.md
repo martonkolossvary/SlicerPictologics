@@ -4,12 +4,10 @@ Target: Tier 1, catalog name **Pictologics**, category **Informatics**.
 The descriptor is [`Pictologics.json`](../Pictologics.json). This is a readiness
 checklist, not a claim of catalog acceptance or packaged-install verification.
 
-**Public submission is on hold.** The maintainer stopped local Xcode/Qt/Slicer
-SDK-build work on 2026-09-30. Installed-Slicer tests are the active qualification
-path; Extension Factory packaging follows separately authorized submission. A
-local SDK is not a prerequisite. The [local PR draft](extensions-index-pr-draft.md)
-is preparation only and must be refreshed against the exact revision eventually
-published.
+**Public submission waits for the maintainer's approval of the registration.**
+Installed-Slicer tests are the active qualification path. The Extension Factory
+builds the packages after the submission, so a local SDK build is not necessary.
+The [pull request draft](extensions-index-pr-draft.md) holds the submission text.
 
 ## Completed repository preparation
 
@@ -19,19 +17,18 @@ published.
 - Genuine screenshots using public MRHead sample data and a separate synthetic
   phantom, with source attribution and reproducible demo scripts.
 - GUI and CLI discovery, real extraction, result-table display, and regression tests.
-- Latest compatibility-qualified package adoption from PyPI; runtime pin remains 0.5.1.
+- Latest compatibility-qualified package adoption from PyPI; the runtime pin is 0.7.0
+  (adopted on 2026-10-05).
 
 ## Validation evidence
 
-On 2026-10-01, the complete upstream validator passed against a fresh clone of
-published revision `9d72093f889486c9e96d255814178235803912b5`, including both
-screenshot URLs. Its measured clone
-size was 69.1 MiB (100 MiB limit). Schema, metadata, name/category/topic, SCM,
-license, and dependency checks all passed. Validator checkout commit:
-`2a06251a679e3d5a04cccec549c5df2febc5c4b0`. The remote `main` hash was unchanged
-before and after validation. The exact published revision also passed
-[all five GitHub compatibility jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36767255998).
-Later local diagnostics/recovery edits are not covered by that GitHub run.
+On 2026-10-06, the upstream validator (ExtensionsIndex
+`36508746632a78ab70f5bfb041c26dae8359a61d`) passed all checks against a fresh clone
+of `main` at `e20ee7090e5e4ac0309f05bd3854dbe6c132eb71`, including both screenshot
+URLs. The clone size was 71.5 MB (limit 100 MB). The schema, metadata,
+name/category/topic, SCM, license, and dependency checks passed. The repository
+structure checker also passed with `Pictologics.json` added. The same revision
+passed [all five GitHub compatibility jobs](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/37448759334).
 
 Earlier local source-lifecycle testing found numeric rounding in Slicer
 5.12.4 scene table storage. The published exact-value backup/restore fix passes
@@ -45,39 +42,29 @@ on 2026-09-30; recheck the target branch and checklist at submission time.
 
 ## Remaining distribution gates
 
-Before any further tutorial or catalog image is pushed, obtain the maintainer's
-visual approval. The MRHead workflow replacement was explicitly approved on
-2026-09-22. The prior synthetic results screenshot is unchanged; no unreviewed
-replacement is included. Keep subsequent revisions local until approved; do not
-treat automated or agent visual checks as approval.
+The maintainer approved both current catalog images on 2026-10-05. Before any
+further tutorial or catalog image is pushed, obtain the maintainer's visual
+approval; automated or agent visual checks are not approval.
 
 ### Source publication and registration approval
 
-1. The authorized 2026-09-30 source publication and GitHub assessment are complete
-   for `9d72093`. Publication of the diagnostics/recovery milestone was authorized
-   on 2026-10-01; require green qualification for its exact pushed revision.
-   The workload milestone `85d766b` also passed all five qualification jobs. Source
-   publication of the large-table feedback/batch-report milestone is authorized;
-   require green checks for its exact published revision before submission.
-   No new screenshots are needed for this submission draft.
+1. The source on `main` (`e20ee70`) passed all five GitHub jobs. At submission, the
+   exact submitted revision must have green checks.
 2. Retain the maintainer's 2026-09-30 declaration of **no known related patents**;
-   update it if new information becomes known. Review optional GitHub
-   presentation cleanup: Wiki and Projects are currently enabled, while Discussions
-   is disabled. Do not change public repository settings under the present hold.
-   The extension homepage already points to the README; an empty GitHub About
-   website field does not invalidate that URL. These presentation items are not
-   evidence of an unsafe or mechanically unusable catalog entry.
-3. Re-run the upstream
+   update it if new information becomes known. The template asks to hide unused
+   GitHub features: turn off Wiki and Projects (Discussions is already off), and turn
+   off Releases and Packages in the About settings. The extension homepage points to
+   the README; the empty GitHub About website field does not invalidate it.
+3. Run the upstream
    [description validator](https://github.com/Slicer/ExtensionsIndex/blob/main/scripts/check_description_files.py)
-   on `Pictologics.json` from a scratch ExtensionsIndex checkout. It must inspect a
-   fresh clone of published `main`, not only the local working tree, and verify
-   repository size, schema, metadata, topic, license, and public image URLs. This
-   passed for the revision above; repeat if submission assets or metadata change.
+   on `Pictologics.json` from a scratch ExtensionsIndex checkout again if the catalog
+   data, icon or screenshots change. It must inspect a fresh clone of published
+   `main`, not only the local working tree.
 4. With explicit registration approval, open the ExtensionsIndex submission using
    the current [PR checklist](https://github.com/Slicer/ExtensionsIndex/blob/main/.github/PULL_REQUEST_TEMPLATE.md)
-   and the appropriate Preview/Stable branches. Adapt the local draft and state
-   unverified platforms/builds explicitly. Do not mark this step complete merely
-   because the validator passes.
+   and the branches `main` (Preview) and `5.12` (Stable). Adapt the draft, and state
+   the untested platforms and builds. Do not mark this step complete only because
+   the validator passes.
 
 ### After authorized submission: distribution acceptance
 
@@ -102,9 +89,7 @@ treat automated or agent visual checks as approval.
    Manager before announcing availability. Keep source tests, package-content
    auditing, and installed-package acceptance as separate evidence.
 
-No ExtensionsIndex pull request has been opened by this task. Official package
-build/install acceptance remains outstanding, but absence of a local Slicer build
-tree does not block a Python-only submission. On 2026-09-30, the maintainer authorized
-publication of this reviewed source milestone and assessment of GitHub tests.
-Catalog registration, tags/releases, new imagery, and public settings changes
-remain outside that authorization.
+No ExtensionsIndex pull request is open. Package build and install acceptance follow
+the submission; a local Slicer build tree is not necessary for this Python-only
+extension. Catalog registration, tags or releases, new images, and public settings
+changes need the maintainer's approval.

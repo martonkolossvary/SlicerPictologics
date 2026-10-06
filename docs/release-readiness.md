@@ -829,3 +829,23 @@ and Intel macOS, and real Slicer on Linux. Its publish job committed the 0.7.0 p
 five jobs. The Windows Slicer application check still uses 0.5.1 evidence. The
 maintainer approved new [catalog images](screenshots/README.md) with 0.7.0 on
 2026-10-05.
+
+## 2026-10-06: Shared results, Slicer Preview on macOS, and catalog check
+
+- **Shared results on.** The worker now creates the pipeline with
+  `deduplicate=True`. Pictologics 0.6.0 fixed the reuse bug that made the extension
+  turn it off. A new gate in `check_release_compatibility.py` runs three
+  configurations in one job and each configuration alone. All 978 values were
+  identical, bit for bit, with Numba 0.62.1 in Slicer and with Numba 0.68.0 on Apple
+  silicon. The third configuration differs only in voxel validity (`roi_only`); with
+  Pictologics 0.5.1 the gate fails on it, as intended.
+- **Speed.** For the six standard presets on a 113,081-voxel region, the reuse made
+  the run 1.3 times faster (0.3 s against 0.2 s), with identical values.
+- **Slicer Preview on macOS.** Preview 5.13.0 (2026-10-01 build, Intel/Rosetta)
+  passed all 57 integration tests with the published 0.7.0 and the reuse on. Stable
+  5.12.4 also passed all 57 again.
+- **Catalog check.** The upstream description validator and the repository
+  structure checker passed for `main` at `e20ee70` (see the
+  [submission checklist](extensions-index-submission.md)).
+- Windows Slicer with 0.7.0, the GitHub presentation settings, and the registration
+  approval remain open.

@@ -1,9 +1,10 @@
-# Pictologics catalog submission draft — do not submit yet
+# Pictologics catalog submission draft (do not submit yet)
 
-Prepared on 2026-09-30. The maintainer authorized publishing the source milestone,
-including this draft, but not submitting it to ExtensionsIndex. This is not an
-opened pull request or approval from Slicer maintainers. Keep the [handoff checklist](extensions-index-submission.md)
-and [validation record](release-readiness.md) alongside this draft.
+Updated on 2026-10-06. This is the draft text for the ExtensionsIndex pull request.
+It is not an opened pull request or approval from Slicer maintainers. Submit it only
+after the maintainer approves the registration. Keep the
+[submission checklist](extensions-index-submission.md) and the
+[validation record](release-readiness.md) with this draft.
 
 ## Proposed title
 
@@ -11,90 +12,75 @@ Add Pictologics (Tier 1, Informatics)
 
 ## Proposed description
 
-Pictologics extracts radiomics features—quantitative measurements of image
-intensity, shape, and texture—from 3D images and segmented regions. It provides
-background extraction, multi-region and batch analysis, reusable settings,
-readable results/provenance, and full-precision CSV/JSON export. It is research
-software, not for clinical diagnosis or treatment decisions.
+Pictologics extracts radiomics features (quantitative measurements of image
+intensity, shape and texture) from 3D images and segmented regions. It runs the
+extraction in the background, analyzes several regions and batches of cases, saves
+reusable settings, shows the results with their provenance, and exports
+full-precision CSV or JSON. It is research software, not for clinical diagnosis or
+treatment decisions.
 
-- Repository/homepage: <https://github.com/martonkolossvary/SlicerPictologics>
-- Catalog identity: `Pictologics`; category: `Informatics`; tier: `1`.
-- Descriptor: [`Pictologics.json`](../Pictologics.json), following repository `main`.
-- License: Apache-2.0, in the root `LICENSE` file and identified in the README.
-- Modules: **Pictologics** (GUI) and **Pictologics Worker (internal)** (CLI).
-- Package integration: latest compatibility-qualified Pictologics release, currently
-  `0.5.1`, with exact tested dependency constraints. New upstream releases are
-  adopted only after compatibility gates pass; an untested PyPI update is not
-  installed blindly.
-- No other Slicer extensions are required. Python wheels are installed into a
-  private environment after explicit user consent, without replacing Slicer's
-  shared packages.
+- Repository and homepage: <https://github.com/martonkolossvary/SlicerPictologics>
+- Catalog name `Pictologics`, category `Informatics`, tier 1.
+- Descriptor: [`Pictologics.json`](../Pictologics.json), which follows the branch `main`.
+- License: Apache-2.0, in the root `LICENSE` file and named in the README.
+- Modules: **Pictologics** (the window) and **Pictologics Worker (internal)** (the
+  background command-line module).
+- Package: the latest compatibility-qualified Pictologics release, now 0.7.0, with
+  exact tested dependency versions for each platform. Intel macOS, including Apple
+  silicon under Rosetta, uses Numba 0.62.1; Linux and Windows use Numba 0.68.0. A new
+  upstream release is adopted only after all compatibility checks pass.
+- No other Slicer extension is required. Python wheels go into a private folder
+  after the user agrees; Slicer's shared packages do not change.
 
-## Checklist mapping for maintainer review
+## Checklist (upstream template of 2026-10-04)
 
-Adapt this evidence to the upstream PR template current at submission time.
-Checked items describe repository preparation, not catalog acceptance.
+- [x] The name `Pictologics` is specific and does not start with `Slicer`.
+- [x] The repository name is `SlicerPictologics`.
+- [x] The repository has the `3d-slicer-extension` topic.
+- [x] The description gives the use in two sentences, with the research-only limit.
+- [x] Known related patents: none. The maintainer declared this on 2026-09-30. It
+  records the maintainer's knowledge, not a legal search.
+- [x] License: Apache-2.0 in `LICENSE`. The official validator accepts `LICENSE`, so
+  a `LICENSE.txt` copy is not necessary.
+- [x] `scm_url` and `scm_revision` (`main`) are correct.
+- [x] The icon and the two screenshot URLs are raw download URLs, and they load.
+- [x] `Pictologics.json` and the top-level `CMakeLists.txt` agree; there are no
+  extension dependencies.
+- [x] The homepage (README) gives the name, a short description, images, and one
+  description for each module.
+- [ ] Publication: add a link if the maintainer supplies one. Do not invent one.
+- [ ] Unused GitHub features: Wiki and Projects are on, and Discussions is off. Turn
+  off Wiki and Projects, and turn off Releases and Packages in the About settings.
+- [x] Safe: the extension downloads no binaries from unreliable sources. Wheels come
+  from PyPI, or from the pip index that the user configured, after consent. Images
+  and results stay on the computer, and the extension sends no data anywhere.
 
-- [x] Catalog/repository naming, `3d-slicer-extension` topic, category, and SCM
-  reference are consistent.
-- [x] Plain-language description includes the research-only limitation.
-- [x] Apache-2.0 distribution permission is present. The official validator accepts
-  `LICENSE`; a duplicate `LICENSE.txt` is unnecessary.
-- [x] CMake metadata and the JSON descriptor agree on identity and dependencies.
-- [x] Raw catalog icon and two screenshot URLs are publicly reachable. The genuine
-  MRHead workflow image has two illustrative ROIs; the results image is explicitly
-  labeled as a separate synthetic-phantom run. Existing approved assets are reused.
-- [x] README includes the extension name, purpose, both module descriptions,
-  illustrated usage, limitations, license, and links to the package/documentation.
-- [x] Runtime dependency installation requires explicit consent and uses constrained,
-  wheel-only package requirements. The configured pip index is honored, including
-  institutional mirrors; it is not forcibly locked to PyPI. Developers may explicitly
-  select a local source checkout. No direct URL/VCS requirements are accepted.
-- [x] The reviewed extension runtime processes images/results locally; it has no
-  image/result upload or telemetry implementation. Package installation uses the
-  network after consent. This is a scoped source review, not a guarantee about
-  arbitrary external dependencies or a user's custom package mirror.
-- [x] On 2026-09-30 the maintainer declared **no known related patents**. This records
-  the maintainer's knowledge, not legal clearance or an exhaustive patent search.
-- [ ] Add any relevant publication supplied by the maintainer, if available. No
-  Pictologics publication has been supplied for this draft; do not invent one.
-- [ ] Review unused GitHub features. Wiki/Projects are enabled and Discussions is
-  disabled as of this review. No public settings were changed. Releases/Packages
-  About visibility has not been verified.
+## Validation and limits
 
-## Validation and explicit limits
+- The official validator (ExtensionsIndex `3650874`, 2026-10-04) passed all checks
+  on a fresh clone of `main` at `e20ee70` on 2026-10-06. It checked the repository
+  size (71.5 MB of 100 MB), the schema, name, category, topic, license, dependencies,
+  and the icon and screenshot URLs. The structure checker also passed.
+- GitHub run [37448759334](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/37448759334)
+  passed all five jobs for `e20ee70`: released-wheel checks on Linux, Windows and
+  Intel macOS, real Slicer 5.12.4 on Linux, and unit tests with 100% coverage.
+- The adoption run [37331419353](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/37331419353)
+  qualified Pictologics 0.7.0 on Linux, Windows and Intel macOS.
+- Installed Slicer on macOS (Intel, Rosetta), with the published 0.7.0: Stable 5.12.4
+  and Preview 5.13.0 (2026-10-01 build) each passed all 57 integration tests on
+  2026-10-06. These tests load the modules from the source folder, not from an
+  Extension Factory package.
+- Windows Slicer Stable 5.12.4 and Preview 5.13.0 passed with Pictologics 0.5.1 on
+  2026-10-04. Windows with 0.7.0 is not tested yet.
+- A local Slicer SDK build is not necessary. After the submission, check the
+  Extension Factory packages with `scripts/check_extension_package.py`. Then install
+  the real packages, and repeat the restart, extraction, export and scene checks.
 
-- The official catalog validator at
-  `2a06251a679e3d5a04cccec549c5df2febc5c4b0` passes against a fresh published clone
-  of `dd1c5fc6b7365022fdc54e63a093a34ba90a8a03` (2026-09-30). It checks schema,
-  metadata, repository size/topic, license, dependencies, and raw image URLs.
-- That published baseline has a green five-job GitHub qualification run:
-  <https://github.com/martonkolossvary/SlicerPictologics/actions/runs/36523318487>.
-  This newer source milestone is not covered by that older remote run. Consult its
-  exact-commit GitHub results and the current validation record before writing the
-  eventual PR's test summary.
-- Installed-Slicer functional/regression tests use source module paths. They are
-  **not** acceptance of an Extension Factory archive or Extensions Manager install.
-  The 2026-09-30 local run passed all 41 tests without skips, four separate
-  install/restart/replacement/restart processes, and independent exact-value
-  CSV/JSON read-back. Portable checks passed 537 tests / 400 subtests with 100%
-  scoped library/worker coverage. Refresh these counts after any source change.
-- Stable macOS application testing and the published Linux Slicer CI are available;
-  actual Windows Slicer and Preview application acceptance remain unverified.
-  Cross-platform Python-wheel tests do not fill those gaps.
-- No full local Slicer SDK build is required or being pursued. After submission is
-  authorized, inspect the Extension Factory artifacts with
-  `scripts/check_extension_package.py`, then install the actual packages without
-  source paths and repeat restart/extraction/export/lossless-scene checks.
+## Before copying this into a public pull request
 
-## Before copying this into a public PR
-
-1. Source commit/push was authorized on 2026-09-30. Record successful GitHub checks
-   for that exact published revision; registration still needs separate approval.
-2. Review the remaining presentation items above and refresh the validator, URLs,
-   source revision, and test evidence. Do not attach local logs containing user
-   paths or unreviewed screenshots.
-3. Obtain explicit authorization to register the extension. Recheck the index
-   branches (`main` for Preview and currently `5.12` for Stable), use the current
-   upstream template, and state testing gaps honestly. Do not claim Tier 3
-   cross-platform packaged-build qualification.
+1. Run the Windows Slicer check with 0.7.0, and update the results above.
+2. Turn off the unused GitHub features, and add a publication link if one exists.
+3. Run the validator again if the catalog data, icon or screenshots change.
+4. Get the maintainer's approval to register. Use the ExtensionsIndex branches
+   `main` (Preview) and `5.12` (Stable) and the current template, and name the
+   untested platforms.

@@ -444,8 +444,8 @@ checks are in a temporary folder and are not kept.
 
 ### Remaining before publication
 
-1. Run the installed-Slicer suite with the published wheel on Windows and on Slicer
-   Preview.
+1. Run the installed-Slicer suite with the published wheel on Windows, Stable and
+   Preview. On macOS, Stable 5.12.4 and Preview 5.13.0 passed it on 2026-10-06.
 2. Install a built extension package, restart Slicer and run it.
 3. Submit the ExtensionsIndex entry for Preview and Stable.
 - The maintainer approved new catalog screenshots with 0.7.0 on 2026-10-05.
