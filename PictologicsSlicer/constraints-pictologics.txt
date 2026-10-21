@@ -1,5 +1,5 @@
 # Generated from wheel-only resolutions; publish only after all gates pass.
-# Qualified wrapper revision: 5da869fc108d6360a5ee1fb53f3f93c8530018ad
+# Qualified wrapper revision: 573420a7281990d610d7897483115f37f7c13d42
 # slicerpictologics-runtime: cpython|3.12|linux|x86_64
 # slicerpictologics-runtime: cpython|3.12|win32|AMD64
 # slicerpictologics-runtime: cpython|3.12|darwin|x86_64
@@ -10,11 +10,11 @@ nibabel==5.4.2
 numba==0.62.1; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "darwin" and platform_machine == "x86_64")
 numba==0.68.0; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
 numpy==2.3.5; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "darwin" and platform_machine == "x86_64")
-numpy==2.5.3; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
+numpy==2.5.4; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64")
 packaging==26.3
 pandas==3.0.6
-pictologics==0.7.1
-pillow==12.3.0
+pictologics==0.8.0
+pillow==13.0.0
 pydicom==3.0.2
 python-dateutil==2.9.0.post0
 python-gdcm==3.2.6
