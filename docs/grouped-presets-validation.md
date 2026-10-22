@@ -64,7 +64,7 @@ Ignored evidence: `local-output/grouped-presets-2026-10-22/integration.log` and
 the previously exported public anatomical CT scene. Its new-control screenshot
 remains outside Git pending visual approval; it does not represent a cardiac
 extraction on the liver demonstration. The separately approved anatomical
-workflow image is retained in the documentation.
+workflow and matching results/provenance images are retained in the documentation.
 
 ## Remaining scope
 

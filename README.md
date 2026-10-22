@@ -44,11 +44,11 @@ Decathlon liver-tissue and liver-tumour annotations. Both segments were analyzed
 **170 features per segment, 340 total**, using Pictologics 0.8.0 and `standard_fbn_32`.
 These are research-dataset annotations, not clinical validation by this project.
 
-![Pictologics results from real extraction on the synthetic regions](docs/screenshots/pictologics-results.png)
+![Pictologics results and provenance from the same anatomical liver CT extraction](docs/screenshots/pictologics-results.png)
 
-Results-table example: a separate run on the **synthetic CT-like phantom**, not the
-anatomical CT run above. This earlier genuine Slicer capture uses Pictologics 0.7.0
-and `standard_fbn_32`; the workflow capture above uses 0.8.0.
+Results/provenance browser: the **same anatomical liver CT run** shown above,
+with 340 successful feature rows, native feature identifiers, preprocessing details
+and Pictologics 0.8.0 provenance. Both images are genuine Slicer captures.
 See [sample attribution, capture provenance, and reproduction](docs/screenshots/README.md).
 
 Separate [public CT/MRI examples and reproducible workload benchmarks](docs/performance.md)

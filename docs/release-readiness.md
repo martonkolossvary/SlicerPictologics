@@ -10,9 +10,9 @@ templates and extended release API checks. All 614 portable tests passed with
 Slicer suite passed all 59 tests with zero failures/skips, including the new
 six-configuration General/coronary/myocardium extraction and exports.
 
-The maintainer separately approved the anatomical CT workflow image, now retained
-in the local documentation. The new-control UI preview and anatomical results
-browser image remain local pending visual approval. The maintainer authorized
+The maintainer separately approved the anatomical CT workflow and matching
+results/provenance browser images, now retained in the documentation. The separate
+new-control UI preview remains local. The maintainer authorized
 commit/push on 2026-10-22. These local checks do not establish new GitHub CI or
 native Windows/Preview acceptance; no release or registration is claimed.
 Pictologics remains 0.8.0.

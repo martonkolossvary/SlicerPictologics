@@ -14,13 +14,12 @@ The [pull request draft](extensions-index-pr-draft.md) holds the submission text
 - Matching CMake project/catalog identity, description, contributor, and Apache-2.0 license.
 - GitHub `3d-slicer-extension` topic and public repository homepage.
 - Public 128-pixel catalog icon and explicit 256-pixel runtime icon.
-- Genuine screenshots using public CTLiver data with matching liver/tumour
-  annotations and a separate synthetic results example, with source attribution
-  and reproducible demo scripts. The anatomical workflow was approved on 2026-10-22.
+- Genuine workflow and results/provenance screenshots from the same public CTLiver
+  run with matching liver/tumour annotations, source attribution and reproducible
+  demo scripts. Both anatomical captures were approved on 2026-10-22.
 - GUI and CLI discovery, real extraction, result-table display, and regression tests.
 - Latest compatibility-qualified package adoption from PyPI; the runtime pin is 0.8.0
-  (adopted on 2026-10-21 UTC, commit `ee2e936`). The workflow capture uses 0.8.0;
-  the separate synthetic results capture retains its original 0.7.0 provenance.
+  (adopted on 2026-10-21 UTC, commit `ee2e936`). Both current captures use 0.8.0.
 
 ## Validation evidence
 

@@ -1,8 +1,8 @@
 # Catalog screenshots
 
-## Anatomical workflow (approved 2026-10-22)
+## Anatomical workflow and results (approved 2026-10-22)
 
-The maintainer visually approved the anatomical workflow on 2026-10-22.
+The maintainer approved both anatomical liver captures on 2026-10-22.
 `pictologics-workflow.png` now uses the public **CTLiver** scan with its matching Medical Segmentation Decathlon
 **Task03_Liver / liver_100** annotations instead of generated ellipsoids. The two
 ROIs are **Liver tissue (MSD label 1)** and **Liver tumour (MSD label 2)**. Label 1
@@ -16,8 +16,12 @@ the operating-system title bar, at **3680 × 1988**. Its SHA-256 is
 It replaces the earlier MRHead workflow described in the historical section below.
 This approved capture predates the grouped-preset browser added later that day;
 the separate new-control preview remains local pending visual approval.
-The separately generated anatomical results-browser capture remains a local draft;
-the published `pictologics-results.png` is still the approved synthetic example.
+`pictologics-results.png` is the matching, genuine read-only results/provenance
+browser capture from the **same run**, showing 340 feature rows and the selected
+feature's native identifiers, preprocessing and Pictologics 0.8.0 provenance.
+Resolution: **2900 × 1900**; SHA-256:
+`9c2859b6908cb16e065cbc16093f9c79cbf80636577fab354b6ddf1b1ab68194`.
+It replaces the earlier synthetic results-table screenshot described below.
 
 [`create_anatomical_ct_demo.py`](../../scripts/create_anatomical_ct_demo.py)
 verifies both file hashes and checks all physical-grid corners (maximum allowed
@@ -53,21 +57,21 @@ set these environment variables before an isolated, visible Slicer launch:
 Use the same executable/module paths as the command below, substituting
 `scripts/create_anatomical_ct_demo.py` as the Python script. The script refuses
 to reuse an existing output directory or a scene containing a volume. Keep new
-captures local until the maintainer has visually reviewed them. Only the anatomical
-workflow replacement has been approved in this review; further image replacements
-require their own approval.
+captures local until the maintainer has visually reviewed them. Both anatomical
+workflow and matching results-browser replacements are approved; further image
+replacements require their own approval.
 
-Local draft verification on 2026-10-22 used Slicer 5.12.4 (Intel/Rosetta),
+Capture verification on 2026-10-22 used Slicer 5.12.4 (Intel/Rosetta),
 Pictologics 0.8.0, and `standard_fbn_32`. The original annotation contains
 5,003,071 label-1 voxels and 1,569,689 label-2 voxels; the display crop retained
 all of them. Maximum physical-grid corner disagreement was 0.00004465 mm.
 Actual extraction returned **170 features per ROI, 340 rows total, all `ok`**.
 CSV (including provenance/catalog sidecars), JSON and the MRB scene were saved;
-the disposable application exited successfully. Draft workflow and results-browser
+the disposable application exited successfully. Approved workflow and results-browser
 captures are 3680 × 1988 and 2900 × 1900 respectively. These observations verify
 the demonstration workflow, not clinical annotation accuracy or general performance.
 
-## Earlier captures: historical workflow and current results image
+## Earlier captures: historical workflow and results images
 
 Captured on 2026-10-05 in 3D Slicer 5.12.4 on macOS (Intel/Rosetta), using the
 published Pictologics 0.7.0 wheel with Numba 0.62.1 and NumPy 2.3.5. The extension
@@ -84,7 +88,7 @@ The maintainer visually approved both on 2026-10-05.
   macOS title bar; the view annotations and segment names identify the public sample
   and the demonstration ROIs. It replaces the 2026-09-25 image, which showed the
   window before the reader, extra-column, scanner, crop, batch and diagnostics controls.
-- `pictologics-results.png`: captured from a **separate synthetic phantom run** with
+- Historical `pictologics-results.png` (replaced on 2026-10-22): captured from a **separate synthetic phantom run** with
   `standard_fbn_32` (340 rows, all `ok`). It shows the actual result table (columns L
   to R, with `pictologics_version` 0.7.0) and the output controls. Resolution: 3680 ×
   1916, without the macOS title bar. It replaces the 2026-09-21 image, which showed
@@ -106,14 +110,14 @@ voxels. Actual extraction produced **170 features per ROI, 340 rows total, all
 statuses `ok`**, with `standard_fbn_32`. The image contains no fabricated results.
 The sample volume itself is not included in this repository.
 
-Earlier approved PNG SHA-256 values (the results PNG is still current):
+Earlier approved PNG SHA-256 values (both images have been replaced):
 
 - `pictologics-workflow.png`:
   `c482097887461079c7c3023356d9ff431bc4d71704c327d3929563441956f73a`
 - `pictologics-results.png`:
   `e4dfdebe72321afa0fd63b42e6a1a0eb5bbd1c24a5e7339f81a5859dc3fe6207`
 
-## Synthetic results-table example
+## Historical synthetic results-table example
 
 The CT-like phantom is generated mathematically by
 [`create_catalog_demo.py`](../../scripts/create_catalog_demo.py), with random seed
