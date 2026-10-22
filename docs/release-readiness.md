@@ -1,5 +1,51 @@
 # Release readiness
 
+## Grouped presets: local implementation and validation (2026-10-22)
+
+The [grouped-preset validation record](grouped-presets-validation.md) records the
+local General (6), Coronary plaque (30) and Myocardium (30) browser, individual
+selection and descriptions, profiles/scene persistence, package-sourced worker
+templates and extended release API checks. All 614 portable tests passed with
+100% scoped coverage; lint and typing passed. The installed macOS Stable/Rosetta
+Slicer suite passed all 59 tests with zero failures/skips, including the new
+six-configuration General/coronary/myocardium extraction and exports.
+
+The maintainer separately approved the anatomical CT workflow image, now retained
+in the local documentation. The new-control UI preview and anatomical results
+browser image remain local pending visual approval. The maintainer authorized
+commit/push on 2026-10-22. These local checks do not establish new GitHub CI or
+native Windows/Preview acceptance; no release or registration is claimed.
+Pictologics remains 0.8.0.
+
+## 2026-10-22: Pictologics 0.8.0 synchronization and application checks
+
+The qualified requirement and runtime constraints are now at **0.8.0**, published
+as `ee2e93667050ef3555c3806e3f8c48fd29fd2336`. The local `pre-submission` checkout
+was fast-forwarded to that commit; current-version documentation was refreshed,
+while historical screenshots and their 0.7.0 capture provenance were retained.
+
+[Adoption run 39680464506](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/39680464506)
+passed all native resolution/merge/qualification/publication jobs: 608 portable
+tests with 100% scoped coverage, released-wheel checks on Linux/Windows/Intel
+macOS, and all 57 real Linux Slicer integration tests.
+
+The earlier dispatch failed because discovery preceded the PyPI wheel upload by
+about 10.5 minutes. A [separate implementation plan](pictologics-release-notification-plan.md)
+specifies upstream publication/notification ordering and visibility checks. No
+upstream code was changed by preparing that plan.
+
+The [macOS 0.8.0 application record](macos-080-validation.md) records current local
+outcomes and remaining limits: all 57 Stable 5.12.4 integration tests passed with
+zero skips (808.529 seconds), all four lifecycle phases passed with pip calls
+1/0/1/0 and exact 340-row restoration, and public CT/MRI widget runs each committed
+340 successful rows and exported/saved results. The bounded mixed batch passed
+actual failure/cancellation/recovery, preserving 10,880 rows and three report
+histories exactly through scene reload. Portable checks passed 608 tests with
+100% scoped coverage; lint and typing passed. Windows/Preview 0.8.0 application acceptance,
+Extension Factory package acceptance and public registration remain distinct gates.
+No release, registration, settings change or new image publication is part of this
+documentation/test update. The dated records below retain their original scope.
+
 Review date: 2026-10-04. Extension version remains **0.1.0**; the existing job
 manifest schema is **1** and result-payload schema is **2**. This review changes
 none of those versions.

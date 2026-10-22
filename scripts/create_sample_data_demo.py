@@ -29,7 +29,8 @@ def fit_panel(widget) -> None:
     section is collapsed, and the panel is a little wider.
     """
     for items in (widget.ui.segmentListWidget, widget.ui.standardConfigListWidget):
-        items.setFixedHeight(items.sizeHintForRow(0) * items.count + 2 * items.frameWidth)
+        visible = sum(not items.item(index).isHidden() for index in range(items.count))
+        items.setFixedHeight(items.sizeHintForRow(0) * visible + 2 * items.frameWidth)
     widget.ui.extraColumnsTextEdit.setFixedHeight(44)
     widget.ui.profilesCollapsibleButton.collapsed = True
     window = slicer.util.mainWindow()

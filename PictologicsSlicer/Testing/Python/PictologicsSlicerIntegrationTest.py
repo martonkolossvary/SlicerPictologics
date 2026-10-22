@@ -560,6 +560,81 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         widget.ui.wholeVolumeCheckBox.setChecked(True)
         return widget
 
+    def test_grouped_presets_preserve_hidden_selections_profiles_and_scene(self) -> None:
+        widget = self._feedback_widget()
+        self.assertEqual(widget.ui.presetGroupCombo.count, 3)
+        self.assertEqual(widget.ui.standardConfigListWidget.count, 66)
+        widget.ui.presetGroupCombo.setCurrentIndex(0)
+        self.assertEqual(sum(not widget.ui.standardConfigListWidget.item(i).isHidden()
+                             for i in range(66)), 6)
+        self.assertEqual(widget._selectedConfigurations(), ["standard_fbn_32"])
+        items = {str(widget.ui.standardConfigListWidget.item(i).data(gui_module.ITEM_VALUE_ROLE)):
+                 widget.ui.standardConfigListWidget.item(i) for i in range(66)}
+        widget.ui.presetGroupCombo.setCurrentIndex(1)
+        self.assertEqual(sum(not item.isHidden() for item in items.values()), 30)
+        self.assertTrue(items["standard_fbn_32"].isHidden())
+        items["coronary_ncp_fbn_16"].setCheckState(qt.Qt.Checked)
+        widget.ui.standardConfigListWidget.setCurrentItem(items["coronary_ncp_fbn_16"])
+        self.assertIn("0.5 mm", widget.ui.presetDescriptionLabel.text)
+        self.assertIn("350.999 HU", widget.ui.presetDescriptionLabel.text)
+        widget.ui.presetGroupCombo.setCurrentIndex(2)
+        self.assertEqual(sum(not item.isHidden() for item in items.values()), 30)
+        items["lv_myo_orig"].setCheckState(qt.Qt.Checked)
+        expected = ["standard_fbn_32", "coronary_ncp_fbn_16", "lv_myo_orig"]
+        self.assertEqual(widget._selectedConfigurations(), expected)
+        self.assertIn("Coronary plaque: 1", widget.ui.presetSelectionLabel.text)
+        self.assertIn("Myocardium: 1", widget.ui.presetSelectionLabel.text)
+        path = self.temporary_directory / "cardiac-profile.json"
+        path.write_text(json.dumps(build_profile("Mixed cardiac", expected, None)))
+        widget.onClearPresets()
+        self.assertEqual(widget._selectedConfigurations(), [])
+        dialog_qt = _qt_with(QFileDialog=SimpleNamespace(getOpenFileName=lambda *args: str(path)))
+        with patch.object(gui_module, "qt", dialog_qt), patch.object(slicer.util, "errorDisplay") as errors:
+            widget.onLoadProfile()
+            errors.assert_not_called()
+        self.assertEqual(widget._selectedConfigurations(), expected)
+        # Scene parameter restoration must retain native IDs, not display labels.
+        scene = self.temporary_directory / "grouped-presets.mrb"
+        self.assertTrue(slicer.util.saveScene(str(scene)))
+        slicer.mrmlScene.Clear()
+        self.assertTrue(slicer.util.loadScene(str(scene)))
+        self.assertEqual(widget._selectedConfigurations(), expected)
+
+    @unittest.skipUnless(os.environ.get(RUN_REAL_CLI_TEST_ENV) == "1", "Real worker gate is opt-in")
+    def test_real_grouped_cardiac_presets_run_only_the_checked_configurations(self) -> None:
+        dependency_path, _ = _qualified_dependency_target(self.logic)
+        widget = self._feedback_widget()
+        image = (100 + np.arange(np.prod(ARRAY_SHAPE_KJI), dtype=np.float32) * 0.01).reshape(ARRAY_SHAPE_KJI)
+        slicer.util.updateVolumeFromArray(self.fixture.volume_node, image)
+        widget.ui.segmentationSelector.setCurrentNode(self.fixture.segmentation_node)
+        widget.ui.wholeVolumeCheckBox.setChecked(False)
+        widget.onClearPresets()
+        requested = {"standard_fbn_8", "coronary_orig", "coronary_fbn_16", "coronary_fbs_16",
+                     "lv_myo_orig", "lv_myo_fbs_16"}
+        for index in range(widget.ui.standardConfigListWidget.count):
+            item = widget.ui.standardConfigListWidget.item(index)
+            item.setCheckState(qt.Qt.Checked if str(item.data(gui_module.ITEM_VALUE_ROLE)) in requested else qt.Qt.Unchecked)
+        inspection = inspect_target(dependency_path, widget.logic.pictologicsRequirement())
+        with patch.object(widget.logic, "ensureDependencies", return_value=inspection), patch.object(widget.logic, "showTable"):
+            widget.onRun()
+            cli_node, job = widget._cliNode, widget._activeJob
+            self.assertIsNotNone(job)
+            observation = _wait_for_cli_terminal(cli_node, widget.logic, job, timeout_seconds=CLI_TIMEOUT_SECONDS)
+            self.assertTrue(observation.terminal_state.completed)
+            self.assertFalse(observation.terminal_state.failed, observation.terminal_state.error_text)
+            deadline = time.monotonic() + 5
+            while widget._activeJob is not None and time.monotonic() < deadline:
+                _pump_slicer_events()
+        self.assertIsNone(widget._activeJob)
+        table = widget.ui.outputTableSelector.currentNode()
+        rows = widget.logic.rowsFromTable(table)
+        self.assertEqual({row["config"] for row in rows}, requested)
+        self.assertTrue(all(row["status"] == "ok" for row in rows))
+        provenance = widget.logic.provenanceHistory(table)[0]["provenance"]
+        self.assertEqual(set(provenance["effective_configuration"]["configs"]), requested)
+        widget.logic.exportTable(table, self.temporary_directory / "cardiac.csv")
+        widget.logic.exportTable(table, self.temporary_directory / "cardiac.json")
+
     def test_whole_volume_is_off_by_default(self) -> None:
         parameter_node = self.logic.getParameterNode()
         self.logic.setDefaultParameters(parameter_node)

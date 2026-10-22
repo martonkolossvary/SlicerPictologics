@@ -210,6 +210,28 @@ def _check_refinement_values(pipeline, config_name: str) -> None:
     np.testing.assert_array_equal(mask_array, np.ones_like(mask_array))
 
 
+def _check_grouped_presets() -> None:
+    """Fail adoption if a wheel changes names or settings shown by the GUI."""
+    from PictologicsLib.preset_catalog import PRESET_GROUPS, PRESETS
+
+    for template, group in zip(("standard", "coronary", "lv"), PRESET_GROUPS, strict=True):
+        pipeline = pictologics.RadiomicsPipeline.from_template(template)
+        expected = {name for name, preset in PRESETS.items() if preset.group == group}
+        if set(pipeline.list_configs()) != expected:
+            raise RuntimeError(f"Bundled {template} configuration names differ from the GUI catalogue")
+        configs = pipeline.to_dict(config_names=sorted(expected))["configs"]
+        for name, config in configs.items():
+            steps = config["steps"]
+            spacing = [step["params"]["new_spacing"] for step in steps if step["step"] == "resample"]
+            if spacing != [[PRESETS[name].spacing] * 3]:
+                raise RuntimeError(f"Bundled {name} resampling differs from the GUI memory preflight")
+            if PRESETS[name].intensity_range is not None:
+                ranges = [(step["params"]["range_min"], step["params"]["range_max"])
+                          for step in steps if step["step"] == "resegment"]
+                if ranges != [PRESETS[name].intensity_range]:
+                    raise RuntimeError(f"Bundled {name} HU range differs from the GUI description")
+
+
 def main() -> int:
     installed = version("pictologics")
     if str(pictologics.__version__) != installed:
@@ -219,6 +241,7 @@ def main() -> int:
         )
 
     pipeline = pictologics.RadiomicsPipeline()
+    _check_grouped_presets()
     standard = set(pipeline.get_all_standard_config_names())
     if standard != EXPECTED_STANDARD_CONFIGURATIONS:
         raise RuntimeError(

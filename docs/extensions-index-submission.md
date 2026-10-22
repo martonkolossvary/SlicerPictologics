@@ -14,13 +14,28 @@ The [pull request draft](extensions-index-pr-draft.md) holds the submission text
 - Matching CMake project/catalog identity, description, contributor, and Apache-2.0 license.
 - GitHub `3d-slicer-extension` topic and public repository homepage.
 - Public 128-pixel catalog icon and explicit 256-pixel runtime icon.
-- Genuine screenshots using public MRHead sample data and a separate synthetic
-  phantom, with source attribution and reproducible demo scripts.
+- Genuine screenshots using public CTLiver data with matching liver/tumour
+  annotations and a separate synthetic results example, with source attribution
+  and reproducible demo scripts. The anatomical workflow was approved on 2026-10-22.
 - GUI and CLI discovery, real extraction, result-table display, and regression tests.
-- Latest compatibility-qualified package adoption from PyPI; the runtime pin is 0.7.0
-  (adopted on 2026-10-05).
+- Latest compatibility-qualified package adoption from PyPI; the runtime pin is 0.8.0
+  (adopted on 2026-10-21 UTC, commit `ee2e936`). The workflow capture uses 0.8.0;
+  the separate synthetic results capture retains its original 0.7.0 provenance.
 
 ## Validation evidence
+
+The [0.8.0 adoption run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/39680464506)
+passed native resolution and released-wheel qualification on Linux, Windows and
+Intel macOS, plus 608 portable tests/100% scoped coverage and all 57 real Linux
+Slicer integration tests. The [macOS 0.8.0 application record](macos-080-validation.md)
+records the separate checks on this machine. Windows application acceptance with
+0.8.0 remains outstanding; its earlier 0.5.1 results are historical evidence.
+
+Stable macOS 5.12.4/0.8.0 acceptance on 2026-10-22 passed all 57 integration tests,
+the four-process dependency lifecycle, public CT/MRI widget runs, and mixed-batch
+failure/cancellation/recovery with exact scene/report restoration. Preview and
+Windows 0.8.0 application acceptance and actual Factory package acceptance remain
+outstanding. The local checks used disposable source-checkout sessions.
 
 On 2026-10-06, the upstream validator (ExtensionsIndex
 `36508746632a78ab70f5bfb041c26dae8359a61d`) passed all checks against a fresh clone
@@ -48,8 +63,10 @@ approval; automated or agent visual checks are not approval.
 
 ### Source publication and registration approval
 
-1. The source on `main` (`e20ee70`) passed all five GitHub jobs. At submission, the
-   exact submitted revision must have green checks.
+1. The 0.8.0 pin/constraints on `main` were published as `ee2e936` only after the
+   shared qualification passed. The earlier catalog validation at `e20ee70` remains
+   a historical record. At submission, the exact submitted revision must have
+   green checks and current catalog validation.
 2. Retain the maintainer's 2026-09-30 declaration of **no known related patents**;
    update it if new information becomes known. The template asks to hide unused
    GitHub features: turn off Wiki and Projects (Discussions is already off), and turn

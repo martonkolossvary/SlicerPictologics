@@ -16,7 +16,7 @@ are retained separately from the installed module resources.
 
 The baseline is **3D Slicer 5.12+**. The adopted requirement is recorded in
 [`requirements-pictologics.txt`](../PictologicsSlicer/requirements-pictologics.txt).
-The adopted release is **Pictologics 0.7.0** (5 October 2026), and automatic adoption
+The adopted release is **Pictologics 0.8.0** (21 October 2026 UTC), and automatic adoption
 only moves forward from it. Normal install/update
 retrieves the adopted binary wheel from [PyPI](https://pypi.org/project/pictologics/);
 the sibling-source override is only for unpublished development changes.
@@ -89,8 +89,9 @@ immutable versioned directory; an atomic pointer selects it for new jobs, while
 already-running jobs keep their original path. It is not installed into or allowed to
 replace Slicer's shared Python packages. This is required for Slicer 5.12: its
 environment includes NumPy
-2.4.6 while Pictologics' Numba 0.62.1 requires NumPy `<2.4`, and it includes Pillow 12
-while the current Pictologics constraint is Pillow `<12`.
+2.4.6 while the macOS private target's Numba 0.62.1 requires NumPy `<2.4`.
+The qualified 0.8.0 private target also pins Pillow 13.0.0 independently of Slicer's
+shared Pillow. Neither target's dependency versions are installed into the other.
 
 New environments are named `<version>-<8 hex>` so that the deepest package files stay
 within the Windows 260-character path limit. After a new environment becomes active,
@@ -128,13 +129,30 @@ new job; a malformed marker is retained conservatively for at most seven days.
 
 ## In-app builder and upstream APIs
 
+The preset browser has General (6), Coronary plaque (30) and Myocardium (30)
+groups. `PictologicsLib.preset_catalog` carries patient-free display metadata only;
+the Slicer GUI never imports Pictologics. The standalone worker loads the requested
+cardiac collections with `RadiomicsPipeline.from_template("coronary" / "lv")`
+and executes only individually checked native configuration names. Effective
+package configurations, not GUI description text, are retained in provenance.
+`scripts/check_pictologics_api.py` verifies every grouped name, resampling spacing
+and cardiac HU range against the candidate wheel before release adoption.
+
+The existing manifest key `standard_configurations`, public argument
+`standardConfigurations`, scene parameter and profile schema are retained for
+backward compatibility; they now also accept `coronary_` and `lv_` native names.
+The worker checks availability in the installed wheel and rejects missing
+templates instead of silently substituting a General preset. Old General-only
+profiles remain valid. The starter-file **New from preset…** aid still offers the
+six General presets; cardiac templates do not require a custom file for selection.
+
 The full schema-driven, multi-step/multi-configuration builder is still deferred:
 the current Pictologics source has presets and configuration serialization, but not
-a complete public editor schema or structured-validation result API. Processing logs
-do have a public JSON export (`save_log()`); what is missing is a public in-memory log
-getter. The extension currently copies the private `_log` as a compatibility fallback
-and retains it in provenance. Individually implemented advanced controls do not
-require a complete upstream editor schema.
+a complete public editor schema or structured-validation result API. Pictologics 0.8.0
+provides both `get_log()` and the JSON export `save_log()`. The worker prefers public
+log getters, including `get_log()`, and retains a private `_log` fallback for older
+package interfaces. Copied logs are retained in provenance. Individually implemented
+advanced controls do not require a complete upstream editor schema.
 
 ## Configuration check
 
@@ -440,11 +458,17 @@ coverage dashboard as configured.
 
 ## Validation status
 
-Pictologics 0.7.0 passed the adoption run on 5 October 2026: released-wheel checks on
-Linux, Windows and Intel macOS, and real Slicer on Linux. With the published wheel,
-the installed Slicer 5.12.4 on macOS (CPython 3.12, x86_64 under Rosetta) passed the
-release checks and all 57 integration tests. With Pictologics 0.5.1, actual Windows
-x64 Stable 5.12.4 and Preview 5.13.0-2026-09-30 each passed 56 integration tests, four
+Pictologics 0.8.0 passed the
+[21 October 2026 adoption run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/39680464506):
+released-wheel checks on Linux, Windows and Intel macOS, 608 portable tests with
+100% scoped coverage, and all 57 real Linux Slicer integration tests. Pin commit
+`ee2e93667050ef3555c3806e3f8c48fd29fd2336` records the qualified requirements and
+constraints. The [macOS 0.8.0 acceptance record](macos-080-validation.md) separately
+records the installed application checks performed on this machine.
+
+Historically, the installed Slicer 5.12.4 on macOS (CPython 3.12, x86_64 under
+Rosetta) passed all 57 integration tests with published 0.7.0. With Pictologics 0.5.1,
+actual Windows x64 Stable 5.12.4 and Preview 5.13.0-2026-09-30 each passed 56 integration tests, four
 source/dependency lifecycle processes, Unicode exports and exact persistence.
 The [Windows report](windows-validation.md) separately records the native Stable
 walkthrough, Preview widget checks, bounded workloads and remaining limits.

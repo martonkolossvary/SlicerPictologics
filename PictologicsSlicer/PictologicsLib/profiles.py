@@ -16,8 +16,8 @@ from .inline_config import (
     default_inline_state,
     filter_step,
     finite_number,
-    preset_names,
 )
+from .preset_catalog import all_preset_names
 
 PROFILE_FORMAT = "slicer-pictologics-profile"
 PROFILE_SCHEMA_VERSION = 1
@@ -45,7 +45,7 @@ def validate_profile(document: Any) -> dict[str, Any]:
     presets = document["presets"]
     if (
         not isinstance(presets, list)
-        or any(not isinstance(item, str) or item not in preset_names() for item in presets)
+        or any(not isinstance(item, str) or item not in all_preset_names() for item in presets)
         or len(set(presets)) != len(presets)
     ):
         raise ValueError("Profile contains unknown or duplicate presets.")

@@ -1,6 +1,6 @@
 # Pictologics catalog submission draft (do not submit yet)
 
-Updated on 2026-10-06. This is the draft text for the ExtensionsIndex pull request.
+Updated on 2026-10-22. This is the draft text for the ExtensionsIndex pull request.
 It is not an opened pull request or approval from Slicer maintainers. Submit it only
 after the maintainer approves the registration. Keep the
 [submission checklist](extensions-index-submission.md) and the
@@ -25,7 +25,7 @@ treatment decisions.
 - License: Apache-2.0, in the root `LICENSE` file and named in the README.
 - Modules: **Pictologics** (the window) and **Pictologics Worker (internal)** (the
   background command-line module).
-- Package: the latest compatibility-qualified Pictologics release, now 0.7.0, with
+- Package: the latest compatibility-qualified Pictologics release, now 0.8.0, with
   exact tested dependency versions for each platform. Intel macOS, including Apple
   silicon under Rosetta, uses Numba 0.62.1; Linux and Windows use Numba 0.68.0. A new
   upstream release is adopted only after all compatibility checks pass.
@@ -64,21 +64,29 @@ treatment decisions.
 - GitHub run [37448759334](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/37448759334)
   passed all five jobs for `e20ee70`: released-wheel checks on Linux, Windows and
   Intel macOS, real Slicer 5.12.4 on Linux, and unit tests with 100% coverage.
-- The adoption run [37331419353](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/37331419353)
-  qualified Pictologics 0.7.0 on Linux, Windows and Intel macOS.
+- The adoption run [39680464506](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/39680464506)
+  qualified Pictologics 0.8.0 on Linux, Windows and Intel macOS; all 57 real Linux
+  Slicer tests and 608 portable tests/100% scoped coverage passed. It published
+  the requirement/constraints as `ee2e936`.
+- [Installed macOS 0.8.0 acceptance](macos-080-validation.md) on 2026-10-22 passed
+  all 57 integration tests on Stable 5.12.4 under Rosetta, all four dependency
+  lifecycle phases, two-ROI public CT/MRI widget runs and a mixed batch with live
+  cancellation/recovery and 10,880 exact saved/reloaded result rows. These are
+  source-checkout tests. No Windows or Preview 0.8.0 application acceptance is recorded.
 - Installed Slicer on macOS (Intel, Rosetta), with the published 0.7.0: Stable 5.12.4
   and Preview 5.13.0 (2026-10-01 build) each passed all 57 integration tests on
   2026-10-06. These tests load the modules from the source folder, not from an
   Extension Factory package.
 - Windows Slicer Stable 5.12.4 and Preview 5.13.0 passed with Pictologics 0.5.1 on
-  2026-10-04. Windows with 0.7.0 is not tested yet.
+  2026-10-04. Windows with the currently adopted 0.8.0 is not tested yet.
 - A local Slicer SDK build is not necessary. After the submission, check the
   Extension Factory packages with `scripts/check_extension_package.py`. Then install
   the real packages, and repeat the restart, extraction, export and scene checks.
 
 ## Before copying this into a public pull request
 
-1. Run the Windows Slicer check with 0.7.0, and update the results above.
+1. Complete Windows Stable/Preview and macOS Preview application checks with 0.8.0,
+   and update the results above. Stable macOS source-checkout acceptance is recorded.
 2. Turn off the unused GitHub features, and add a publication link if one exists.
 3. Run the validator again if the catalog data, icon or screenshots change.
 4. Get the maintainer's approval to register. Use the ExtensionsIndex branches

@@ -68,6 +68,7 @@ from PictologicsLib.persistence import (
     encode_values,
     table_identity,
 )
+from PictologicsLib.preset_catalog import PRESET_GROUPS, PRESETS
 from PictologicsLib.profiles import build_profile, validate_profile
 from PictologicsLib.progress import current_roi_index, elapsed_text
 from PictologicsLib.result_columns import (
@@ -566,6 +567,10 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.standardConfigListWidget.connect(
             "itemChanged(QListWidgetItem*)", self.onControlsChanged
         )
+        self.ui.standardConfigListWidget.connect("itemChanged(QListWidgetItem*)", self._updatePresetSelectionSummary)
+        self.ui.standardConfigListWidget.connect("currentItemChanged(QListWidgetItem*,QListWidgetItem*)", self._updatePresetDescription)
+        self.ui.presetGroupCombo.connect("currentIndexChanged(int)", self.onPresetGroupChanged)
+        self.ui.clearPresetsButton.connect("clicked()", self.onClearPresets)
         self.ui.customConfigPathLineEdit.connect(
             "textChanged(QString)", self.onControlsChanged
         )
@@ -628,16 +633,14 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         self.ui.duplicateProfileButton.connect("clicked()", self.onDuplicateProfile)
 
     def _populateStandardConfigurations(self):
+        self.ui.presetGroupCombo.clear()
+        self.ui.presetGroupCombo.addItems(list(PRESET_GROUPS))
         self.ui.standardConfigListWidget.blockSignals(True)
         self.ui.standardConfigListWidget.clear()
-        for configuration in STANDARD_CONFIGURATIONS:
-            item = qt.QListWidgetItem(configuration)
+        for configuration, preset in PRESETS.items():
+            item = qt.QListWidgetItem(preset.label)
             item.setData(ITEM_VALUE_ROLE, configuration)
-            if "_fbs_" in configuration:
-                item.setToolTip(
-                    "CT preset: fixed bin start -1000 HU (Pictologics 0.6 and later). "
-                    "Pictologics 0.5.1 started at the ROI minimum, so older results can differ."
-                )
+            item.setToolTip(f"{configuration}\n{preset.description}")
             item.setFlags(item.flags() | qt.Qt.ItemIsUserCheckable)
             item.setCheckState(
                 qt.Qt.Checked
@@ -646,6 +649,41 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             )
             self.ui.standardConfigListWidget.addItem(item)
         self.ui.standardConfigListWidget.blockSignals(False)
+        self.onPresetGroupChanged()
+        self._updatePresetSelectionSummary()
+
+    def onPresetGroupChanged(self, *args):
+        group = str(self.ui.presetGroupCombo.currentText)
+        first = None
+        for index in range(self.ui.standardConfigListWidget.count):
+            item = self.ui.standardConfigListWidget.item(index)
+            visible = PRESETS[str(item.data(ITEM_VALUE_ROLE))].group == group
+            item.setHidden(not visible)
+            if visible and first is None:
+                first = index
+        if first is not None:
+            self.ui.standardConfigListWidget.setCurrentRow(first)
+        self._updatePresetDescription()
+
+    def _updatePresetDescription(self, *args):
+        item = self.ui.standardConfigListWidget.currentItem()
+        if item is not None:
+            name = str(item.data(ITEM_VALUE_ROLE))
+            self.ui.presetDescriptionLabel.setText(f"{name}: {PRESETS[name].description}")
+
+    def _updatePresetSelectionSummary(self, *args):
+        selected = self._selectedConfigurations()
+        summary = "; ".join(f"{group}: {sum(PRESETS[name].group == group for name in selected)}"
+                            for group in PRESET_GROUPS)
+        self.ui.presetSelectionLabel.setText(f"Checked across all groups — {summary}")
+
+    def onClearPresets(self):
+        self.ui.standardConfigListWidget.blockSignals(True)
+        for index in range(self.ui.standardConfigListWidget.count):
+            self.ui.standardConfigListWidget.item(index).setCheckState(qt.Qt.Unchecked)
+        self.ui.standardConfigListWidget.blockSignals(False)
+        self._updatePresetSelectionSummary()
+        self.onControlsChanged()
 
     def initializeParameterNode(self):
         if self.logic is None:
@@ -778,6 +816,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                     else qt.Qt.Unchecked
                 )
             self.ui.standardConfigListWidget.blockSignals(False)
+            self._updatePresetSelectionSummary()
 
             selectedSegments = set(
                 self._jsonList(
@@ -1180,6 +1219,8 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
             self.ui.segmentListWidget,
             self.ui.subjectIdLineEdit,
             self.ui.standardConfigListWidget,
+            self.ui.presetGroupCombo,
+            self.ui.clearPresetsButton,
             self.ui.additionalConfigCombo,
             self.ui.inlineConfigGroup,
             self.ui.customFileWidget,
@@ -1940,7 +1981,11 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
 
         volume = self.ui.inputVolumeSelector.currentNode()
         documents = [
-            preset_configuration_document(name, pictologics_version=self.logic.adoptedPictologicsVersion())
+            # Preflight needs only resampling spacing; actual cardiac pipelines
+            # are loaded from the qualified wheel by the worker. The release API
+            # check verifies that the metadata spacing still matches the wheel.
+            {"configs": {name: {"steps": [{"step": "resample", "params": {
+                "new_spacing": [PRESETS[name].spacing] * 3}}]}}}
             for name in self._selectedConfigurations()
         ]
         source = self._currentAdditionalSource()

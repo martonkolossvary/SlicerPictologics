@@ -1,5 +1,10 @@
 # Pictologics 0.6 compatibility update
 
+Current status (2026-10-22): the adopted pin is **0.8.0**, qualified and published
+by [adoption run 39680464506](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/39680464506).
+See [the macOS 0.8.0 validation record](macos-080-validation.md). This document
+retains the historical 0.6.0 blocker and subsequent 0.7.0 resolution.
+
 Follow-up (2026-10-05): Pictologics 0.7.0 (released from `8787cb2`) gives Intel Mac
 Python Numba 0.62.x. Other runtimes get Numba 0.62.1 or newer, and 0.63.0 or newer on
 Python 3.14. The published wheel passes the extension checks in the installed Slicer.

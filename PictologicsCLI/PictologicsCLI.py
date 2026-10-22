@@ -522,9 +522,10 @@ def validate_manifest(
     seen_configs: set[str] = set()
     for index, raw_name in enumerate(raw_standard_configs):
         name = _require_string(raw_name, f"standard_configurations[{index}]")
-        if not name.startswith("standard_"):
+        if not name.startswith(("standard_", "coronary_", "lv_")):
             raise ManifestValidationError(
-                f"'standard_configurations[{index}]' must name a standard_ configuration"
+                f"'standard_configurations[{index}]' must name a standard_ configuration "
+                "or a coronary_ / lv_ template configuration"
             )
         if name in seen_configs:
             raise ManifestValidationError(f"duplicate standard configuration: {name}")
@@ -1062,6 +1063,17 @@ def create_pipeline(pictologics: Any, manifest: JobManifest) -> PipelineBundle:
         raise WorkerSetupError(
             f"cannot enumerate standard configurations: {exc}"
         ) from exc
+    # Preserve the manifest field for old scenes/jobs, but allow explicitly
+    # selected cardiac templates. Never run every configuration in a template.
+    for template, prefix in (("coronary", "coronary_"), ("lv", "lv_")):
+        if any(name.startswith(prefix) for name in manifest.standard_configurations):
+            try:
+                pipeline.merge_configs(pictologics.RadiomicsPipeline.from_template(template))
+                available_standard.update(pipeline.list_configs())
+            except Exception as exc:
+                raise WorkerSetupError(
+                    f"cannot load bundled {template} template: {exc}"
+                ) from exc
     missing_standard = [
         name
         for name in manifest.standard_configurations

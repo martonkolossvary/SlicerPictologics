@@ -224,10 +224,10 @@ def _validate_configuration_document(value: object) -> dict[str, Any]:
         name = _non_empty_string(
             item, f"configuration_document.standard_configurations[{index}]"
         )
-        if not name.startswith("standard_"):
+        if not name.startswith(("standard_", "coronary_", "lv_")):
             raise JobManifestError(
                 "configuration_document.standard_configurations entries must start "
-                "with 'standard_'"
+                "with 'standard_', 'coronary_' or 'lv_'"
             )
         if name in seen:
             raise JobManifestError(f"Duplicate standard configuration: {name!r}")

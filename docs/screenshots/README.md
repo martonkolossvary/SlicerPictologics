@@ -1,12 +1,81 @@
 # Catalog screenshots
 
+## Anatomical workflow (approved 2026-10-22)
+
+The maintainer visually approved the anatomical workflow on 2026-10-22.
+`pictologics-workflow.png` now uses the public **CTLiver** scan with its matching Medical Segmentation Decathlon
+**Task03_Liver / liver_100** annotations instead of generated ellipsoids. The two
+ROIs are **Liver tissue (MSD label 1)** and **Liver tumour (MSD label 2)**. Label 1
+excludes the separately labelled tumour; it is not an inclusive whole-liver mask.
+These are supplied research-dataset annotations, not segmentations newly validated
+by this project or claims of clinical accuracy.
+
+The workflow is a genuine, unretouched Slicer application-window capture, without
+the operating-system title bar, at **3680 × 1988**. Its SHA-256 is
+`6f87b5abd093fb6159b22c1ff0d36dbb26f084ccbfe7393ddacdf682ed234305`.
+It replaces the earlier MRHead workflow described in the historical section below.
+This approved capture predates the grouped-preset browser added later that day;
+the separate new-control preview remains local pending visual approval.
+The separately generated anatomical results-browser capture remains a local draft;
+the published `pictologics-results.png` is still the approved synthetic example.
+
+[`create_anatomical_ct_demo.py`](../../scripts/create_anatomical_ct_demo.py)
+verifies both file hashes and checks all physical-grid corners (maximum allowed
+disagreement 0.001 mm). It crops the native CT lattice around both annotations,
+without resampling, changing intensities, or truncating labelled voxels. It runs
+the actual module workflow for both ROIs, exports results and an MRB scene before
+closing, and captures the workflow and read-only results/provenance browser from
+that same extraction. It uses only an existing qualified dependency target; no
+package installation or update is performed.
+
+The image comes from Slicer's CTLiver sample, SHA-256
+`e16eae0ae6fefa858c5c11e58f0f1bb81834d81b7102e021571056324ef6f37e`.
+The matching label file is retrieved from a
+[public mirror pinned to revision 6a5aad7](https://huggingface.co/datasets/MedOtter/msd-liver/blob/6a5aad7ca262f2420d1bd4c2517b37b265db53eb/labelsTr/liver_100.nii.gz),
+SHA-256 `ab2d2f85c5143fed2a14480fe172cf7956defab078431ac5315b1d36fefd548c`.
+The dataset is attributed to the [Medical Segmentation Decathlon](http://medicaldecathlon.com/),
+under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/);
+see [Antonelli et al., 2022](https://doi.org/10.1038/s41467-022-30695-9).
+Retain this attribution and the dataset's reuse terms with any approved CT-derived
+images. The mirror is a distribution source, not an independent annotation audit.
+
+To reproduce, download the pinned annotation above to a temporary directory and
+set these environment variables before an isolated, visible Slicer launch:
+
+- `PICTOLOGICS_ANATOMICAL_DEMO_OUTPUT`: a **new** temporary output directory,
+  outside the repository and synced folders.
+- `PICTOLOGICS_ANATOMICAL_LABELS`: the downloaded `liver_100` annotation file.
+- `PICTOLOGICS_SAMPLE_CACHE`: the directory containing the original checksum-verified
+  `CTLiver.nrrd` (not the smaller derived performance fixture).
+- `SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH`: an existing qualified private package target.
+- `NUMBA_NUM_THREADS=2` for a bounded demonstration run; keep `PICTOLOGICS_DEV_SOURCE` unset.
+
+Use the same executable/module paths as the command below, substituting
+`scripts/create_anatomical_ct_demo.py` as the Python script. The script refuses
+to reuse an existing output directory or a scene containing a volume. Keep new
+captures local until the maintainer has visually reviewed them. Only the anatomical
+workflow replacement has been approved in this review; further image replacements
+require their own approval.
+
+Local draft verification on 2026-10-22 used Slicer 5.12.4 (Intel/Rosetta),
+Pictologics 0.8.0, and `standard_fbn_32`. The original annotation contains
+5,003,071 label-1 voxels and 1,569,689 label-2 voxels; the display crop retained
+all of them. Maximum physical-grid corner disagreement was 0.00004465 mm.
+Actual extraction returned **170 features per ROI, 340 rows total, all `ok`**.
+CSV (including provenance/catalog sidecars), JSON and the MRB scene were saved;
+the disposable application exited successfully. Draft workflow and results-browser
+captures are 3680 × 1988 and 2900 × 1900 respectively. These observations verify
+the demonstration workflow, not clinical annotation accuracy or general performance.
+
+## Earlier captures: historical workflow and current results image
+
 Captured on 2026-10-05 in 3D Slicer 5.12.4 on macOS (Intel/Rosetta), using the
 published Pictologics 0.7.0 wheel with Numba 0.62.1 and NumPy 2.3.5. The extension
 installed it with its normal first-run installer into a separate, temporary package
 folder. Both PNGs are genuine, unretouched application-window captures, not mockups.
 The maintainer visually approved both on 2026-10-05.
 
-- `pictologics-workflow.png`: captured with
+- Historical `pictologics-workflow.png` (replaced on 2026-10-22): captured with
   [`capture_sample_data_demo.py`](../../scripts/capture_sample_data_demo.py). Real
   public **MRHead MRI** with two selected demonstration ROIs, the input fields
   (including reader, extra columns, scanner details and crop), the configuration
@@ -21,9 +90,9 @@ The maintainer visually approved both on 2026-10-05.
   1916, without the macOS title bar. It replaces the 2026-09-21 image, which showed
   Pictologics 0.5.1 and an earlier window.
 
-## MRHead source and masks
+## Historical MRHead source and masks
 
-The workflow uses Slicer's built-in **MRHead** sample, retrieved with
+The earlier workflow used Slicer's built-in **MRHead** sample, retrieved with
 `SampleData.downloadSample("MRHead")`. The
 [SampleData acknowledgements](https://github.com/Slicer/Slicer/blob/v5.12.4/Modules/Scripted/SampleData/SampleData.py)
 state that MRHead was donated by the person visible in the images for unrestricted
@@ -37,7 +106,7 @@ voxels. Actual extraction produced **170 features per ROI, 340 rows total, all
 statuses `ok`**, with `standard_fbn_32`. The image contains no fabricated results.
 The sample volume itself is not included in this repository.
 
-Approved PNG SHA-256 values:
+Earlier approved PNG SHA-256 values (the results PNG is still current):
 
 - `pictologics-workflow.png`:
   `c482097887461079c7c3023356d9ff431bc4d71704c327d3929563441956f73a`
@@ -53,7 +122,7 @@ It contains no patient information and requires no downloaded sample data.
 The synthetic phantom script and its screenshot are distributed under this
 repository's Apache-2.0 license; the real MRHead sample's reuse terms are described above.
 
-## Reproduce the MRHead workflow
+## Reproduce the historical MRHead workflow
 
 Use a fresh Slicer session. Install the adopted package once through the normal
 module interface before running this demonstration. The script may download the

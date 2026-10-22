@@ -6,8 +6,17 @@ pre-publication goal. This document records completed work and outstanding
 qualification/publication requirements. It is not a release announcement and does
 not claim that the candidate has been adopted or published.
 
-**Update:** [Section 13](#13-update-after-the-upstream-dependency-change) replaces
-Sections 1, 3, 5 and 7 and adds to Section 8.
+**Current update (2026-10-22):** the extension now adopts Pictologics **0.8.0**,
+qualified by [run 39680464506](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/39680464506)
+and pin commit `ee2e936`. The local `pre-submission` branch has been fast-forwarded
+to that commit. See [the 0.8.0 macOS validation record](macos-080-validation.md) for
+this machine's application checks and [the upstream notification plan](pictologics-release-notification-plan.md)
+for the diagnosed release/publication race. The sections below are dated history,
+not a statement that 0.5.1 or a local candidate remains adopted.
+
+The earlier [Section 13](#13-update-after-the-upstream-dependency-change) records
+the 0.7.0 adoption and supersedes the original 0.5.1-era snapshot in Sections 1,
+3, 5 and 7 and adds to Section 8.
 
 ## 1. Current release state
 

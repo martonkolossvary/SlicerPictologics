@@ -13,7 +13,8 @@ The extension provides:
 - one 3D scalar-volume input;
 - any number of independently processed segments from one segmentation, plus an
   optional whole-volume region;
-- the six Pictologics standard presets, an in-app single-configuration builder
+- grouped Pictologics presets (6 General, 30 Coronary plaque and 30 Myocardium),
+  an in-app single-configuration builder
   (feature families, resampling, intensity-range resegmentation, outlier filtering,
   IBSI 2 image filters, discretisation, and voxel-validity/sentinel mode),
   and optional custom YAML/JSON configuration with authoring aids;
@@ -36,21 +37,23 @@ clinical diagnosis or treatment decisions.
 
 ## Screenshots
 
-![Pictologics workflow with Slicer's real MRHead MRI sample and two demonstration ROIs](docs/screenshots/pictologics-workflow.png)
+![Pictologics workflow with public CTLiver data and anatomical liver tissue and tumour annotations](docs/screenshots/pictologics-workflow.png)
 
-Workflow: Slicer's public **MRHead MRI** with two illustrative, non-clinical masks.
-Both segments were analyzed: **170 features per segment, 340 total**.
+Workflow: Slicer's public **CTLiver CT** with matching Medical Segmentation
+Decathlon liver-tissue and liver-tumour annotations. Both segments were analyzed:
+**170 features per segment, 340 total**, using Pictologics 0.8.0 and `standard_fbn_32`.
+These are research-dataset annotations, not clinical validation by this project.
 
 ![Pictologics results from real extraction on the synthetic regions](docs/screenshots/pictologics-results.png)
 
 Results-table example: a separate run on the **synthetic CT-like phantom**, not the
-MRHead run above. Both examples are genuine Slicer captures using Pictologics 0.7.0
-and `standard_fbn_32`.
+anatomical CT run above. This earlier genuine Slicer capture uses Pictologics 0.7.0
+and `standard_fbn_32`; the workflow capture above uses 0.8.0.
 See [sample attribution, capture provenance, and reproduction](docs/screenshots/README.md).
 
-A [small real CT example and reproducible workload benchmarks](docs/performance.md)
-complement the MRI demonstration. The CT uses two illustrative, non-clinical ROIs;
-the image data and any new screenshots stay outside Git pending visual review.
+Separate [public CT/MRI examples and reproducible workload benchmarks](docs/performance.md)
+use illustrative geometric ROIs, distinct from the anatomical annotations above.
+The underlying image data stay outside Git; new screenshots require visual approval.
 
 ## Modules
 
@@ -74,6 +77,13 @@ install it, and restart Slicer.
 
 ### First run
 
+The currently adopted package is **Pictologics 0.8.0**, qualified on Linux,
+Windows and Intel macOS by the
+[21 October 2026 adoption run](https://github.com/martonkolossvary/SlicerPictologics/actions/runs/39680464506).
+Existing source checkouts need the extension update and then
+**Install / update adopted release…** to use the new pin. Historical screenshots
+retain the package version used when they were captured.
+
 The first run needs an internet connection. The module asks before it installs
 Pictologics and its dependencies (about 500 MB) into a private folder. It installs the
 dependency versions that were tested with the adopted Pictologics release. Slicer's
@@ -87,7 +97,12 @@ old version is deleted automatically.
    whether to include the whole volume. Overlapping segments remain independent.
    Whole-volume analysis is off by default: the presets resample the entire scan,
    which can need several gigabytes of memory for a large CT.
-3. Check one or more standard presets and/or add one more configuration via
+3. Browse **General**, **Coronary plaque** or **Myocardium** and check individual
+   presets. Click a preset to read its native identifier, resampling, HU range and
+   feature settings. Switching groups retains checked presets in the other groups;
+   the summary counts all groups. **Clear all presets** removes every check.
+   Only checked configurations run, not the entire template collection. The default
+   remains `standard_fbn_32` in General. Optionally add a configuration via
    **Additional config**: *Build one in app* (choose feature families, resampling,
    optional ROI refinement, an optional image filter, discretisation, and voxel-validity/sentinel mode) or *Load from file* (browse to a
    custom Pictologics YAML/JSON, generate a starter with **New from preset…**, or press
@@ -284,7 +299,7 @@ See the [diagnostics and recovery test scope](docs/diagnostics-and-recovery.md).
 
 ### Save and reuse configuration profiles
 
-In **Configuration profiles**, use **Save…** to name and save the checked standard
+In **Configuration profiles**, use **Save…** to name and save the checked grouped
 presets and optional in-app configuration to a `.pictologics-profile.json` file.
 Use **Load…** to restore them, or **Save copy…** to save the current settings under a
 new name/file without replacing the original. Save again after editing settings;
@@ -298,13 +313,15 @@ Profiles do not capture image/segmentation selections, subject IDs, output table
 or machine-specific dependency paths. Loading validates all settings before changing
 the controls and rejects unsupported values instead of silently clamping them.
 Profile names label saved settings; native configuration names (`in_app` and the
-standard preset names) and exported feature names are unchanged.
+native preset names) and exported feature names are unchanged. Profiles can mix
+General, coronary and myocardial selections; older extension versions do not
+support the new cardiac selections and will reject those profiles.
 Profiles do not pin a package version: each run uses the extension's adopted
 Pictologics release and records its version and effective configuration in provenance.
 
 These are **Slicer settings files**, not native Pictologics pipeline configuration
 files. Advanced YAML/JSON pipelines still use **Additional config → Load from file**;
-profile saving is disabled in that mode. A profile can select multiple standard
+profile saving is disabled in that mode. A profile can select multiple grouped
 presets and one in-app configuration, not multiple custom pipelines.
 
 ### Process many cases in the Batch section
@@ -357,7 +374,8 @@ logic.exportTable(table, study / "features.csv", wide=True)
   a case.
 - All segments are regions by default. Use `segmentIDs=[...]` to select segments, and
   `includeWholeVolume=True` to add the whole scan.
-- Use `standardConfigurations=[...]` to select presets, and
+- Use `standardConfigurations=[...]` to select native preset names (including
+  `coronary_orig`, `coronary_cp_fbs_16`, or `lv_myo_orig`), and
   `customConfigurationPath="settings.yaml"` to add a configuration file.
 - Use `reader="R1"`, `extraColumns={"center": "A"}`, and `cropToRegion=True` as in the
   window.
@@ -404,7 +422,7 @@ for a two-reader study.
   labelmap selection.
 - Nonlinear parent transforms are rejected. Resample with an explicit interpolation
   choice before running. Linear transforms are hardened into temporary geometry.
-- Cancellation is at the CLI-process/job boundary. The Pictologics 0.7.0 API has no
+- Cancellation is at the CLI-process/job boundary. The Pictologics 0.8.0 API has no
   cooperative progress/cancellation callback, so a running native kernel cannot
   report fine-grained progress. Multi-ROI jobs report completed-ROI percentages;
   single-ROI jobs display an indeterminate busy indicator until the package returns.
@@ -429,11 +447,12 @@ for a two-reader study.
 
 The [0.6 compatibility review](docs/pictologics-060-compatibility.md) records the
 candidate checks and the macOS Intel wheel blocker. Slicer for macOS runs as Intel
-code, and Numba 0.63 and later have no Intel Mac builds. Pictologics 0.7.0 lets Intel
-Mac Python use Numba 0.62.x, so the extension can install it on every platform. The
-extension adopted 0.7.0 on 5 October 2026, after the adoption run passed on Linux,
-Windows and Intel macOS. Intel macOS uses Numba 0.62.1 and NumPy 2.3.5; Linux and
-Windows use Numba 0.68.0 and NumPy 2.5.3.
+code, and Numba 0.63 and later have no Intel Mac builds. The adopted Pictologics
+0.8.0 lets Intel Mac Python use Numba 0.62.x; this includes Apple Silicon running
+Slicer through Rosetta. Intel macOS uses Numba 0.62.1 and NumPy 2.3.5; Linux and
+Windows use Numba 0.68.0 and NumPy 2.5.4. The exact versions are recorded in the
+[runtime constraints](PictologicsSlicer/constraints-pictologics.txt), which were
+published only after the 0.8.0 qualification succeeded.
 
 ## For developers
 

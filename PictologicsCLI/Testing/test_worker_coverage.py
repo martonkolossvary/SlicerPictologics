@@ -952,6 +952,55 @@ class CatalogTests(unittest.TestCase):
 
 
 class CreatePipelineTests(unittest.TestCase):
+    def test_selected_cardiac_templates_are_loaded_without_selecting_siblings(self):
+        class CardiacPipeline(FakePipeline):
+            loaded = []
+
+            def __init__(self, deduplicate=True):
+                super().__init__(deduplicate)
+                self.names = ["standard_fbn_32"]
+
+            @classmethod
+            def from_template(cls, template):
+                cls.loaded.append(template)
+                result = cls()
+                prefix = "coronary" if template == "coronary" else "lv_myo"
+                result.names = [prefix + "_orig", prefix + "_fbn_16"]
+                return result
+
+            def merge_configs(self, other, overwrite=False):
+                self.names.extend(other.names)
+                return self
+
+            def list_configs(self):
+                return self.names
+
+            def describe_features(self):
+                return FakeCatalog([{**CATALOG_RECORD, "config": name} for name in self.names])
+
+        requested = ("coronary_orig", "lv_myo_fbn_16")
+        payload = make_payload(self.root)
+        payload["configuration_document"]["standard_configurations"] = list(requested)
+        (self.root / "image.nii.gz").touch()
+        (self.root / "mask.nii.gz").touch()
+        manifest = worker.validate_manifest(finalize(payload))
+        bundle = worker.create_pipeline(pic(CardiacPipeline), manifest)
+        self.assertEqual(CardiacPipeline.loaded, ["coronary", "lv"])
+        self.assertEqual(bundle.selected_configurations, requested)
+        self.assertEqual({record["config"] for record in bundle.catalog_records}, set(requested))
+        self.assertEqual(bundle.configuration_document, {"configs": list(requested)})
+        with self.assertRaisesRegex(worker.WorkerSetupError, "are unavailable"):
+            worker.create_pipeline(pic(CardiacPipeline), make_manifest(self.root, standard=("lv_missing",)))
+
+    def test_unavailable_cardiac_template_is_actionable(self):
+        class MissingTemplate(FakePipeline):
+            @classmethod
+            def from_template(cls, template):
+                raise ValueError("Template not found")
+
+        with self.assertRaisesRegex(worker.WorkerSetupError, "cannot load bundled coronary template"):
+            worker.create_pipeline(pic(MissingTemplate), make_manifest(self.root, standard=("coronary_orig",)))
+
     def test_joint_roi_growth_is_rejected_before_execution(self):
         class GrowthPipeline(FakePipeline):
             def to_dict(self, config_names):
