@@ -68,6 +68,31 @@ workflow and matching results/provenance images are retained in the documentatio
 
 ## Remaining scope
 
+### PR #9 live-worker retention follow-up (2026-10-22)
+
+Copilot identified a missing cleanup guard in the new real cardiac test. If its
+wait raises while the worker remains alive, the test now retains its temporary
+directory and sets the class-level failure flag, matching the existing real-GUI
+test. Subsequent tests skip before clearing the scene or creating fixtures.
+
+A new regression injects wait failures with both a released worker and a
+still-live worker (without starting a real timed-out process). It verifies normal
+cleanup in the former case, retained files/no scene clearing in the latter, and
+the subsequent-test skip. The probe restores its own flags afterward because
+there is no live process to protect.
+
+Installed Slicer 5.12.4/Rosetta passed **three focused tests in 129.101 seconds**:
+the injected failure/recovery guard, grouped selection/profile/scene persistence,
+and the normal real six-configuration cardiac extraction/export path. Zero
+failures/skips, process exit 0. All **614 portable tests** still pass with **100%
+scoped coverage**; lint and typing pass. This focused follow-up does not claim a
+new full 60-test installed-Slicer run. Its log is retained under ignored
+`local-output/pr9-worker-retention-2026-10-22/focused.log`.
+
+The maintainer authorized moving the milestone and this fix onto `main` and
+removing branches whose commits are preserved there. This does not authorize a
+release, tag or ExtensionsIndex registration.
+
 This record describes local validation completed before the maintainer authorized
 commit/push on 2026-10-22. It does not establish GitHub CI or native Windows and
 Preview application acceptance for the published revision. No new

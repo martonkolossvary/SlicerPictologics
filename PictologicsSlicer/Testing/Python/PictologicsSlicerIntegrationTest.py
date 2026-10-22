@@ -619,7 +619,15 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
             widget.onRun()
             cli_node, job = widget._cliNode, widget._activeJob
             self.assertIsNotNone(job)
-            observation = _wait_for_cli_terminal(cli_node, widget.logic, job, timeout_seconds=CLI_TIMEOUT_SECONDS)
+            try:
+                observation = _wait_for_cli_terminal(
+                    cli_node, widget.logic, job, timeout_seconds=CLI_TIMEOUT_SECONDS
+                )
+            except BaseException:
+                if widget.logic.jobWorkerIsAlive(job):
+                    self.retain_temporary_directory = True
+                    type(self).retained_async_failure = "Cardiac-preset worker still owns staging."
+                raise
             self.assertTrue(observation.terminal_state.completed)
             self.assertFalse(observation.terminal_state.failed, observation.terminal_state.error_text)
             deadline = time.monotonic() + 5
@@ -634,6 +642,55 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         self.assertEqual(set(provenance["effective_configuration"]["configs"]), requested)
         widget.logic.exportTable(table, self.temporary_directory / "cardiac.csv")
         widget.logic.exportTable(table, self.temporary_directory / "cardiac.json")
+
+    def test_cardiac_wait_failure_retains_files_only_for_a_live_worker(self) -> None:
+        widget = self._feedback_widget()
+        job = {"work_dir": str(self.temporary_directory), "manifest": {}}
+        method = type(self).test_real_grouped_cardiac_presets_run_only_the_checked_configurations
+        body = getattr(method, "__wrapped__", method)
+
+        def fake_launch():
+            widget._cliNode = Mock()
+            widget._activeJob = job
+
+        try:
+            for alive in (False, True):
+                with self.subTest(worker_alive=alive), patch.object(
+                    self, "_feedback_widget", return_value=widget
+                ), patch.object(widget, "onRun", side_effect=fake_launch), patch.object(
+                    gui_module, "inspect_target", return_value=Mock()
+                ), patch.object(sys.modules[__name__], "_qualified_dependency_target",
+                                return_value=(self.temporary_directory, "0.8.0")), patch.object(
+                    sys.modules[__name__], "_wait_for_cli_terminal", side_effect=TimeoutError("injected wait failure")
+                ), patch.object(widget.logic, "jobWorkerIsAlive", return_value=alive) as worker_alive:
+                    with self.assertRaisesRegex(TimeoutError, "injected wait failure"):
+                        body(self)
+                    worker_alive.assert_called_once_with(job)
+                    self.assertEqual(self.retain_temporary_directory, alive)
+                    self.assertEqual(type(self).retained_async_failure is not None, alive)
+                    with patch.object(slicer.mrmlScene, "Clear") as clear, patch.object(shutil, "rmtree") as remove:
+                        self._cleanup_test_state()
+                        self.assertEqual(clear.call_count, 0 if alive else 1)
+                        self.assertEqual(remove.call_count, 0 if alive else 1)
+                    self.assertTrue(self.temporary_directory.is_dir())
+                    if alive:
+                        # The class guard must skip before scene clearing or fixture creation.
+                        following = type(self)()
+                        with patch.object(slicer.mrmlScene, "Clear") as clear, patch.object(tempfile, "mkdtemp") as create:
+                            with self.assertRaises(unittest.SkipTest):
+                                following.setUp()
+                            clear.assert_not_called()
+                            create.assert_not_called()
+                    widget._activeJob = None
+                    widget._cliNode = None
+                    IsolatedPictologicsSlicerLogic.isolated_cache_root = self.cache_root
+        finally:
+            # No real process was launched; restore normal cleanup for this probe.
+            widget._activeJob = None
+            widget._cliNode = None
+            self.retain_temporary_directory = False
+            type(self).retained_async_failure = None
+            IsolatedPictologicsSlicerLogic.isolated_cache_root = self.cache_root
 
     def test_whole_volume_is_off_by_default(self) -> None:
         parameter_node = self.logic.getParameterNode()
