@@ -1,8 +1,13 @@
 """Keep unattended publication gated on the same checks as ordinary CI."""
 
 import shlex
+import shutil
+import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
@@ -14,6 +19,91 @@ WRITE_CONSTRAINTS = (
 def load_workflow(name):
     # BaseLoader uses string keys, avoiding YAML 1.1's interpretation of 'on' as True.
     return yaml.load((WORKFLOWS / name).read_text(), Loader=yaml.BaseLoader)
+
+
+def slicer_download_step():
+    steps = load_workflow("compatibility.yml")["jobs"]["slicer"]["steps"]
+    return next(step for step in steps
+                if step.get("name") == "Download checksum-pinned official Slicer 5.12.4")
+
+
+def slicer_download_arguments():
+    commands = slicer_download_step()["run"].replace("\\\n", "").splitlines()
+    return shlex.split(next(command for command in commands if command.lstrip().startswith("curl ")))
+
+
+def test_slicer_download_retries_partial_transfers_with_bounded_time_and_checksum():
+    step = slicer_download_step()
+    arguments = slicer_download_arguments()
+    assert arguments[:1] == ["curl"]
+    assert {"--fail", "--location", "--retry-all-errors"} <= set(arguments)
+    for option, value in {
+        "--retry": "3",
+        "--retry-max-time": "600",
+        "--connect-timeout": "30",
+        "--max-time": "300",
+        "--speed-limit": "1024",
+        "--speed-time": "60",
+    }.items():
+        assert arguments[arguments.index(option) + 1] == value
+    assert step["timeout-minutes"] == "12"
+    assert "continue-on-error" not in step
+    assert "https://download.slicer.org/bitstream/6aa1beb7ce9de556d3010204" in arguments
+    assert arguments[arguments.index("-o") + 1] == "$RUNNER_TEMP/slicer.tar.gz"
+    assert "--insecure" not in arguments
+    checksum = (
+        'echo "ac76c5061a8fff20d4e59732855f74360930fd4891450085bcbc6a8eb1a1f4ade9a1ca4fc633142661b714dbe8c4604306079f9546e52053faa5e6f99410cf76'
+        '  $RUNNER_TEMP/slicer.tar.gz" | sha512sum --check'
+    )
+    assert checksum in step["run"]
+    assert step["run"].index(checksum) < step["run"].index('tar -xzf "$RUNNER_TEMP/slicer.tar.gz"')
+
+
+def test_slicer_download_recovers_from_a_real_partial_http_transfer(tmp_path):
+    curl = shutil.which("curl")
+    if curl is None:
+        pytest.skip("curl is required to exercise the CI download command")
+    payload = b"checksum-pinned Slicer download fixture\n" * 1024
+    request_count = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            nonlocal request_count
+            request_count += 1
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            # The first response reproduces curl exit 18: close before the
+            # advertised Content-Length. The retry must replace, not append.
+            self.wfile.write(payload[:128] if request_count == 1 else payload)
+            self.close_connection = True
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    output = tmp_path / "slicer.tar.gz"
+    arguments = slicer_download_arguments()
+    arguments[0] = curl
+    arguments[arguments.index("-o") + 1] = str(output)
+    url_index = next(index for index, argument in enumerate(arguments)
+                     if argument.startswith("https://download.slicer.org/"))
+    arguments[url_index] = f"http://127.0.0.1:{server.server_port}/slicer.tar.gz"
+    try:
+        result = subprocess.run(
+            [*arguments, "--noproxy", "127.0.0.1"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert "curl: (18)" in result.stderr
+    assert request_count == 2
+    assert output.read_bytes() == payload
 
 
 def test_quality_setup_declares_dependencies_and_matches_documentation():

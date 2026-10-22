@@ -142,8 +142,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libglu1-mesa libopengl0 libqt5gui5t64 libxcb-cursor0 libnss3 libasound2t64 libpulse-mainloop-glib0
       - name: Download checksum-pinned official Slicer 5.12.4
+        timeout-minutes: 12
         run: |
-          curl --fail --location --retry 3 https://download.slicer.org/bitstream/6aa1beb7ce9de556d3010204 -o "$RUNNER_TEMP/slicer.tar.gz"
+          # Retry partial transfers (curl exit 18), not just transient HTTP errors.
+          # Each retry replaces the partial output; never extract an unverified file.
+          curl --fail --location --retry 3 --retry-all-errors \
+            --retry-max-time 600 --connect-timeout 30 --max-time 300 \
+            --speed-limit 1024 --speed-time 60 \
+            https://download.slicer.org/bitstream/6aa1beb7ce9de556d3010204 -o "$RUNNER_TEMP/slicer.tar.gz"
           echo "ac76c5061a8fff20d4e59732855f74360930fd4891450085bcbc6a8eb1a1f4ade9a1ca4fc633142661b714dbe8c4604306079f9546e52053faa5e6f99410cf76  $RUNNER_TEMP/slicer.tar.gz" | sha512sum --check
           mkdir "$RUNNER_TEMP/slicer"
           tar -xzf "$RUNNER_TEMP/slicer.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/slicer"
