@@ -1,7 +1,8 @@
 # Developer guide
 
 This page is for people who change, test, or package the extension. The
-[README](../README.md) describes how to use it.
+[user guide](user-guide.md) describes how to use it; the [README](../README.md)
+provides the overview and sample images.
 
 ## Names
 
@@ -170,8 +171,9 @@ lint only.
 `PictologicsSlicerLogic.process()` runs one case to the end and returns the results
 table. It uses the same path as **Run radiomics**: dependency check, NIfTI staging,
 the worker, result validation, and the atomic table commit. Rows and a provenance
-record go after the rows that are in the given table. The README shows a loop over
-case folders; an opt-in in-Slicer test runs two cases into one table.
+record go after the rows that are in the given table. The
+[user guide](user-guide.md#process-many-cases-with-a-script) shows a loop over case
+folders; an opt-in in-Slicer test runs two cases into one table.
 
 ## Extra result columns
 
