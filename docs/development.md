@@ -138,9 +138,10 @@ Prepare the computer:
    Get-ChildItem "$env:LOCALAPPDATA\slicer.org" -Filter Slicer.exe -Recurse -Depth 1 | Select-Object FullName
    ```
 
-Run the automatic checks. Paste the block below into PowerShell 7. If step 5 shows a
-different path, change the first line. The block installs the adopted Pictologics
-release into a new test folder and starts Slicer four times
+Run the automatic checks. Paste the block below into PowerShell 7. The first line
+finds Slicer 5.12.4 in the list from step 5. For another version, change `5\.12\.4`
+in the first line, for example to `5\.13\.0` for Slicer Preview. The block installs
+the adopted Pictologics release into a new test folder and starts Slicer four times
 ([`check_slicer_lifecycle.py`](../scripts/check_slicer_lifecycle.py)). Then it runs
 all integration tests with the real worker. The
 [`Invoke-SlicerValidation.ps1`](../scripts/Invoke-SlicerValidation.ps1) launcher keeps
@@ -148,7 +149,8 @@ open Slicer windows and normal settings unchanged.
 
 ```powershell
 & {
-  $slicerExe = "$env:LOCALAPPDATA\slicer.org\Slicer 5.12.4\Slicer.exe"
+  $slicerExe = Get-ChildItem "$env:LOCALAPPDATA\slicer.org" -Filter Slicer.exe -Recurse -Depth 1 |
+    Where-Object FullName -Match '5\.12\.4' | Select-Object -First 1 -ExpandProperty FullName
   $run = Get-Date -Format yyyyMMdd-HHmm
   $lifecycleRoot = "C:\work\pl-$run"
   foreach ($phase in 'install', 'restart', 'update', 'restart-update') {
@@ -167,7 +169,7 @@ open Slicer windows and normal settings unchanged.
 
 The check passes when the last lines show `Ran 70 tests` and `OK`, with no `skipped`.
 Each step writes its logs into `local-output`. To check Slicer Preview, install it
-and run the block again with its path in the first line.
+and run the block again with its version in the first line.
 
 Then check the window by hand:
 
@@ -179,6 +181,9 @@ Then check the window by hand:
    paint a region in the liver.
 3. Open **Informatics → Pictologics**. Select the segment and check **Standard — FBN
    32 bins**. Select **Run radiomics** and approve the private installation.
+   CTLiver is a large scan, so Slicer first shows a **Large Pictologics run**
+   warning. This is correct; select **OK**. To prevent the warning, turn on **Crop
+   around each region** before the run.
 4. Check the values in the results table. Select **Export table as CSV or JSON…**
    and open the CSV file.
 5. Set **Custom configuration** to **Build in this panel**. Turn on **Image filter
@@ -192,6 +197,8 @@ On Windows, the worker and installation probe give Numba an extended absolute ca
 `\\?\UNC\`). Generated JIT filenames can otherwise exceed `MAX_PATH` even
 when the package environment and checkout paths are short. This keeps the same
 private cache location and does not change Windows long-path or security policy.
+The deletion of private packages, old environments and export folders uses the same
+extended path, because files below a long profile folder can exceed `MAX_PATH`.
 Other Slicer/native-library input-path limits still require separate testing.
 
 ## Temporary files
@@ -488,9 +495,9 @@ SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH=/absolute/path/to/private-target \
 
 This launches a separate process with disposable test scenes/settings; it does not
 clear or close an existing Slicer session. Require a successful exit and **no skipped
-tests** for full release qualification. The current suite contains 49 tests,
-including privacy-safe diagnostic controls, synthetic install/export failure
-recovery, and an actual worker failure followed by a successful extraction retry.
+tests** for full release qualification. The suite includes privacy-safe diagnostic
+controls, synthetic install/export failure recovery, and an actual worker failure
+followed by a successful extraction retry.
 Installer recovery tests patch pip and never download packages. See the
 [failure matrix and privacy boundary](diagnostics-and-recovery.md).
 Use the corresponding installed Slicer launcher on another platform; headless

@@ -3,6 +3,7 @@
 import errno
 import os
 import shutil
+import stat
 import sys
 import tempfile
 import unittest
@@ -108,6 +109,37 @@ class ExportRecoveryTest(unittest.TestCase):
                 self.assertEqual(len(retained), 1)
                 self.assertEqual((retained[0] / "previous" / "features.csv").read_text(), "old features.csv")
                 self.assertEqual((root / "features.provenance.json").read_text(), "old features.provenance.json")
+
+    def test_cleanup_failure_does_not_hide_the_publication_error(self):
+        root = self.root / "masked"
+        root.mkdir()
+        originals(root)
+        before = contents(root)
+
+        def fail_cleanup(path, onexc):
+            onexc(os.unlink, path, PermissionError("Synthetic read-only backup"))
+
+        with patch("PictologicsLib.exports.os.replace", side_effect=PermissionError("Synthetic replace failure")), patch(
+            "PictologicsLib.results.shutil.rmtree", side_effect=fail_cleanup
+        ), self.assertRaisesRegex(PermissionError, "Synthetic replace failure"):
+            export_file_set(root / "features.csv", write_set)
+        self.assertEqual(contents(root), before)
+
+    @unittest.skipUnless(os.name == "nt", "Windows refuses to replace a read-only file")
+    def test_read_only_target_reports_the_replace_error_and_leaves_nothing(self):
+        root = self.root / "read-only"
+        root.mkdir()
+        originals(root)
+        target = root / "features.csv"
+        target.chmod(stat.S_IREAD)
+        self.addCleanup(target.chmod, stat.S_IREAD | stat.S_IWRITE)
+        before = target.read_bytes()
+        with self.assertRaises(PermissionError) as raised:
+            export_file_set(target, write_set)
+        self.assertIn(target.name, str(raised.exception))
+        self.assertNotIn("previous", str(raised.exception))
+        self.assertEqual(target.read_bytes(), before)
+        self.assertFalse(list(root.glob(".pictologics-export-*")))
 
     def _symlink(self, source, target):
         try:

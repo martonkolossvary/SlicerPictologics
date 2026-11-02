@@ -13,6 +13,8 @@ import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from .results import remove_tree
+
 
 def export_file_set(destination: Path, writer: Callable[[Path], Sequence[Path]]) -> list[Path]:
     """Write beside the destination, then publish with recoverable old copies.
@@ -26,6 +28,7 @@ def export_file_set(destination: Path, writer: Callable[[Path], Sequence[Path]])
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".pictologics-export-", dir=destination.parent))
     retain = False
+    succeeded = False
     published: list[Path] = []
     originals: dict[Path, Path] = {}
     try:
@@ -68,7 +71,9 @@ def export_file_set(destination: Path, writer: Callable[[Path], Sequence[Path]])
                     "The result table is unchanged."
                 ) from None
             raise
+        succeeded = True
         return destinations
     finally:
         if not retain:
-            shutil.rmtree(staging)
+            # A failed cleanup must not hide the error that ended the export.
+            remove_tree(staging, ignore_errors=not succeeded)

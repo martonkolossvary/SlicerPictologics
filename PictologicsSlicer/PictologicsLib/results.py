@@ -5,12 +5,16 @@ from __future__ import annotations
 import csv
 import json
 import math
+import ntpath
 import numbers
 import os
 import re
+import shutil
+import stat
+import sys
 import tempfile
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -396,6 +400,68 @@ def fsync_parent_dir(path: Path) -> None:
         os.close(dir_fd)
 
 
+def extended_length_path(path: str | os.PathLike[str]) -> str:
+    """Return the Windows extended-length spelling (``\\\\?\\``) of an absolute *path*.
+
+    Without the machine-wide long-path policy, ordinary Win32 paths stop at MAX_PATH.
+    pip can place files beyond it below a long profile folder, and the Numba cache does
+    so routinely; deleting them needs this spelling. Other platforms, relative paths
+    and already extended paths are returned unchanged.
+    """
+
+    text = os.fspath(path)
+    if sys.platform != "win32":
+        return text
+    text = ntpath.normpath(text)
+    drive, tail = ntpath.splitdrive(text)
+    if text.startswith("\\\\?\\") or not drive or not tail.startswith("\\"):
+        return text
+    if text.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + text[2:]
+    return "\\\\?\\" + text
+
+
+def remove_tree(path: str | os.PathLike[str], *, ignore_errors: bool = False) -> None:
+    """Delete a directory tree, also beyond Windows MAX_PATH and with read-only files.
+
+    With ``ignore_errors`` every entry that can be deleted is deleted and failures are
+    ignored, as with ``shutil.rmtree``; otherwise the first failure is raised.
+    """
+
+    def retry_read_only(
+        function: Callable[[str], object], failed: str, error: BaseException
+    ) -> None:
+        # Windows refuses to delete read-only entries. POSIX permissions live on the
+        # parent folder, so a chmod there would not help.
+        if sys.platform == "win32" and isinstance(error, PermissionError):
+            try:
+                os.chmod(failed, stat.S_IWRITE)
+                function(failed)
+                return
+            except OSError as retry_error:
+                error = retry_error
+        if not ignore_errors:
+            raise error
+
+    # ignore_errors goes through the handler: shutil.rmtree would skip the retry.
+    shutil.rmtree(extended_length_path(path), onexc=retry_read_only)
+
+
+def discard_temporary(path: Path) -> None:
+    """Delete a temporary file if possible, also a read-only one on Windows."""
+
+    try:
+        path.unlink(missing_ok=True)
+    except PermissionError:
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    except OSError:
+        pass
+
+
 def public_file_mode(destination: Path) -> int:
     """Return the mode of the file that replaces *destination*.
 
@@ -424,6 +490,8 @@ def _atomic_text_path(
         suffix=".tmp",
         delete=False,
     )
+    # On Windows a read-only destination gives a read-only temporary file;
+    # discard_temporary() can still delete it.
     os.chmod(stream.name, public_file_mode(destination))
     return stream, Path(stream.name)
 
@@ -471,10 +539,7 @@ def export_rows_csv(
         os.replace(temporary, destination)
         fsync_parent_dir(destination)
     finally:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
+        discard_temporary(temporary)
     return destination
 
 
@@ -504,10 +569,7 @@ def export_rows_json(
         os.replace(temporary, destination)
         fsync_parent_dir(destination)
     finally:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
+        discard_temporary(temporary)
     return destination
 
 
@@ -551,10 +613,7 @@ def write_result_payload(path: str | os.PathLike[str], payload: object) -> Path:
         os.replace(temporary, destination)
         fsync_parent_dir(destination)
     finally:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
+        discard_temporary(temporary)
     return destination
 
 

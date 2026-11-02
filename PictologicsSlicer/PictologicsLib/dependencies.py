@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import tempfile
 import time
 from dataclasses import dataclass
@@ -23,7 +22,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from .results import fsync_parent_dir
+from .results import fsync_parent_dir, remove_tree
 
 PICTOLOGICS_DISTRIBUTION: Final = "pictologics"
 PICTOLOGICS_DEV_SOURCE_ENV: Final = "PICTOLOGICS_DEV_SOURCE"
@@ -580,7 +579,7 @@ def remove_inactive_environments(
         ):
             continue
         try:
-            shutil.rmtree(candidate)
+            remove_tree(candidate)
         except OSError:
             continue
         removed.append(candidate)

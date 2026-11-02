@@ -4,3 +4,6 @@ PictologicsSlicer/Resources/Icons/*.png linguist-generated=true
 
 # Preserve generated PostScript bytes and review the rendered artwork instead.
 assets/branding/pictologics/vector/*.eps binary
+
+# The ExtensionsIndex validator rejects CRLF line endings in JSON files.
+*.json text eol=lf

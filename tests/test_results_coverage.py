@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -426,7 +427,23 @@ class ExportCsvTests(unittest.TestCase):
             shared.write_text("old", encoding="utf-8")
             shared.chmod(0o640)
             export_rows_csv([result_row()], shared)
-            self.assertEqual(shared.stat().st_mode & 0o777, 0o640)
+            # Windows keeps only the read-only flag: 0o640 reads back as 0o666.
+            expected = 0o666 if os.name == "nt" else 0o640
+            self.assertEqual(shared.stat().st_mode & 0o777, expected)
+
+    @unittest.skipUnless(os.name == "nt", "Windows refuses to replace a read-only file")
+    def test_read_only_destination_is_unchanged_and_leaves_no_temporary_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            shared = Path(directory, "shared.csv")
+            shared.write_text("old", encoding="utf-8")
+            shared.chmod(stat.S_IREAD)
+            try:
+                with self.assertRaises(PermissionError):
+                    export_rows_csv([result_row()], shared)
+                self.assertEqual(shared.read_text(encoding="utf-8"), "old")
+                self.assertFalse(list(Path(directory).glob(".shared.csv.*.tmp")))
+            finally:
+                shared.chmod(stat.S_IREAD | stat.S_IWRITE)
 
     def test_long_export(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -501,6 +518,103 @@ class ExportRowsDispatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "csv.*json"):
                 export_rows([result_row()], Path(directory, "out.txt"))
+
+
+class FilesystemHelperTests(unittest.TestCase):
+    def test_extended_length_path_changes_only_absolute_windows_paths(self) -> None:
+        cases = (
+            ("linux", "/private/x", "/private/x"),
+            ("win32", "C:/private/x", "\\\\?\\C:\\private\\x"),
+            ("win32", "\\\\server\\share\\x", "\\\\?\\UNC\\server\\share\\x"),
+            ("win32", "\\\\?\\C:\\x", "\\\\?\\C:\\x"),
+            ("win32", "relative\\x", "relative\\x"),
+            ("win32", "\\rootless", "\\rootless"),
+            ("win32", "C:relative", "C:relative"),
+        )
+        for platform_name, source, expected in cases:
+            with self.subTest(platform=platform_name, source=source), mock.patch.object(
+                results.sys, "platform", platform_name
+            ):
+                self.assertEqual(results.extended_length_path(source), expected)
+
+    def test_remove_tree_deletes_a_tree_and_reports_a_missing_one(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            tree = Path(directory, "tree")
+            (tree / "nested").mkdir(parents=True)
+            (tree / "nested" / "file.txt").write_text("x", encoding="utf-8")
+            results.remove_tree(tree)
+            self.assertFalse(tree.exists())
+            with self.assertRaises(FileNotFoundError):
+                results.remove_tree(tree)
+            results.remove_tree(tree, ignore_errors=True)
+
+    def test_remove_tree_passes_the_extended_path_on_windows(self) -> None:
+        with mock.patch.object(results.sys, "platform", "win32"), mock.patch.object(
+            results.shutil, "rmtree"
+        ) as rmtree:
+            results.remove_tree("C:/private/x")
+        self.assertEqual(rmtree.call_args.args, ("\\\\?\\C:\\private\\x",))
+        self.assertIn("onexc", rmtree.call_args.kwargs)
+
+    @staticmethod
+    def handler(*, ignore_errors: bool = False):
+        with mock.patch.object(results.shutil, "rmtree") as rmtree:
+            results.remove_tree("/private/x", ignore_errors=ignore_errors)
+        return rmtree.call_args.kwargs["onexc"]
+
+    def test_windows_retries_a_read_only_entry(self) -> None:
+        function = mock.Mock()
+        with mock.patch.object(results.sys, "platform", "win32"), mock.patch.object(
+            results.os, "chmod"
+        ) as chmod:
+            self.handler()(function, "C:/x", PermissionError("read-only"))
+        chmod.assert_called_once_with("C:/x", stat.S_IWRITE)
+        function.assert_called_once_with("C:/x")
+
+    def test_a_failed_retry_is_raised_unless_errors_are_ignored(self) -> None:
+        function = mock.Mock(side_effect=OSError("still locked"))
+        with mock.patch.object(results.sys, "platform", "win32"), mock.patch.object(results.os, "chmod"):
+            with self.assertRaisesRegex(OSError, "still locked"):
+                self.handler()(function, "C:/x", PermissionError("read-only"))
+            self.handler(ignore_errors=True)(function, "C:/x", PermissionError("read-only"))
+
+    def test_other_platforms_and_errors_are_not_retried(self) -> None:
+        function = mock.Mock()
+        with mock.patch.object(results.sys, "platform", "linux"), mock.patch.object(
+            results.os, "chmod"
+        ) as chmod:
+            with self.assertRaises(PermissionError):
+                self.handler()(function, "/x", PermissionError("parent folder"))
+            self.handler(ignore_errors=True)(function, "/x", FileNotFoundError("gone"))
+        chmod.assert_not_called()
+        function.assert_not_called()
+
+    @unittest.skipUnless(os.name == "nt", "Windows MAX_PATH behaviour")
+    def test_windows_tree_beyond_max_path_with_a_read_only_file(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            tree = Path(directory, "private-dependencies")
+            deep = os.path.join(str(tree), *(["d" * 50] * 6))
+            os.makedirs("\\\\?\\" + deep)
+            Path("\\\\?\\" + deep, "deep.txt").write_text("x", encoding="utf-8")
+            read_only = tree / "read-only.txt"
+            read_only.write_text("x", encoding="utf-8")
+            read_only.chmod(stat.S_IREAD)
+            self.assertGreater(len(os.path.join(deep, "deep.txt")), 270)
+            results.remove_tree(tree)
+            self.assertFalse(tree.exists())
+
+    def test_discard_temporary_clears_a_read_only_flag(self) -> None:
+        path = Path("unused.tmp")
+        with mock.patch.object(
+            Path, "unlink", side_effect=[PermissionError("read-only"), None]
+        ) as unlink, mock.patch.object(results.os, "chmod") as chmod:
+            results.discard_temporary(path)
+        chmod.assert_called_once_with(path, stat.S_IWRITE)
+        self.assertEqual(unlink.call_count, 2)
+        with mock.patch.object(Path, "unlink", side_effect=PermissionError("locked")), mock.patch.object(
+            results.os, "chmod"
+        ):
+            results.discard_temporary(path)
 
 
 class PayloadFileTests(unittest.TestCase):

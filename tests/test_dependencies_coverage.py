@@ -633,8 +633,11 @@ class RemoveInactiveEnvironmentsTests(unittest.TestCase):
         active = self._environment("0.5.1-bbbbbbbb")
         activate_dependency_target(self.root, active)
         self._age(old)
-        with mock.patch.object(dependencies.shutil, "rmtree", side_effect=OSError("in use")):
+        with mock.patch.object(
+            dependencies, "remove_tree", side_effect=OSError("in use")
+        ) as remove:
             self.assertEqual(remove_inactive_environments(self.root), [])
+        self.assertEqual([call.args[0].resolve() for call in remove.call_args_list], [old.resolve()])
         self.assertTrue(old.is_dir())
 
     def test_a_new_installation_is_kept_while_another_slicer_checks_it(self) -> None:

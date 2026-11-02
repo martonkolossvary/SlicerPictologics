@@ -894,8 +894,10 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         for failure in (PermissionError("Synthetic permission failure"), OSError(errno.ENOSPC, "Synthetic disk full")):
             with self.subTest(failure=type(failure).__name__), patch.object(qt.QFileDialog, "getSaveFileName", return_value=str(archive)), patch.object(
                 gui_module.os, "replace", side_effect=failure
-            ), patch.object(slicer.util, "errorDisplay"):
+            ), patch.object(slicer.util, "errorDisplay") as error:
                 widget.onExport()
+            # Windows names only a hidden temporary file, so explain a refused replacement.
+            self.assertEqual("may have it open" in error.call_args.args[0], isinstance(failure, PermissionError))
             self.assertEqual(archive.read_bytes(), before)
             self.assertEqual(table.GetAttribute(SNAPSHOT_ATTRIBUTE), snapshot)
             self.assertFalse(list(archive.parent.glob(".completed.json.*.tmp")))

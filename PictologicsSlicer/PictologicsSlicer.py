@@ -90,12 +90,14 @@ from PictologicsLib.results import (
     LONG_RESULT_COLUMNS,
     RESULT_PAYLOAD_SCHEMA_VERSION,
     configuration_conflicts,
+    discard_temporary,
     export_rows,
     extra_columns,
     fsync_parent_dir,
     is_result_table_columns,
     load_result_payload,
     public_file_mode,
+    remove_tree,
     rows_to_wide,
     spreadsheet_safe,
     validate_result_payload,
@@ -1613,7 +1615,7 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
                 export_report(document, path)
             self.ui.statusLabel.setText(f"Batch report exported to {path.name}.")
         except Exception as exc:
-            slicer.util.errorDisplay(str(exc), windowTitle="Pictologics batch report")
+            slicer.util.errorDisplay(self._exportErrorText(path, exc), windowTitle="Pictologics batch report")
 
     def onBrowseResults(self):
         if self._tableOperationInProgress:
@@ -2736,8 +2738,20 @@ class PictologicsSlicerWidget(ScriptedLoadableModuleWidget, VTKObservationMixin)
         except Exception as exc:
             self._recordDiagnosticOperation("export", "failed", "export_failed")
             LOGGER.exception("Pictologics export failed")
-            slicer.util.errorDisplay(str(exc), windowTitle="Pictologics export failed")
+            slicer.util.errorDisplay(self._exportErrorText(path, exc), windowTitle="Pictologics export failed")
             self.ui.statusLabel.setText("Export failed; results remain in the table. Check the output folder and retry.")
+
+    @staticmethod
+    def _exportErrorText(path: Path, exc: Exception) -> str:
+        # On Windows a file open in Excel or a read-only file gives "[WinError 5]"
+        # in the system language, and it names a hidden temporary file.
+        if not isinstance(exc, PermissionError):
+            return str(exc)
+        return (
+            f"Could not replace {path.name}. Another program, for example Excel, may have it "
+            "open, or the file or its folder is read-only. Close the file or choose another "
+            f"name, then export again.\n\nDetails: {exc}"
+        )
 
 
 class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
@@ -2919,9 +2933,9 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             activated = True
         finally:
             if staging.exists():
-                shutil.rmtree(staging, ignore_errors=True)
+                remove_tree(staging, ignore_errors=True)
             if published is not None and published.exists() and not activated:
-                shutil.rmtree(published, ignore_errors=True)
+                remove_tree(published, ignore_errors=True)
 
         # Return the environment this invocation activated, not a newly read pointer:
         # another Slicer instance may legitimately activate a different immutable
@@ -3245,7 +3259,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                 "manifest": manifest,
             }
         except Exception:
-            shutil.rmtree(workDir, ignore_errors=True)
+            remove_tree(workDir, ignore_errors=True)
             raise
         finally:
             self._removeTemporaryNodes(sceneNodes)
@@ -3333,7 +3347,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             and workDir.is_dir()
             and not workDir.is_symlink()
         ):
-            shutil.rmtree(workDir, ignore_errors=True)
+            remove_tree(workDir, ignore_errors=True)
 
     def process(
         self,
@@ -3460,7 +3474,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
                         break
                 if retainForMarker:
                     continue
-                shutil.rmtree(candidate)
+                remove_tree(candidate)
                 removed += 1
             except FileNotFoundError:
                 continue
@@ -3483,7 +3497,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         # Deactivate first: a partial delete must not leave a pointer to a broken set.
         (self.dependencyRoot() / ACTIVE_ENVIRONMENT_POINTER).unlink(missing_ok=True)
         if self.dependencyRoot().is_dir():
-            shutil.rmtree(self.dependencyRoot())
+            remove_tree(self.dependencyRoot())
 
     def removeRetiredEnvironmentsLater(self) -> threading.Thread:
         """Delete old package versions in the background: a large folder takes seconds."""
@@ -3881,10 +3895,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             fsync_parent_dir(destination)
         finally:
             if temporaryName:
-                try:
-                    Path(temporaryName).unlink(missing_ok=True)
-                except OSError:
-                    pass
+                discard_temporary(Path(temporaryName))
 
     @staticmethod
     def _atomicWriteCSV(
@@ -3921,10 +3932,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             fsync_parent_dir(destination)
         finally:
             if temporaryName:
-                try:
-                    Path(temporaryName).unlink(missing_ok=True)
-                except OSError:
-                    pass
+                discard_temporary(Path(temporaryName))
 
     @staticmethod
     def showTable(tableNode):

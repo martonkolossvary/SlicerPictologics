@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from .results import public_file_mode, spreadsheet_safe
+from .results import discard_temporary, public_file_mode, spreadsheet_safe
 
 REPORT_SCHEMA_VERSION = "1"
 REPORT_ATTRIBUTE = "Pictologics.BatchReportSchemaVersion"
@@ -166,9 +166,6 @@ def export_report(document: dict[str, Any], path: Path) -> Path:
         os.replace(temporary_name, destination)
     except Exception:
         if temporary_name:
-            try:
-                Path(temporary_name).unlink()
-            except OSError:
-                pass
+            discard_temporary(Path(temporary_name))
         raise
     return destination

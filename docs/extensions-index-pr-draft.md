@@ -1,6 +1,6 @@
 # Pictologics catalog submission draft (do not submit yet)
 
-Updated on 2026-11-01. This is the draft text for the ExtensionsIndex pull request.
+Updated on 2026-11-02. This is the draft text for the ExtensionsIndex pull request.
 It is not an opened pull request or approval from Slicer maintainers. Submit it only
 after the maintainer approves the registration. Keep the
 [release readiness](release-readiness.md) with this draft.
@@ -67,17 +67,23 @@ treatment decisions.
   passed with 1.0.0 from a source checkout on 2026-11-01.
 - The unit-test files that CTest registers pass with the Python of Slicer 5.12.4,
   which has no pytest, as on the Extension Factory.
-- Not tested with 1.0.0 yet: the Windows Slicer application, Slicer Preview, and
-  Extension Factory packages.
+- On Windows 11 x64 (2026-11-02), Stable 5.12.4 and Preview 5.13.0-2026-09-30
+  passed the install lifecycle and all 70 integration tests with the real worker.
+  The window checklist passed on Stable.
+- Not tested yet: the Extension Factory packages.
 - See the [release readiness](release-readiness.md).
 
 ## Before opening the pull request
 
-1. Do the [Windows application check](development.md#windows-application-check).
-2. Open the pull request against ExtensionsIndex `main` (Preview), with the current
+1. Do the Windows checks again with the Windows fixes (open gate 1 in the
+   [release readiness](release-readiness.md)).
+2. Commit `Pictologics.json` to ExtensionsIndex with LF line endings, through git.
+   The validator rejects CRLF line endings, and a Windows checkout with
+   `core.autocrlf=true` makes them.
+3. Open the pull request against ExtensionsIndex `main` (Preview), with the current
    template. Ask the reviewers whether to add it to `5.12` (Stable) too. The pull
    request runs the validator (a clone of at most 100 MB; about 18 MB now), a
    package build on Windows and Linux, and an AI review.
-3. When the Extension Factory builds the packages, check each one with
+4. When the Extension Factory builds the packages, check each one with
    `scripts/check_extension_package.py`. Then install it in a clean Slicer on each
    platform, and check restart, extraction, export and scene reload.
