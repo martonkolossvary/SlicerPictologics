@@ -1,5 +1,5 @@
 # Generated from wheel-only resolutions; publish only after all gates pass.
-# Qualified wrapper revision: abad32bc236e603d368f13e3349ae4b0004cb905
+# Qualified wrapper revision: 5626fb531754fa44a4ec3a4a03ce76bc65639c65
 # slicerpictologics-runtime: cpython|3.12|linux|x86_64
 # slicerpictologics-runtime: cpython|3.12|win32|AMD64
 # slicerpictologics-runtime: cpython|3.12|darwin|x86_64
@@ -14,7 +14,7 @@ numpy==2.3.5; (implementation_name == "cpython" and python_version == "3.12" and
 numpy==2.5.4; (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "win32" and platform_machine == "AMD64") or (implementation_name == "cpython" and python_version == "3.12" and sys_platform == "darwin" and platform_machine == "arm64")
 packaging==26.3
 pandas==3.1.0
-pictologics==1.0.0
+pictologics==1.0.1
 pillow==13.0.0
 pydicom==3.0.2
 python-dateutil==4.0.0
