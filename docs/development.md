@@ -108,14 +108,85 @@ The background process sets `PICTOLOGICS_DISABLE_WARMUP=1` before importing
 Pictologics, removes that setting after import, and then calls `warmup_jit()` once.
 This keeps module discovery fast while still compiling kernels before extraction.
 
-## Windows application validation
+## Windows application check
 
-Native Windows application tests run apart from CI's Windows wheel checks. Use the reusable
-[`Invoke-SlicerValidation.ps1`](../scripts/Invoke-SlicerValidation.ps1) launcher
-with a discovered `Slicer.exe`, a qualified private dependency target and a new
-ignored output directory. It quotes each argument, preserves existing Slicer
-sessions, captures stdout/stderr separately and returns the child exit code.
-Normal GUI installation/restart and Preview qualification are separate gates.
+CI checks the released wheels on Windows, but it does not start the Windows Slicer
+application. Do this check on a Windows x64 computer before a catalog submission.
+Use only the sample data, never patient data.
+
+Prepare the computer:
+
+1. Install Slicer 5.12.4 from <https://download.slicer.org>. Keep the default folder.
+2. Open **Terminal**. Install Git and PowerShell 7:
+
+   ```powershell
+   winget install --id Git.Git -e --source winget
+   winget install --id Microsoft.PowerShell -e --source winget
+   ```
+
+3. Close the terminal. Open **PowerShell 7** from the Start menu.
+4. Get the source code into a short folder:
+
+   ```powershell
+   git clone https://github.com/martonkolossvary/SlicerPictologics C:\work\SlicerPictologics
+   Set-Location C:\work\SlicerPictologics
+   ```
+
+5. List the installed Slicer applications:
+
+   ```powershell
+   Get-ChildItem "$env:LOCALAPPDATA\slicer.org" -Filter Slicer.exe -Recurse -Depth 1 | Select-Object FullName
+   ```
+
+Run the automatic checks. Paste the block below into PowerShell 7. If step 5 shows a
+different path, change the first line. The block installs the adopted Pictologics
+release into a new test folder and starts Slicer four times
+([`check_slicer_lifecycle.py`](../scripts/check_slicer_lifecycle.py)). Then it runs
+all integration tests with the real worker. The
+[`Invoke-SlicerValidation.ps1`](../scripts/Invoke-SlicerValidation.ps1) launcher keeps
+open Slicer windows and normal settings unchanged.
+
+```powershell
+& {
+  $slicerExe = "$env:LOCALAPPDATA\slicer.org\Slicer 5.12.4\Slicer.exe"
+  $run = Get-Date -Format yyyyMMdd-HHmm
+  $lifecycleRoot = "C:\work\pl-$run"
+  foreach ($phase in 'install', 'restart', 'update', 'restart-update') {
+    & scripts/Invoke-SlicerValidation.ps1 -SlicerExe $slicerExe -Script scripts/check_slicer_lifecycle.py `
+      -OutputDirectory "local-output/$run/lifecycle-$phase" `
+      -Environment @{SLICERPICTOLOGICS_LIFECYCLE_ROOT = $lifecycleRoot; SLICERPICTOLOGICS_LIFECYCLE_PHASE = $phase}
+    if ($LASTEXITCODE -ne 0) { throw "The $phase step failed." }
+  }
+  $target = (Get-Content "$lifecycleRoot/restart-update.json" -Raw | ConvertFrom-Json).dependency_target
+  & scripts/Invoke-SlicerValidation.ps1 -SlicerExe $slicerExe -Script scripts/run_slicer_integration.py `
+    -OutputDirectory "local-output/$run/integration" `
+    -Environment @{SLICERPICTOLOGICS_RUN_REAL_CLI_TEST = '1'; SLICERPICTOLOGICS_TEST_DEPENDENCY_PATH = $target}
+  Select-String -Path "local-output/$run/integration/*.log" -Pattern '^Ran \d+ tests', '^OK', '^FAILED'
+}
+```
+
+The check passes when the last lines show `Ran 70 tests` and `OK`, with no `skipped`.
+Each step writes its logs into `local-output`. To check Slicer Preview, install it
+and run the block again with its path in the first line.
+
+Then check the window by hand:
+
+1. Start Slicer. In **Edit → Application Settings → Modules**, add
+   `C:\work\SlicerPictologics\PictologicsSlicer` and
+   `C:\work\SlicerPictologics\PictologicsCLI` to **Additional module paths**.
+   Restart Slicer.
+2. In **Sample Data**, load **CTLiver**. In **Segment Editor**, add a segment and
+   paint a region in the liver.
+3. Open **Informatics → Pictologics**. Select the segment and check **Standard — FBN
+   32 bins**. Select **Run radiomics** and approve the private installation.
+4. Check the values in the results table. Select **Export table as CSV or JSON…**
+   and open the CSV file.
+5. Set **Custom configuration** to **Build in this panel**. Turn on **Image filter
+   (IBSI 2)** and run again.
+6. Save the scene as an `.mrb` file. Close Slicer, start it again, and load the
+   scene. The results must show again, and a new run must not ask to install.
+7. To finish, select **Remove private packages…** in **Pictologics package**.
+   Then remove the two module paths and delete `C:\work`.
 
 On Windows, the worker and installation probe give Numba an extended absolute cache path (`\\?\` or
 `\\?\UNC\`). Generated JIT filenames can otherwise exceed `MAX_PATH` even

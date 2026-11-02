@@ -51,8 +51,8 @@ treatment decisions.
 - [x] The homepage (README) gives the name, a short description, images, and one
   description for each module.
 - [x] Publication: none yet. The README "How to cite" section cites Pictologics.
-- [ ] Unused GitHub features: Wiki, Projects and Discussions are off (checked on
-  2026-11-01). Also hide Releases and Packages in the About settings.
+- [x] Unused GitHub features: Wiki, Projects and Discussions are off. Releases and
+  Packages are hidden in the About settings (2026-11-02).
 - [x] Safe: the extension downloads no binaries from unreliable sources. Wheels come
   from PyPI, or from the pip index that the user configured, after consent. Images
   and results stay on the computer, and the extension sends no data anywhere.
@@ -73,10 +73,11 @@ treatment decisions.
 
 ## Before opening the pull request
 
-1. Hide Releases and Packages in the About settings of the repository.
-2. Run the ExtensionsIndex validator on a fresh clone of `main` (limit 100 MB).
-3. Open the pull request against ExtensionsIndex `main` (Preview), with the current
-   template. Ask the reviewers whether to add it to `5.12` (Stable) too.
-4. When the Extension Factory builds the packages, check each one with
+1. Do the [Windows application check](development.md#windows-application-check).
+2. Open the pull request against ExtensionsIndex `main` (Preview), with the current
+   template. Ask the reviewers whether to add it to `5.12` (Stable) too. The pull
+   request runs the validator (a clone of at most 100 MB; about 18 MB now), a
+   package build on Windows and Linux, and an AI review.
+3. When the Extension Factory builds the packages, check each one with
    `scripts/check_extension_package.py`. Then install it in a clean Slicer on each
    platform, and check restart, extraction, export and scene reload.
