@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "slicer_version": "5.12.4",
+  "slicer_repository": "https://github.com/Slicer/Slicer.git",
+  "slicer_commit": "4e21c19d8360242d88d6ca2490bf52400441b8e1",
+  "slicer_revision": "4e21c19",
+  "cmake_version": "3.31.10",
+  "qt_version": "5.15.18",
+  "python_version": "3.12.10",
+  "build_type": "Release",
+  "generator": "Unix Makefiles",
+  "targets": {
+    "Darwin": {"slicer_os": "macosx", "architecture": "amd64"},
+    "Linux": {"slicer_os": "linux", "architecture": "amd64"}
+  }
+}

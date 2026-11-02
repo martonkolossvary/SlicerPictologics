@@ -1,0 +1,33 @@
+# Codecov configuration for SlicerPictologics.
+#
+# Coverage is measured over the Slicer-neutral support library and the CLI worker
+# (see pyproject.toml [tool.coverage.run]); the GUI module runs only inside Slicer and
+# is not part of the report. Targets match the local/CI 100% gate.
+
+# The authoritative 100% gate is the pytest `fail_under = 100` step in CI; a PR that
+# drops coverage already fails there. These Codecov statuses are therefore
+# informational (visibility + PR comments) and never block a merge, which also avoids a
+# transient Codecov upload hiccup turning a check red.
+coverage:
+  status:
+    project:
+      default:
+        target: 100%
+        threshold: 0%
+        informational: true
+    patch:
+      default:
+        informational: true
+
+# Files that are intentionally not part of the measured coverage report.
+ignore:
+  - "PictologicsSlicer/PictologicsSlicer.py"   # GUI: Slicer-runtime only, tested in-Slicer
+  - "tests/**"
+  - "**/Testing/**"
+  - "scripts/**"
+  - "dev/**"
+  - "conftest.py"
+
+comment:
+  layout: "reach, diff, flags, files"
+  require_changes: false

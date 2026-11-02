@@ -1,0 +1,15 @@
+SlicerPictologics
+Copyright 2026 Márton Kolossváry
+
+This product includes software developed by Márton Kolossváry.
+
+SlicerPictologics integrates with the separately distributed Pictologics package,
+which is licensed under the Apache License, Version 2.0. Pictologics contains code
+derived from the Image Biomarker Standardisation Initiative (IBSI) reference
+implementations and guidelines: https://theibsi.github.io/
+
+3D Slicer is a separate project. Its license and notices are available from:
+https://www.slicer.org/
+
+Runtime dependencies installed for Pictologics retain their respective licenses
+and notices. See the Pictologics distribution's NOTICE file for that list.

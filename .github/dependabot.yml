@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Keep the GitHub Actions used by CI and the release-adoption workflows current.
+  # The Python dependency (pictologics) is intentionally NOT managed here — it is
+  # adopted through the compatibility-qualified automatic release workflow instead.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+  # Only the developer tool pins in pyproject.toml and poetry.lock. The CMake of
+  # packaging/requirements-tools.txt matches the Slicer 5.12.4 SDK build; keep it.
+  - package-ecosystem: "pip"
+    directory: "/"
+    ignore:
+      - dependency-name: "cmake"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      ci-tools:
+        patterns: ["*"]

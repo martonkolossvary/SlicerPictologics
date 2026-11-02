@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""Fail fast when a released Pictologics no longer matches the wrapper API."""
+
+from __future__ import annotations
+
+import inspect
+import os
+import sys
+import tempfile
+import warnings
+from importlib.metadata import version
+from itertools import product
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "PictologicsSlicer"))
+
+
+# This script is a release preflight, not a performance benchmark. Avoid import-time
+# compilation while still giving Numba a deterministic writable cache location.
+os.environ.setdefault("PICTOLOGICS_DISABLE_WARMUP", "1")
+os.environ.setdefault(
+    "NUMBA_CACHE_DIR", str(Path(tempfile.gettempdir()) / "pictologics-api-check-cache")
+)
+
+import pictologics  # noqa: E402
+
+EXPECTED_STANDARD_CONFIGURATIONS = {
+    "standard_fbn_8",
+    "standard_fbn_16",
+    "standard_fbn_32",
+    "standard_fbs_8",
+    "standard_fbs_16",
+    "standard_fbs_32",
+}
+EXPECTED_CATALOG_COLUMNS = {
+    "config",
+    "feature_key",
+    "feature_name",
+    "ibsi_code",
+    "family",
+}
+
+
+def _check_inline_builder_round_trip() -> None:
+    """The GUI's in-app config builder emits documents it never loads itself.
+
+    Confirm the adopted Pictologics accepts the builder output and each preset
+    starter template through ``load_configs`` so the mirrored contract in
+    ``PictologicsLib.inline_config`` cannot silently drift from the real library.
+    """
+
+    import yaml
+    from PictologicsLib.inline_config import (
+        INLINE_CONFIG_NAME,
+        MASK_TARGETS,
+        build_inline_configuration_document,
+        default_inline_state,
+        preset_configuration_document,
+        preset_names,
+    )
+
+    documents = {INLINE_CONFIG_NAME: build_inline_configuration_document(default_inline_state())}
+    for preset in preset_names():
+        documents[preset] = preset_configuration_document(preset)
+    fbs_state = default_inline_state()
+    fbs_state.update(discretise_method="FBS", discretise_value=16.0, fbs_minimum=-1000.0)
+    document = build_inline_configuration_document(fbs_state)
+    document["configs"]["explicit_fbs"] = document["configs"].pop(INLINE_CONFIG_NAME)
+    documents["explicit_fbs"] = document
+    for range_target, outlier_target in product(MASK_TARGETS, repeat=2):
+        state = default_inline_state()
+        state.update(
+            resample=False,
+            discretise=False,
+            families=["intensity", "morphology"],
+            resegment=True,
+            range_min=100.0,
+            range_max=400.0,
+            resegment_apply_to=range_target,
+            filter_outliers=True,
+            outlier_sigma=1.0,
+            outlier_apply_to=outlier_target,
+        )
+        document = build_inline_configuration_document(state)
+        name = f"refinement_{range_target}_{outlier_target}"
+        document["configs"][name] = document["configs"].pop(INLINE_CONFIG_NAME)
+        documents[name] = document
+
+    with tempfile.TemporaryDirectory(prefix="pictologics-inline-check-") as directory:
+        for expected_name, document in documents.items():
+            path = Path(directory) / f"{expected_name}.yaml"
+            path.write_text(yaml.safe_dump(document), encoding="utf-8")
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)
+                loaded = pictologics.RadiomicsPipeline.load_configs(
+                    path, validate=True, load_standard=False
+                )
+            names = list(loaded.list_configs())
+            if expected_name not in names:
+                raise RuntimeError(
+                    f"Inline/preset document did not register '{expected_name}'; got {names}"
+                )
+            catalog = loaded.describe_features()
+            described = {record["config"] for record in catalog.to_dict(orient="records")}
+            if expected_name not in described:
+                raise RuntimeError(f"Inline/preset config '{expected_name}' described no features")
+            if expected_name.startswith("refinement_"):
+                _check_refinement_values(loaded, expected_name)
+
+
+def _check_mirrored_step_parameters() -> None:
+    """The in-app lint keeps its own copy of the package's step and parameter names.
+
+    A difference would make the Validate button report false problems or miss real
+    ones, so it must stop adoption until the copy is updated.
+    """
+
+    from PictologicsLib.inline_config import _VALID_STEP_PARAMS
+
+    package_steps = getattr(pictologics.RadiomicsPipeline, "_VALID_STEPS", None)
+    if not isinstance(package_steps, dict):
+        raise RuntimeError("RadiomicsPipeline._VALID_STEPS is unavailable; update the lint copy")
+    actual = {step: frozenset(params) for step, params in package_steps.items()}
+    expected = _VALID_STEP_PARAMS
+    if actual != expected:
+        empty: frozenset[str] = frozenset()
+        differences = {
+            step: sorted(actual.get(step, empty) ^ expected.get(step, empty))
+            for step in sorted(set(actual) | set(expected))
+            if actual.get(step) != expected.get(step)
+        }
+        raise RuntimeError(
+            "PictologicsLib.inline_config._VALID_STEP_PARAMS differs from "
+            f"RadiomicsPipeline._VALID_STEPS: {differences}"
+        )
+
+
+def _check_builder_filters() -> None:
+    """Each in-app filter and step must load without warnings and run on the released package."""
+
+    import warnings
+
+    import numpy as np
+    from PictologicsLib.inline_config import (
+        FILTER_PARAMETERS,
+        build_inline_configuration_document,
+        default_filter,
+        default_inline_state,
+    )
+
+    rng = np.random.default_rng(0)
+    image = pictologics.Image(
+        array=rng.normal(100.0, 20.0, (20, 20, 20)), spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0)
+    )
+    mask_array = np.zeros((20, 20, 20), dtype=np.uint8)
+    mask_array[5:15, 5:15, 5:15] = 1
+    mask = pictologics.Image(array=mask_array, spacing=image.spacing, origin=image.origin)
+    filter_bank = default_inline_state()
+    filter_bank.update(resample=False, discretise=False, families=["intensity"], filter=True,
+                       filters=[default_filter(kind) for kind in FILTER_PARAMETERS])
+    every_step = default_inline_state()
+    every_step.update(
+        interpolation="cubic", spacing=[2.0, 2.0, 2.0], grow_mask=True, grow_to_mm=2.0, grow_from_mm=0.0,
+        normalise=True, normalise_method="percentile", keep_largest=True,
+        discretise_method="FIXED_CUTOFFS", discretise_cutoffs="0.25, 0.5, 0.75",
+        texture_distance=2, ngldm_alpha=1, ivh_use_continuous=True,
+        filter=True, include_unfiltered=True, filters=[default_filter("gaussian")],
+    )
+    for state in (filter_bank, every_step):
+        document = build_inline_configuration_document(state)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            pipeline = pictologics.RadiomicsPipeline.from_dict(
+                document, validate=True, load_standard=False
+            )
+        names = list(document["configs"])
+        results = pipeline.run(image, mask, config_names=names)
+        for name in names:
+            if not np.isfinite(results[name]["mean_intensity_Q4LE"]):
+                raise RuntimeError(f"The in-app configuration {name} gave no mean intensity")
+
+
+def _check_refinement_values(pipeline, config_name: str) -> None:
+    """Independent oracle for both selectors, including asymmetric mask targets."""
+    import numpy as np
+
+    data = np.arange(512, dtype=np.float64).reshape(8, 8, 8)
+    original = data.copy()
+    mask_array = np.ones_like(data, dtype=np.uint8)
+    image = pictologics.Image(array=data, spacing=(2.0, 3.0, 4.0), origin=(0.0, 0.0, 0.0))
+    mask = pictologics.Image(array=mask_array, spacing=image.spacing, origin=image.origin)
+    range_target, outlier_target = config_name.removeprefix("refinement_").split("_")
+    expected_masks = {}
+    for target in ("intensity", "morph"):
+        selected = np.ones_like(data, dtype=bool)
+        if range_target in ("both", target):
+            selected &= (data >= 100) & (data <= 400)
+        if outlier_target in ("both", target):
+            values = data[selected]
+            mean, std = values.mean(), values.std(ddof=0)
+            selected &= (data >= mean - std) & (data <= mean + std)
+        expected_masks[target] = selected
+    values = data[expected_masks["intensity"]]
+    expected = {
+        "mean_intensity_Q4LE": values.mean(),
+        # A symmetric distribution keeps its mean after filtering. These checks
+        # also fail if the outlier step is missing from an intensity-only run.
+        "intensity_variance_ECT3": values.var(ddof=0),
+        "minimum_intensity_1GSF": values.min(),
+        "maximum_intensity_84IY": values.max(),
+        "volume_voxel_counting_YEKZ": expected_masks["morph"].sum() * 24.0,
+    }
+    results = pipeline.run(image, mask, config_names=[config_name])[config_name]
+    for feature, value in expected.items():
+        np.testing.assert_allclose(
+            results[feature], value, rtol=1e-10, err_msg=f"{config_name}: {feature}"
+        )
+    np.testing.assert_array_equal(data, original)
+    np.testing.assert_array_equal(mask_array, np.ones_like(mask_array))
+
+
+def _check_grouped_presets() -> None:
+    """Fail adoption if a wheel changes names or settings shown by the GUI."""
+    from PictologicsLib.preset_catalog import PRESET_GROUPS, PRESETS
+
+    for template, group in zip(("standard", "coronary", "lv"), PRESET_GROUPS, strict=True):
+        pipeline = pictologics.RadiomicsPipeline.from_template(template)
+        expected = {name for name, preset in PRESETS.items() if preset.group == group}
+        if set(pipeline.list_configs()) != expected:
+            raise RuntimeError(f"Bundled {template} configuration names differ from the GUI catalogue")
+        configs = pipeline.to_dict(config_names=sorted(expected))["configs"]
+        for name, config in configs.items():
+            steps = config["steps"]
+            spacing = [step["params"]["new_spacing"] for step in steps if step["step"] == "resample"]
+            if spacing != [[PRESETS[name].spacing] * 3]:
+                raise RuntimeError(f"Bundled {name} resampling differs from the GUI memory preflight")
+            if PRESETS[name].intensity_range is not None:
+                ranges = [(step["params"]["range_min"], step["params"]["range_max"])
+                          for step in steps if step["step"] == "resegment"]
+                if ranges != [PRESETS[name].intensity_range]:
+                    raise RuntimeError(f"Bundled {name} HU range differs from the GUI description")
+
+
+def main() -> int:
+    installed = version("pictologics")
+    if str(pictologics.__version__) != installed:
+        raise RuntimeError(
+            f"pictologics.__version__={pictologics.__version__!r} does not match "
+            f"distribution metadata {installed!r}"
+        )
+
+    pipeline = pictologics.RadiomicsPipeline()
+    _check_grouped_presets()
+    standard = set(pipeline.get_all_standard_config_names())
+    if standard != EXPECTED_STANDARD_CONFIGURATIONS:
+        raise RuntimeError(
+            "Standard configuration contract changed: "
+            f"expected {sorted(EXPECTED_STANDARD_CONFIGURATIONS)}, got {sorted(standard)}"
+        )
+
+    catalog = pipeline.describe_features()
+    missing_columns = EXPECTED_CATALOG_COLUMNS - set(catalog.columns)
+    if missing_columns or catalog.empty:
+        raise RuntimeError(
+            f"Feature catalog contract changed; missing={sorted(missing_columns)}, "
+            f"empty={catalog.empty}"
+        )
+
+    run_parameters = inspect.signature(pipeline.run).parameters
+    missing_parameters = {"image", "mask", "subject_id", "config_names"} - set(run_parameters)
+    if missing_parameters:
+        raise RuntimeError(
+            f"RadiomicsPipeline.run contract changed; missing {sorted(missing_parameters)}"
+        )
+    for name in (
+        "load_configs",
+        "merge_configs",
+        "list_configs",
+        "to_dict",
+        "clear_log",
+    ):
+        if not callable(getattr(pipeline, name, None)):
+            raise RuntimeError(f"RadiomicsPipeline.{name} is unavailable")
+    for name in ("load_image", "warmup_jit"):
+        if not callable(getattr(pictologics, name, None)):
+            raise RuntimeError(f"pictologics.{name} is unavailable")
+    if not callable(getattr(pipeline, "get_log", None)):
+        raise RuntimeError("RadiomicsPipeline.get_log is unavailable")
+
+    _check_mirrored_step_parameters()
+    _check_inline_builder_round_trip()
+    _check_builder_filters()
+
+    print(
+        f"Pictologics {installed} wrapper API check passed "
+        f"({len(catalog)} described configuration-feature rows)."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,179 @@
+name: Adopt latest qualified Pictologics
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable X.Y.Z release (empty = latest on PyPI)"
+        required: false
+        type: string
+  repository_dispatch:
+    types: [pictologics-release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adopt-pictologics
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      changed: ${{ steps.release.outputs.changed }}
+      revision: ${{ steps.base.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - id: base
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Discover a published stable wheel without changing the pin
+        id: release
+        env:
+          MANUAL_VERSION: ${{ inputs.version }}
+          DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+        run: python scripts/resolve_pictologics_release.py --version "${MANUAL_VERSION:-${DISPATCH_VERSION:-}}"
+      - name: Report discovery
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          CHANGED: ${{ steps.release.outputs.changed }}
+        run: echo "PyPI release $VERSION; adoption needed=$CHANGED" >> "$GITHUB_STEP_SUMMARY"
+  resolve:
+    needs: discover
+    if: needs.discover.outputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            runtime: linux
+            architecture: x64
+          - os: windows-latest
+            runtime: windows
+            architecture: x64
+          - os: macos-15-intel
+            runtime: macos
+            architecture: x64
+          - os: macos-15
+            runtime: macos-arm64
+            architecture: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.discover.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.architecture }}
+      - run: python -m pip install packaging
+      - name: Resolve binary dependencies on the actual target interpreter
+        env:
+          VERSION: ${{ needs.discover.outputs.version }}
+          REVISION: ${{ needs.discover.outputs.revision }}
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          python scripts/bump_pictologics_requirement.py "$VERSION"
+          python -m pip install --ignore-installed --only-binary=:all: \
+            --target "$RUNNER_TEMP/resolve" --report "$RUNNER_TEMP/resolution.json" \
+            -r PictologicsSlicer/requirements-pictologics.txt
+          python scripts/platform_constraints.py --version "$VERSION" --revision "$REVISION" \
+            --runtime "$RUNTIME" --report "$RUNNER_TEMP/resolution.json" \
+            --output "$RUNNER_TEMP/snapshot-$RUNTIME.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dependency-snapshot-${{ matrix.runtime }}
+          path: ${{ runner.temp }}/snapshot-${{ matrix.runtime }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  constraints:
+    needs: [discover, resolve]
+    runs-on: ubuntu-24.04
+    outputs:
+      constraints: ${{ steps.constraints.outputs.constraints }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.discover.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install packaging
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dependency-snapshot-*
+          path: ${{ runner.temp }}/dependency-snapshots
+          merge-multiple: true
+      - name: Merge the complete runtime matrix before qualification
+        id: constraints
+        env:
+          VERSION: ${{ needs.discover.outputs.version }}
+          REVISION: ${{ needs.discover.outputs.revision }}
+        run: |
+          python scripts/platform_constraints.py --version "$VERSION" --revision "$REVISION" \
+            --snapshots "$RUNNER_TEMP"/dependency-snapshots/snapshot-*.json \
+            --output "$RUNNER_TEMP/constraints.txt"
+          {
+            echo "constraints<<CONSTRAINTS_END"
+            cat "$RUNNER_TEMP/constraints.txt"
+            echo "CONSTRAINTS_END"
+          } >> "$GITHUB_OUTPUT"
+
+  qualify:
+    needs: [discover, constraints]
+    if: needs.discover.outputs.changed == 'true'
+    uses: ./.github/workflows/compatibility.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    with:
+      version: ${{ needs.discover.outputs.version }}
+      revision: ${{ needs.discover.outputs.revision }}
+      constraints: ${{ needs.constraints.outputs.constraints }}
+
+  publish:
+    needs: [discover, constraints, qualify]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.discover.outputs.revision }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Publish only the qualified pin and tested versions, without force-pushing
+        env:
+          VERSION: ${{ needs.discover.outputs.version }}
+          CONSTRAINTS: ${{ needs.constraints.outputs.constraints }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Recheck publication/yank status after the potentially lengthy gates.
+          python scripts/resolve_pictologics_release.py --version "$VERSION"
+          python scripts/bump_pictologics_requirement.py "$VERSION"
+          printf '%s\n' "$CONSTRAINTS" > PictologicsSlicer/constraints-pictologics.txt
+          # Commit as the author of the qualified main: the history keeps one author.
+          git config user.name "$(git log -1 --format=%an)"
+          git config user.email "$(git log -1 --format=%ae)"
+          git add -- PictologicsSlicer/requirements-pictologics.txt PictologicsSlicer/constraints-pictologics.txt
+          git commit -m "ENH: Adopt compatibility-qualified Pictologics $VERSION"
+          # If main changed after qualification, the fast-forward-only push fails.
+          # The next scheduled run qualifies the candidate against the new HEAD.
+          git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+          echo "Published Pictologics $VERSION after all compatibility gates passed." >> "$GITHUB_STEP_SUMMARY"
