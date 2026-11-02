@@ -949,10 +949,15 @@ class PictologicsSlicerIntegrationTest(unittest.TestCase):
         fired = []
         started = time.monotonic()
         qt.QTimer.singleShot(200, lambda: fired.append(time.monotonic() - started))
-        with patch.object(self.logic, "dependencyProbePath", return_value=probe):
-            self.logic.probeDependencyEnvironment(self.temporary_directory, "ok", warmup=True)
+        candidate = self.logic.privatePaths()["environments_root"] / "1.0.1-aaaaaaaa"
+        with patch.object(self.logic, "dependencyProbePath", return_value=probe), patch.object(
+            self.logic, "_launchPythonSlicer", wraps=self.logic._launchPythonSlicer
+        ) as launch:
+            self.logic.probeDependencyEnvironment(candidate, "ok", warmup=True)
             self.assertEqual(len(fired), 1)
             self.assertLess(fired[0], 1.5)
+            # The candidate compiles into its own cache, which the cleanup deletes with it.
+            self.assertEqual(launch.call_args.args[1], candidate.parent.parent / "numba-cache" / candidate.name)
             with self.assertRaisesRegex(RuntimeError, "failed its import/API/JIT probe"):
                 self.logic.probeDependencyEnvironment(self.temporary_directory, "fail", warmup=True)
 

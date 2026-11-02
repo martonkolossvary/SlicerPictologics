@@ -34,6 +34,7 @@ from PictologicsLib.dependencies import (
     dependency_environment_path,
     dependency_paths,
     inspect_target,
+    numba_cache_for,
     parse_pictologics_requirement,
     remove_inactive_environments,
 )
@@ -424,6 +425,7 @@ class ActivationTests(unittest.TestCase):
             paths = dependency_paths(root)
             self.assertEqual(activated, target)
             self.assertEqual(paths["dependency_target"], target)
+            self.assertEqual(paths["numba_cache"], root.resolve() / "numba-cache" / "0.5.0")
             self.assertEqual(
                 paths["active_pointer"].read_text(encoding="utf-8"),
                 "0.5.0\n",
@@ -571,6 +573,21 @@ class TargetInspectionDataclassTests(unittest.TestCase):
         self.assertTrue(many.ambiguous)
 
 
+class NumbaCacheTests(unittest.TestCase):
+    def test_each_versioned_environment_has_its_own_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory, "cache")
+            caches = root.resolve() / "numba-cache"
+            for target, expected in (
+                (root / "environments" / "1.0.0-aaaaaaaa", caches / "1.0.0-aaaaaaaa"),
+                (root / "environments" / ".installing-bbbbbbbb", caches / ".installing-bbbbbbbb"),
+                (root / "python-packages", caches),
+                (Path(directory, "elsewhere"), caches),
+            ):
+                with self.subTest(target=target.name):
+                    self.assertEqual(numba_cache_for(root, target), expected)
+
+
 class RemoveInactiveEnvironmentsTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -627,6 +644,28 @@ class RemoveInactiveEnvironmentsTests(unittest.TestCase):
             self.assertTrue(kept.exists())
         if link is not None:
             self.assertTrue(link.is_symlink())
+
+    def test_caches_of_removed_and_legacy_environments_go_too(self) -> None:
+        old = self._environment("0.5.0-aaaaaaaa")
+        active = self._environment("0.5.1-bbbbbbbb")
+        installing = self._environment(".installing-cccccccc")
+        caches = self.root / "numba-cache"
+        kept = [caches / name for name in (active.name, installing.name, "0.6.0-dddddddd")]
+        gone = [caches / name for name in (old.name, "features_" + "0" * 40)]
+        for cache in kept + gone:
+            (cache / "index").mkdir(parents=True)
+        note = caches / "notes.txt"
+        note.write_text("keep", encoding="utf-8")
+        activate_dependency_target(self.root, active)
+        # The cache of 0.6.0 is new: another Slicer can still be checking that environment.
+        self._age(old, *kept[:2], *gone, note)
+
+        self.assertEqual(remove_inactive_environments(self.root), [old.resolve()])
+
+        for cache in kept + [note]:
+            self.assertTrue(cache.exists(), cache.name)
+        for cache in gone:
+            self.assertFalse(cache.exists(), cache.name)
 
     def test_folder_that_cannot_be_deleted_is_left_for_later(self) -> None:
         old = self._environment("0.5.0-aaaaaaaa")

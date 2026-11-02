@@ -49,7 +49,7 @@ New releases are adopted only after compatibility checks pass. After you update
 the extension, select **Install / update adopted release…**. To run the newest
 source code, [load a development checkout](docs/development.md#load-a-development-checkout).
 
-The private folder needs about 500 MB. The install dialog shows where it is (on
+The private folder needs about 600 MB. The install dialog shows where it is (on
 macOS, `~/Library/Application Support/slicer.org/Slicer/SlicerPictologics`). To free
 the space, select **Remove private packages…** in the **Pictologics package** section
 before you uninstall the extension, or delete that `SlicerPictologics` folder later.

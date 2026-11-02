@@ -383,7 +383,7 @@ def _cache_layout(cache_root: str | os.PathLike[str]) -> dict[str, Path]:
         "environments_root": root / "environments",
         "active_pointer": root / ACTIVE_ENVIRONMENT_POINTER,
         "jobs_root": root / "jobs",
-        "numba_cache": root / "numba-cache",
+        "numba_cache_root": root / "numba-cache",
         # This directory was used before immutable, versioned environments were
         # introduced.  It remains a read/write fallback until an active pointer is
         # created so existing installations continue to work.
@@ -544,6 +544,24 @@ def activate_dependency_target(
     return candidate
 
 
+def numba_cache_for(
+    cache_root: str | os.PathLike[str], target: str | os.PathLike[str]
+) -> Path:
+    """Return the Numba cache folder of the package environment *target*.
+
+    Numba names its cache folders after the source folder, so a cache serves one
+    environment only. A versioned environment gets its own folder, and the cleanup
+    deletes it with the environment. The legacy ``python-packages`` folder uses the
+    top-level folder.
+    """
+
+    layout = _cache_layout(cache_root)
+    candidate = Path(target).expanduser().resolve(strict=False)
+    if candidate.parent == layout["environments_root"]:
+        return layout["numba_cache_root"] / candidate.name
+    return layout["numba_cache_root"]
+
+
 def remove_inactive_environments(
     cache_root: str | os.PathLike[str], *, minimum_age_seconds: float = 60 * 60
 ) -> list[Path]:
@@ -555,7 +573,9 @@ def remove_inactive_environments(
     checking that new installation before it activates it. Without an active pointer
     nothing is deleted, because the legacy folder is then still in use. A folder that
     cannot be deleted now (for example a file that Windows still has open) is left
-    for the next attempt. The caller must first make sure that no job is running.
+    for the next attempt. The Numba cache folders of environments that no longer
+    exist go too, by the same rules, also the flat folders of the legacy layout.
+    The caller must first make sure that no job is running.
     """
 
     layout = _cache_layout(cache_root)
@@ -583,6 +603,21 @@ def remove_inactive_environments(
         except OSError:
             continue
         removed.append(candidate)
+    remaining = (
+        {path.name for path in layout["environments_root"].iterdir()}
+        if layout["environments_root"].is_dir()
+        else set()
+    )
+    caches = layout["numba_cache_root"]
+    for cache in sorted(caches.iterdir()) if caches.is_dir() else []:
+        if (
+            cache.name in remaining
+            or cache.is_symlink()
+            or not cache.is_dir()
+            or cache.stat().st_mtime > newest
+        ):
+            continue
+        remove_tree(cache, ignore_errors=True)
     return removed
 
 
@@ -592,7 +627,8 @@ def dependency_paths(cache_root: str | os.PathLike[str]) -> dict[str, Path]:
     A validated active pointer selects an immutable versioned environment.  If the
     pointer does not yet exist, ``dependency_target`` is the legacy
     ``python-packages`` directory for backward compatibility.  A present but invalid
-    pointer is an error rather than an unsafe or surprising fallback.
+    pointer is an error rather than an unsafe or surprising fallback.  ``numba_cache``
+    is the Numba cache folder of that target.
     """
 
     paths = _cache_layout(cache_root)
@@ -604,4 +640,5 @@ def dependency_paths(cache_root: str | os.PathLike[str]) -> dict[str, Path]:
         if active_target is not None
         else paths["legacy_dependency_target"]
     )
+    paths["numba_cache"] = numba_cache_for(cache_root, paths["dependency_target"])
     return paths

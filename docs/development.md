@@ -100,9 +100,10 @@ The private target also pins its own Pillow version, independently of Slicer's
 shared Pillow. Neither target's dependency versions are installed into the other.
 
 New environments are named `<version>-<8 hex>` so that the deepest package files stay
-within the Windows 260-character path limit. After a new environment becomes active,
-the older ones are deleted; while any job runs, the deletion waits for the next module
-start or installation.
+within the Windows 260-character path limit. Each environment compiles its Numba
+code into its own folder, `numba-cache/<environment name>`. After a new environment
+becomes active, the older ones and their Numba folders are deleted; while any job
+runs, the deletion waits for the next module start or installation.
 
 The background process sets `PICTOLOGICS_DISABLE_WARMUP=1` before importing
 Pictologics, removes that setting after import, and then calls `warmup_jit()` once.
@@ -124,7 +125,9 @@ Prepare the computer:
    winget install --id Microsoft.PowerShell -e --source winget
    ```
 
-3. Close the terminal. Open **PowerShell 7** from the Start menu.
+3. Close the terminal. Open **PowerShell 7** from the Start menu. Windows
+   PowerShell 5.1 also works. It does not run scripts by default, so first run
+   `Set-ExecutionPolicy -Scope Process Bypass` in it. This applies only to that window.
 4. Get the source code into a short folder:
 
    ```powershell
@@ -138,7 +141,7 @@ Prepare the computer:
    Get-ChildItem "$env:LOCALAPPDATA\slicer.org" -Filter Slicer.exe -Recurse -Depth 1 | Select-Object FullName
    ```
 
-Run the automatic checks. Paste the block below into PowerShell 7. The first line
+Run the automatic checks. Paste the block below into PowerShell. The first line
 finds Slicer 5.12.4 in the list from step 5. For another version, change `5\.12\.4`
 in the first line, for example to `5\.13\.0` for Slicer Preview. The block installs
 the adopted Pictologics release into a new test folder and starts Slicer four times

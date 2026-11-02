@@ -69,13 +69,14 @@ treatment decisions.
   which has no pytest, as on the Extension Factory.
 - On Windows 11 x64 (2026-11-02), Stable 5.12.4 and Preview 5.13.0-2026-09-30
   passed the install lifecycle and all 70 integration tests with the real worker.
-  The window checklist passed on Stable.
+  The window checklist passed on Stable. After the Windows fixes, all checks passed
+  again, also with a profile folder name of 40 characters.
 - Not tested yet: the Extension Factory packages.
 - See the [release readiness](release-readiness.md).
 
 ## Before opening the pull request
 
-1. Do the Windows checks again with the Windows fixes (open gate 1 in the
+1. Do the last Windows check (open gate 1 in the
    [release readiness](release-readiness.md)).
 2. Commit `Pictologics.json` to ExtensionsIndex with LF line endings, through git.
    The validator rejects CRLF line endings, and a Windows checkout with

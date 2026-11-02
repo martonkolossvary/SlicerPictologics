@@ -241,9 +241,10 @@ The dependency status is a **metadata check**, not an import/API/JIT health test
 refreshing never installs packages or launches a worker. For a failed installation,
 check connectivity and disk space, then retry **Install / update adopted release…**.
 A rejected candidate leaves the previous active environment intact.
-**Remove private packages…** deletes the private packages (about 500 MB) and the
+**Remove private packages…** deletes the private packages (about 600 MB) and the
 compiled code of this Slicer after you confirm; a later run installs them again. It
-waits until no Pictologics job runs. For export
+waits until no Pictologics job runs. After an update, the extension deletes the old
+package version and its compiled code by itself when no job runs. For export
 failure, keep the table open, check the destination and retry. Detailed errors and
 processing logs remain available locally and may contain identifying information;
 do not paste them publicly without reviewing them separately.

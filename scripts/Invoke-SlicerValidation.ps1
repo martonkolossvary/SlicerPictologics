@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 <# Launch one owned Slicer, preserving existing sessions and process environment.
 Raw output is local evidence and must be privacy-reviewed before publication. #>
 [CmdletBinding()]
@@ -10,10 +10,28 @@ param(
     [switch]$Visible
 )
 $ErrorActionPreference = 'Stop'
+
+function ConvertTo-WindowsArgument([string]$Value) {
+    # Windows PowerShell 5.1 has no ProcessStartInfo.ArgumentList. Quote each argument
+    # so that the program reads it back unchanged (the CommandLineToArgvW rules).
+    if ($Value -and $Value -notmatch '[\s"]') { return $Value }
+    $quoted = '"'
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]'\') { $backslashes++; continue }
+        if ($character -eq [char]'"') { $quoted += '\' * (2 * $backslashes + 1) }
+        else { $quoted += '\' * $backslashes }
+        $quoted += $character
+        $backslashes = 0
+    }
+    return $quoted + ('\' * (2 * $backslashes)) + '"'
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $executablePath = (Resolve-Path -LiteralPath $SlicerExe).Path
 $scriptPath = (Resolve-Path -LiteralPath $Script).Path
-$outputPath = [IO.Path]::GetFullPath($OutputDirectory)
+# GetFullPath would use the process folder, which Set-Location does not change.
+$outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 if (Test-Path -LiteralPath $outputPath) { throw 'Use a new launch output directory.' }
 New-Item -ItemType Directory -Path $outputPath | Out-Null
 $startInfo = [Diagnostics.ProcessStartInfo]::new()
@@ -28,7 +46,7 @@ $launchArguments = @('--no-splash', '--disable-settings', '--ignore-slicerrc')
 if (-not $Visible) { $launchArguments += '--no-main-window' }
 $launchArguments += @('--additional-module-paths', (Join-Path $repoRoot 'PictologicsSlicer'),
     (Join-Path $repoRoot 'PictologicsCLI'), '--python-script', $scriptPath)
-foreach ($argument in $launchArguments) { $startInfo.ArgumentList.Add($argument) }
+$startInfo.Arguments = ($launchArguments | ForEach-Object { ConvertTo-WindowsArgument $_ }) -join ' '
 foreach ($key in @('PYTHONPATH', 'PYTHONHOME', 'PICTOLOGICS_DEV_SOURCE')) {
     $startInfo.Environment.Remove($key) | Out-Null
 }

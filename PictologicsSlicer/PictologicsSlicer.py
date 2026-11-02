@@ -46,6 +46,7 @@ from PictologicsLib.dependencies import (
     dependency_environment_path,
     dependency_paths,
     inspect_target,
+    numba_cache_for,
     parse_pictologics_requirement,
     remove_inactive_environments,
 )
@@ -2879,7 +2880,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         message = (
             f"Pictologics must be {action} in an extension-private Python folder:\n\n"
             f"{paths['environments_root']}\n\nRequirement: {requirement}\n"
-            f"{sourceDescription}\n\n"
+            f"{sourceDescription}\nDisk space: about 600 MB\n\n"
             "This does not modify Slicer's shared Python packages. Continue?"
         )
         if not slicer.util.confirmOkCancelDisplay(
@@ -2958,8 +2959,11 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             Path(__file__).resolve().parent / "PictologicsLib" / "dependency_probe.py"
         )
 
-    def _launchPythonSlicer(self, arguments: Sequence[str]):
-        """Start a fresh PythonSlicer process for the private Pictologics folder."""
+    def _launchPythonSlicer(self, arguments: Sequence[str], numbaCache: Path | None = None):
+        """Start a fresh PythonSlicer process for the private Pictologics folder.
+
+        ``numbaCache`` defaults to the cache of the active environment.
+        """
 
         pythonSlicer = shutil.which("PythonSlicer")
         if not pythonSlicer:
@@ -2971,7 +2975,7 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
             [pythonSlicer, *arguments],
             useStartupEnvironment=False,
             updateEnvironment={
-                "NUMBA_CACHE_DIR": str(self.privatePaths()["numba_cache"]),
+                "NUMBA_CACHE_DIR": str(numbaCache or self.privatePaths()["numba_cache"]),
                 "PICTOLOGICS_DISABLE_WARMUP": "1",
                 "PYTHONNOUSERSITE": "1",
             },
@@ -3011,7 +3015,8 @@ class PictologicsSlicerLogic(ScriptedLoadableModuleLogic):
         command = [str(self.dependencyProbePath()), str(target), expectedVersion]
         if not warmup:
             command.append("--skip-warmup")
-        process = self._launchPythonSlicer(command)
+        # Compile into the candidate's own cache: the cleanup deletes it with the candidate.
+        process = self._launchPythonSlicer(command, numba_cache_for(self.dependencyRoot(), target))
         # The JIT warm-up prints nothing for minutes. Keep Slicer responsive and say why.
         dialog = slicer.util.createProgressDialog(
             maximum=0,

@@ -39,9 +39,19 @@ The check found these problems. The Windows fixes of 2026-11-02 correct them:
   raw Windows error that named a hidden temporary file.
 - One unit test expected POSIX file modes. Windows keeps only the read-only flag.
 
-With the fixes, Slicer 5.12.4 on macOS passed all 70 integration tests with the real
-worker, and every unit-test file passed with Slicer's Python (2026-11-02). The
-Windows rerun is open gate 1.
+The same computer ran the checks again with the fixes (revision `1ab4f82`):
+
+| Check | Result |
+|---|---|
+| Lint, types and unit tests with normal Python | 639 pass, 100% coverage; 3 link tests skipped (they need a Windows privilege) |
+| Unit-test files that CTest registers, with the Python of Slicer 5.12.4 | 31 of 31 files pass |
+| Application check on Slicer 5.12.4 and on Preview 5.13.0-2026-09-30 | 4 of 4 lifecycle phases and 70 integration tests pass, 0 skipped |
+| Profile folder name of 40 characters (emulated) | Install, restart and update pass. The old-version cleanup and **Remove private packages…** delete everything. |
+| Export over a read-only CSV, and over a CSV that another program holds open | The real error shows, nothing stays behind, and the CSV does not change |
+| Window checklist (scripted) on Slicer 5.12.4 | Pass; after scene reload, 340 of 340 values are identical |
+
+With the fixes, Slicer 5.12.4 on macOS also passed all 70 integration tests with the
+real worker, and every unit-test file with Slicer's Python.
 
 ## Earlier checks
 
@@ -51,10 +61,10 @@ Windows rerun is open gate 1.
 
 ## Open gates
 
-1. Do the Windows checks again with the Windows fixes: the unit-test files with
-   Slicer's Python, the application check on Stable 5.12.4 and a current Preview,
-   a profile folder name of 40 characters, and an export over a read-only file and
-   over a file that is open in Excel. The first check passed on 2026-11-02 (above).
+1. On Windows, do the [Windows application check](development.md#windows-application-check)
+   once more, in Windows PowerShell 5.1, on a Slicer Preview newer than 2026-09-30.
+   This also checks the Numba folder of each environment, which came after revision
+   `1ab4f82`. Then export once over a CSV file that Excel has open.
 2. Open the catalog pull request. The text is in the
    [pull request draft](extensions-index-pr-draft.md).
 3. Check each Extension Factory package with `scripts/check_extension_package.py`.
