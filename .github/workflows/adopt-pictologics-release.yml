@@ -88,9 +88,14 @@ jobs:
           RUNTIME: ${{ matrix.runtime }}
         run: |
           python scripts/bump_pictologics_requirement.py "$VERSION"
-          python -m pip install --ignore-installed --only-binary=:all: \
-            --target "$RUNNER_TEMP/resolve" --report "$RUNNER_TEMP/resolution.json" \
-            -r PictologicsSlicer/requirements-pictologics.txt
+          # Some PyPI mirrors list a new release minutes after others: retry for 4 minutes.
+          for attempt in 1 2 3 4 5; do
+            python -m pip install --ignore-installed --only-binary=:all: \
+              --target "$RUNNER_TEMP/resolve" --report "$RUNNER_TEMP/resolution.json" \
+              -r PictologicsSlicer/requirements-pictologics.txt && break
+            [ "$attempt" -lt 5 ] || exit 1
+            sleep 60
+          done
           python scripts/platform_constraints.py --version "$VERSION" --revision "$REVISION" \
             --runtime "$RUNTIME" --report "$RUNNER_TEMP/resolution.json" \
             --output "$RUNNER_TEMP/snapshot-$RUNTIME.json"

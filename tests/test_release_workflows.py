@@ -182,6 +182,8 @@ def test_adoption_resolves_tested_versions_once_for_every_gate():
     assert resolve["steps"][1]["with"]["architecture"] == "${{ matrix.architecture }}"
     commands = "\n".join(step.get("run", "") for step in resolve["steps"])
     assert "--ignore-installed --only-binary=:all:" in commands
+    # The first runners can see a new release before the others do.
+    assert "for attempt in 1 2 3 4 5" in commands and "sleep 60" in commands
     assert '--report "$RUNNER_TEMP/resolution.json"' in commands
     assert "platform_constraints.py" in commands
     assert "pip freeze" not in commands

@@ -1,7 +1,22 @@
 # Release readiness
 
 This page gives the state of the first catalog release: extension 0.1.0 with
-Pictologics 1.0.0. The job manifest schema is 1 and the result payload schema is 2.
+Pictologics 1.0.1. The job manifest schema is 1 and the result payload schema is 2.
+
+## Checks with Pictologics 1.0.1 (2026-11-02)
+
+- The adoption workflow qualified 1.0.1 and pinned it on `main` (commit `015d8fe`).
+  It resolved the dependencies and checked the released wheels on Linux x86_64,
+  Windows x64, macOS x86_64 and macOS arm64. It ran all integration tests in a real
+  Slicer 5.12.4 on Linux, and the unit tests with 100% scoped coverage. This was the
+  first full run of the release chain in this repository.
+- Two dependency jobs failed at first: 40 seconds after the release, their PyPI
+  mirror did not list 1.0.1 yet. A rerun passed, and these jobs now try again for
+  4 minutes.
+- Stable Slicer 5.12.4 on macOS (Intel build under Rosetta) passed the install
+  lifecycle (install, restart, update, restart after update) and all 70 integration
+  tests with the real worker, 0 skipped. Each environment had its own Numba folder,
+  and the cleanup deleted the old environment together with its Numba folder.
 
 ## Checks with Pictologics 1.0.0 (2026-11-01)
 
@@ -62,9 +77,11 @@ real worker, and every unit-test file with Slicer's Python.
 ## Open gates
 
 1. On Windows, do the [Windows application check](development.md#windows-application-check)
-   once more, in Windows PowerShell 5.1, on a Slicer Preview newer than 2026-09-30.
+   once more with Pictologics 1.0.1, on Slicer 5.12.4, in Windows PowerShell 5.1.
    This also checks the Numba folder of each environment, which came after revision
-   `1ab4f82`. Then export once over a CSV file that Excel has open.
+   `1ab4f82`. Then export once over a CSV file that Excel has open. A newer Preview
+   is not necessary: the Preview of 2026-09-30 passed (maintainer decision of
+   2026-11-02).
 2. Open the catalog pull request. The text is in the
    [pull request draft](extensions-index-pr-draft.md).
 3. Check each Extension Factory package with `scripts/check_extension_package.py`.

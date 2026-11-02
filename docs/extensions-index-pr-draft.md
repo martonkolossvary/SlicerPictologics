@@ -57,18 +57,19 @@ treatment decisions.
   from PyPI, or from the pip index that the user configured, after consent. Images
   and results stay on the computer, and the extension sends no data anywhere.
 
-## Validation (Pictologics 1.0.0)
+## Validation (Pictologics 1.0.1)
 
-- The adoption workflow qualified Pictologics 1.0.0 on 2026-11-01: dependency
+- The adoption workflow qualified Pictologics 1.0.1 on 2026-11-02: dependency
   resolution and released-wheel checks on Linux, Windows, Intel macOS and native
   Apple silicon, all real Slicer 5.12.4 tests on Linux, and the unit tests with
   100% scoped coverage.
-- On Stable Slicer 5.12.4 for macOS (Intel, Rosetta), all integration tests
-  passed with 1.0.0 from a source checkout on 2026-11-01.
+- On Stable Slicer 5.12.4 for macOS (Intel, Rosetta), the install lifecycle and all
+  70 integration tests passed with 1.0.1 from a source checkout on 2026-11-02.
 - The unit-test files that CTest registers pass with the Python of Slicer 5.12.4,
   which has no pytest, as on the Extension Factory.
 - On Windows 11 x64 (2026-11-02), Stable 5.12.4 and Preview 5.13.0-2026-09-30
-  passed the install lifecycle and all 70 integration tests with the real worker.
+  passed the install lifecycle and all 70 integration tests with the real worker
+  and Pictologics 1.0.0.
   The window checklist passed on Stable. After the Windows fixes, all checks passed
   again, also with a profile folder name of 40 characters.
 - Not tested yet: the Extension Factory packages.

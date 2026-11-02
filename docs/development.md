@@ -543,6 +543,6 @@ without Codecov.
 
 ## Validation status
 
-The current results for Pictologics 1.0.0 are in the
+The current results for Pictologics 1.0.1 are in the
 [release readiness](release-readiness.md). Normal-Python checks do not establish
 application or package-install results.
