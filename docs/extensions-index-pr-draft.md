@@ -1,8 +1,9 @@
-# Pictologics catalog submission draft (do not submit yet)
+# Pictologics catalog submission draft
 
-Updated on 2026-11-02. This is the draft text for the ExtensionsIndex pull request.
-It is not an opened pull request or approval from Slicer maintainers. Submit it only
-after the maintainer approves the registration. Keep the
+Updated on 2026-11-03. The maintainer submitted this text as
+[Slicer/ExtensionsIndex#2434](https://github.com/Slicer/ExtensionsIndex/pull/2434)
+on 2026-11-03, against `main`, with the title "Add Pictologics extension". The pull
+request uses the upstream template, with every Tier 1 item checked. Keep the
 [release readiness](release-readiness.md) with this draft.
 
 ## Proposed title
@@ -84,7 +85,7 @@ treatment decisions.
    `core.autocrlf=true` makes them.
 2. Open the pull request against ExtensionsIndex `main` (Preview), with the current
    template. Ask the reviewers whether to add it to `5.12` (Stable) too. The pull
-   request runs the validator (a clone of at most 100 MB; about 18 MB now), a
+   request runs the validator (a clone of at most 100 MB; 33.5 MB on 2026-11-03), a
    package build on Windows and Linux, and an AI review.
 3. When the Extension Factory builds the packages, check each one with
    `scripts/check_extension_package.py`. Then install it in a clean Slicer on each

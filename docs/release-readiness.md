@@ -94,9 +94,11 @@ real worker, and every unit-test file with Slicer's Python.
 
 ## Open gates
 
-1. Open the catalog pull request. The text is in the
-   [pull request draft](extensions-index-pr-draft.md). A Preview newer than
-   2026-09-30 is not necessary (maintainer decision of 2026-11-02).
+1. Get the catalog pull request
+   [Slicer/ExtensionsIndex#2434](https://github.com/Slicer/ExtensionsIndex/pull/2434)
+   merged. It was opened on 2026-11-03, and the official validator passed on a local
+   run. A Preview newer than 2026-09-30 is not necessary (maintainer decision of
+   2026-11-02).
 2. Check each Extension Factory package with `scripts/check_extension_package.py`.
    Then install it in a clean Slicer on each platform, and check restart,
    extraction, export, scene reload and the 2D and 3D views.
