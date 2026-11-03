@@ -46,6 +46,14 @@ class ExportRecoveryTest(unittest.TestCase):
         self.assertFalse(list(root.glob(".pictologics-export-*")))
         self.assertEqual(export_file_set(root / "features.csv", write_set), paths)
 
+    def test_replaced_files_keep_their_mode(self):
+        root = self.root / "private"
+        root.mkdir()
+        originals(root)
+        modes = {name: mode for name, (_, mode) in contents(root).items()}
+        export_file_set(root / "features.csv", write_set)
+        self.assertEqual({name: mode for name, (_, mode) in contents(root).items()}, modes)
+
     def test_failed_writes_restore_complete_set_and_retry(self):
         for phase in ("sidecar", "backup", "publish_first", "publish_second", "publish_third", "interrupted"):
             for existing in (True, False):

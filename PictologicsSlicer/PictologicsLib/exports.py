@@ -42,7 +42,7 @@ def export_file_set(destination: Path, writer: Callable[[Path], Sequence[Path]])
         ):
             raise ValueError("Export writer returned an invalid file set.")
         destinations = [destination.parent / path.name for path in files]
-        for target in destinations:
+        for source, target in zip(files, destinations, strict=True):
             if target.is_symlink() or (target.exists() and not target.is_file()):
                 raise ValueError("Export destination must be a regular file, not a link or directory.")
             if target.exists():
@@ -50,6 +50,8 @@ def export_file_set(destination: Path, writer: Callable[[Path], Sequence[Path]])
                 # Preserve restrictive permissions when a backup is moved back.
                 shutil.copy2(target, backup)
                 originals[target] = backup
+                # The staged file has the usual mode; keep the mode of the file it replaces.
+                shutil.copymode(target, source)
         try:
             for source, target in zip(files, destinations, strict=True):
                 os.replace(source, target)
