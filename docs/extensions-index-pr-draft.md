@@ -3,7 +3,10 @@
 Updated on 2026-11-03. The maintainer submitted this text as
 [Slicer/ExtensionsIndex#2434](https://github.com/Slicer/ExtensionsIndex/pull/2434)
 on 2026-11-03, against `main`, with the title "Add Pictologics extension". The pull
-request uses the upstream template, with every Tier 1 item checked. Keep the
+request uses the upstream template, with every Tier 1 item checked. A Slicer core
+developer asked for a second pull request for Slicer Stable:
+[Slicer/ExtensionsIndex#2435](https://github.com/Slicer/ExtensionsIndex/pull/2435)
+adds the same entry to `5.12`. Keep the
 [release readiness](release-readiness.md) with this draft.
 
 ## Proposed title
