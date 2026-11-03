@@ -12,7 +12,7 @@ Research software only—not for clinical diagnosis or treatment decisions.
 ![Public liver CT with anatomical liver-tissue and tumour masks, shown in Pictologics for 3D Slicer](https://raw.githubusercontent.com/martonkolossvary/SlicerPictologics/main/docs/screenshots/pictologics-workflow.png)
 
 *Public CTLiver example: liver tissue (orange) and tumour (cyan), with 170 features
-per ROI and 340 successful rows using Pictologics 1.0.0. These are supplied research
+per ROI and 340 successful rows. These are supplied research
 annotations, not clinical validation by this project.
 [Data attribution and reproduction](docs/screenshots/README.md).*
 

@@ -2,8 +2,11 @@
 
 This page gives the state of the first catalog release: extension 0.1.0 with
 Pictologics 1.0.1. The job manifest schema is 1 and the result payload schema is 2.
+Each check below names the Pictologics version and the date of that check. Later
+Pictologics releases reach users after the adoption workflow qualifies them; the
+extension reads the version from `requirements-pictologics.txt`.
 
-## Checks with Pictologics 1.0.1 (2026-11-02)
+## Checks with Pictologics 1.0.1 (2026-11-02 and 2026-11-03)
 
 - The adoption workflow qualified 1.0.1 and pinned it on `main` (commit `015d8fe`).
   It resolved the dependencies and checked the released wheels on Linux x86_64,
@@ -17,6 +20,21 @@ Pictologics 1.0.1. The job manifest schema is 1 and the result payload schema is
   lifecycle (install, restart, update, restart after update) and all 70 integration
   tests with the real worker, 0 skipped. Each environment had its own Numba folder,
   and the cleanup deleted the old environment together with its Numba folder.
+- Windows 11 x64 with Slicer 5.12.4 (2026-11-03), in Windows PowerShell 5.1 with the repository
+  launcher (revision `aa90788`):
+
+  | Check | Result |
+  |---|---|
+  | Unit-test files that CTest registers, with the Python of Slicer 5.12.4 | 31 of 31 files pass; 5 link tests skipped (they need a Windows privilege) |
+  | Application check | 4 of 4 lifecycle phases pass, with 340 identical rows after each restart; 70 integration tests pass, 0 skipped |
+  | Numba folder of each environment | One folder for each environment, no flat folders; the cleanup deleted the old environment and its folder |
+  | Profile folder name of 40 characters (emulated) | 4 of 4 phases pass; the longest path is 286 characters; the cleanup and the deletion leave nothing |
+  | Export over a CSV that Excel 16 has open | The "Could not replace … may have it open" message shows; nothing stays behind; the CSV does not change |
+  | Window checklist (scripted) | Pass; after scene reload, 340 of 340 values are identical, and the rerun does not ask to install |
+
+  Not covered on Windows: the 2D and 3D views, because the remote session
+  disconnected before the window checklist. Check them when you install the
+  Extension Factory package (open gate 2).
 
 ## Checks with Pictologics 1.0.0 (2026-11-01)
 
@@ -76,16 +94,11 @@ real worker, and every unit-test file with Slicer's Python.
 
 ## Open gates
 
-1. On Windows, do the [Windows application check](development.md#windows-application-check)
-   once more with Pictologics 1.0.1, on Slicer 5.12.4, in Windows PowerShell 5.1.
-   This also checks the Numba folder of each environment, which came after revision
-   `1ab4f82`. Then export once over a CSV file that Excel has open. A newer Preview
-   is not necessary: the Preview of 2026-09-30 passed (maintainer decision of
-   2026-11-02).
-2. Open the catalog pull request. The text is in the
-   [pull request draft](extensions-index-pr-draft.md).
-3. Check each Extension Factory package with `scripts/check_extension_package.py`.
+1. Open the catalog pull request. The text is in the
+   [pull request draft](extensions-index-pr-draft.md). A Preview newer than
+   2026-09-30 is not necessary (maintainer decision of 2026-11-02).
+2. Check each Extension Factory package with `scripts/check_extension_package.py`.
    Then install it in a clean Slicer on each platform, and check restart,
-   extraction, export and scene reload.
-4. Make sure that Extensions Manager shows and installs the extension before you
+   extraction, export, scene reload and the 2D and 3D views.
+3. Make sure that Extensions Manager shows and installs the extension before you
    announce it.

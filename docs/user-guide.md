@@ -129,8 +129,7 @@ The mask steps have an **Apply to** choice:
 
 - **Both masks (changes shape):** change the intensity and the morphology masks.
 - **Intensity only (preserves shape):** change only the intensity mask. This is the
-  default of the intensity range and the outlier filter, as in Pictologics 1.0.0 and
-  IBSI.
+  default of the intensity range and the outlier filter, as in Pictologics and IBSI.
 - **Morphology only:** change only the morphology mask.
 
 The steps change only the calculation masks and values, not the input image or

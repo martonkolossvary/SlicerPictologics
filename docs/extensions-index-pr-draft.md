@@ -72,20 +72,20 @@ treatment decisions.
   and Pictologics 1.0.0.
   The window checklist passed on Stable. After the Windows fixes, all checks passed
   again, also with a profile folder name of 40 characters.
+- On Windows 11 x64 with Stable 5.12.4 (2026-11-03), the install lifecycle, all 70
+  integration tests and the window checklist passed again with Pictologics 1.0.1.
 - Not tested yet: the Extension Factory packages.
 - See the [release readiness](release-readiness.md).
 
 ## Before opening the pull request
 
-1. Do the last Windows check (open gate 1 in the
-   [release readiness](release-readiness.md)).
-2. Commit `Pictologics.json` to ExtensionsIndex with LF line endings, through git.
+1. Commit `Pictologics.json` to ExtensionsIndex with LF line endings, through git.
    The validator rejects CRLF line endings, and a Windows checkout with
    `core.autocrlf=true` makes them.
-3. Open the pull request against ExtensionsIndex `main` (Preview), with the current
+2. Open the pull request against ExtensionsIndex `main` (Preview), with the current
    template. Ask the reviewers whether to add it to `5.12` (Stable) too. The pull
    request runs the validator (a clone of at most 100 MB; about 18 MB now), a
    package build on Windows and Linux, and an AI review.
-4. When the Extension Factory builds the packages, check each one with
+3. When the Extension Factory builds the packages, check each one with
    `scripts/check_extension_package.py`. Then install it in a clean Slicer on each
    platform, and check restart, extraction, export and scene reload.

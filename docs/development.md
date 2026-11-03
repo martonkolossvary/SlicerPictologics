@@ -94,8 +94,8 @@ I/O cache, which is size-limited and may be pruned. Each accepted environment ha
 immutable versioned directory; an atomic pointer selects it for new jobs, while
 already-running jobs keep their original path. It is not installed into or allowed to
 replace Slicer's shared Python packages. This is required for Slicer 5.12: its
-environment includes NumPy
-2.4.6 while the macOS private target's Numba 0.62.1 requires NumPy `<2.4`.
+environment includes NumPy 2.4, while Numba for Intel macOS (0.62 is its last
+version) requires NumPy `<2.4`.
 The private target also pins its own Pillow version, independently of Slicer's
 shared Pillow. Neither target's dependency versions are installed into the other.
 
@@ -543,6 +543,6 @@ without Codecov.
 
 ## Validation status
 
-The current results for Pictologics 1.0.1 are in the
+The results of the release checks are in the
 [release readiness](release-readiness.md). Normal-Python checks do not establish
 application or package-install results.
